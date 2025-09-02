@@ -66,9 +66,18 @@ func bulkList(at path: String) throws -> [BulkEntry] {
         
         var attrList = attrlist()
         attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-        attrList.commonattr = attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_DEVID | ATTR_CMN_FILEID)
+        // Request all needed attributes in one call
+        let commonAttrs = attrgroup_t(ATTR_CMN_NAME) | 
+                         attrgroup_t(ATTR_CMN_DEVID) | 
+                         attrgroup_t(ATTR_CMN_FILEID) | 
+                         attrgroup_t(ATTR_CMN_OBJTYPE) | 
+                         attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | 
+                         attrgroup_t(ATTR_CMN_ERROR)
+        attrList.commonattr = commonAttrs
+        attrList.fileattr = attrgroup_t(ATTR_FILE_DATAALLOCSIZE) | attrgroup_t(ATTR_FILE_DATALENGTH)
         
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024) // 64KB buffer
+        // Use larger buffer (256KB) for fewer syscalls
+        var buffer = [UInt8](repeating: 0, count: 256 * 1024)
         var result: [BulkEntry] = []
         result.reserveCapacity(1000)
         
@@ -83,18 +92,9 @@ func bulkList(at path: String) throws -> [BulkEntry] {
             
             var offset = 0
             for _ in 0..<count {
-                let entryLength = buffer.withUnsafeBufferPointer { ptr in
-                    ptr.baseAddress!.advanced(by: offset).withMemoryRebound(to: UInt32.self, capacity: 1) { $0.pointee }
-                }
-                
-                guard offset + Int(entryLength) <= buffer.count else { break }
-                
-                let entryData = buffer[offset..<offset + Int(entryLength)]
-                if let entry = parseAttrBuf(Array(entryData), basePath: pathCStr) {
+                if let entry = parseAttrBufCorrect(buffer: buffer, offset: &offset) {
                     result.append(entry)
                 }
-                
-                offset += Int(entryLength)
             }
         } while true
         
@@ -102,57 +102,124 @@ func bulkList(at path: String) throws -> [BulkEntry] {
     }
 }
 
-private func parseAttrBuf(_ buffer: [UInt8], basePath: UnsafePointer<CChar>) -> BulkEntry? {
-    guard buffer.count >= 16 else { return nil }
+// Correct getattrlistbulk parsing following Apple's documentation
+private func parseAttrBufCorrect(buffer: [UInt8], offset: inout Int) -> BulkEntry? {
+    guard offset + 4 <= buffer.count else { return nil }
     
-    var offset = 4 // Skip length
-    
-    // Read object type
-    let objType = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt32.self)
+    let result = buffer.withUnsafeBytes { rawBuffer -> BulkEntry? in
+        guard let baseAddr = rawBuffer.baseAddress else { return nil }
+        
+        // Read record length
+        let length = rawBuffer.load(fromByteOffset: offset, as: UInt32.self)
+        guard offset + Int(length) <= buffer.count else { return nil }
+        let recordEnd = offset + Int(length)
+        
+        var cursor = offset + 4
+        
+        // Read returned attributes mask to know what's actually present
+        guard cursor + 4 <= recordEnd else { return nil }
+        let returnedAttrs = rawBuffer.load(fromByteOffset: cursor, as: attrgroup_t.self)
+        cursor += 4
+        
+        // Check for per-entry errors
+        if returnedAttrs & attrgroup_t(ATTR_CMN_ERROR) != 0 {
+            guard cursor + 4 <= recordEnd else { return nil }
+            let errorCode = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+            cursor += 4
+            if errorCode != 0 {
+                offset = recordEnd
+                return nil // Skip entries with errors
+            }
+        }
+        
+        // Parse attributes in the order Apple specifies
+        var objType: UInt32 = 0
+        var deviceId: UInt32 = 0
+        var fileId: UInt64 = 0
+        var allocSize: Int64 = 0
+        var name: String = ""
+        
+        // ATTR_CMN_OBJTYPE (uses vnode types: VREG, VDIR, VLNK)
+        if returnedAttrs & attrgroup_t(ATTR_CMN_OBJTYPE) != 0 {
+            guard cursor + 4 <= recordEnd else { return nil }
+            objType = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+            cursor += 4
+        }
+        
+        // ATTR_CMN_DEVID
+        if returnedAttrs & attrgroup_t(ATTR_CMN_DEVID) != 0 {
+            guard cursor + 4 <= recordEnd else { return nil }
+            deviceId = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+            cursor += 4
+        }
+        
+        // ATTR_CMN_FILEID
+        if returnedAttrs & attrgroup_t(ATTR_CMN_FILEID) != 0 {
+            // Ensure 8-byte alignment for UInt64
+            cursor = (cursor + 7) & ~7
+            guard cursor + 8 <= recordEnd else { return nil }
+            fileId = rawBuffer.load(fromByteOffset: cursor, as: UInt64.self)
+            cursor += 8
+        }
+        
+        // ATTR_FILE_DATAALLOCSIZE (for regular files)
+        if returnedAttrs & attrgroup_t(ATTR_FILE_DATAALLOCSIZE) != 0 {
+            // Ensure 8-byte alignment for Int64
+            cursor = (cursor + 7) & ~7
+            guard cursor + 8 <= recordEnd else { return nil }
+            allocSize = rawBuffer.load(fromByteOffset: cursor, as: Int64.self)
+            cursor += 8
+        }
+        
+        // Skip ATTR_FILE_DATALENGTH if present (we want allocated, not logical size)
+        if returnedAttrs & attrgroup_t(ATTR_FILE_DATALENGTH) != 0 {
+            // Ensure 8-byte alignment for Int64
+            cursor = (cursor + 7) & ~7
+            cursor += 8
+        }
+        
+        // ATTR_CMN_NAME (attrreference_t structure)
+        if returnedAttrs & attrgroup_t(ATTR_CMN_NAME) != 0 {
+            // Ensure 4-byte alignment for attrreference_t
+            cursor = (cursor + 3) & ~3
+            guard cursor + 8 <= recordEnd else { return nil }
+            let nameRef = rawBuffer.load(fromByteOffset: cursor, as: attrreference_t.self)
+            cursor += 8
+            
+            let nameOffset = offset + Int(nameRef.attr_dataoffset)
+            let nameLength = Int(nameRef.attr_length)
+            
+            guard nameOffset + nameLength <= buffer.count else { return nil }
+            
+            // Extract name from buffer without copying
+            let namePtr = baseAddr.advanced(by: nameOffset)
+            if let nameStr = String(bytes: UnsafeRawBufferPointer(start: namePtr, count: nameLength), encoding: .utf8) {
+                name = String(nameStr.prefix { $0 != "\0" }) // Remove NUL terminator
+            }
+        }
+        
+        // Use vnode types (VREG=1, VDIR=2, VLNK=5) instead of dirent DT_* constants
+        let isDir = objType == UInt32(VDIR.rawValue)
+        let isSymlink = objType == UInt32(VLNK.rawValue)
+        
+        // Skip symlinks
+        if isSymlink {
+            offset = recordEnd
+            return nil
+        }
+        
+        offset = recordEnd
+        
+        return BulkEntry(
+            name: name,
+            isDir: isDir,
+            allocSize: allocSize,
+            inode: fileId,
+            deviceId: deviceId
+        )
     }
-    offset += 4
     
-    // Read device ID
-    let deviceId = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt32.self)
-    }
-    offset += 4
-    
-    // Read inode
-    let inode = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt64.self)
-    }
-    offset += 8
-    
-    // Read name length and name
-    guard offset + 4 < buffer.count else { return nil }
-    let nameLength = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt32.self)
-    }
-    offset += 4
-    
-    guard offset + Int(nameLength) <= buffer.count else { return nil }
-    let nameData = Data(buffer[offset..<offset + Int(nameLength)])
-    guard let name = String(data: nameData, encoding: .utf8) else { return nil }
-    
-    let isDir = (objType & UInt32(DT_DIR)) != 0
-    let isSymlink = (objType & UInt32(DT_LNK)) != 0
-    
-    // Skip symlinks
-    if isSymlink { return nil }
-    
-    // Get allocated size using stat() for better accuracy
-    let fullPath = String(cString: basePath) + "/" + name
-    let allocSize = getAllocatedSize(for: fullPath)
-    
-    return BulkEntry(
-        name: name,
-        isDir: isDir,
-        allocSize: allocSize,
-        inode: inode,
-        deviceId: deviceId
-    )
+    return result
 }
 
 extension Array {
