@@ -401,18 +401,65 @@ struct FolderItem: Identifiable, Comparable {
 // MARK: - Single-Walk Bottom-Up Aggregation (eliminates N² re-walks)
 
 
-// Optimized single-pass directory scan with proper size aggregation
-func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderItem], totalUsage: DiskUsage) {
-    // Skip optimized scan for paths known to cause system-level errors
+// Check if a path is safe for getattrlistbulk usage
+private func isPathSafeForOptimizedScan(_ path: String) -> Bool {
+    // Be very conservative - only use optimized scan on well-known safe directories
+    let safePaths = [
+        "/Applications", "/Users", "/Library", "/usr/local", "/opt"
+    ]
+    
+    // Only allow optimization on explicitly safe paths and their subdirectories
+    var isSafePath = false
+    for safePath in safePaths {
+        if path == safePath || path.hasPrefix(safePath + "/") {
+            isSafePath = true
+            break
+        }
+    }
+    
+    if !isSafePath {
+        return false
+    }
+    
+    // Additional checks for known problematic subdirectories
     let problematicPaths = [
-        "/System/Volumes/", "/System/Cryptexes/", "/private/var/db/",
-        "/Library/Trial", "/Library/Bluetooth", "/dev/", "/Volumes/"
+        "/Library/Trial", "/Library/Bluetooth", "/Library/Caches/com.apple.",
+        "/Users/Shared/.com.apple.", "/usr/local/var/db"
     ]
     
     for problematicPath in problematicPaths {
-        if rootPath.hasPrefix(problematicPath) || rootPath == String(problematicPath.dropLast()) {
-            throw POSIXError(.EINVAL)  // Force fallback to traditional method
+        if path.hasPrefix(problematicPath) {
+            return false
         }
+    }
+    
+    // Check filesystem type - avoid getattrlistbulk on special filesystems
+    let url = URL(fileURLWithPath: path)
+    do {
+        let resourceValues = try url.resourceValues(forKeys: [
+            .volumeLocalizedFormatDescriptionKey,
+            .volumeSupportsSymbolicLinksKey
+        ])
+        
+        // Skip if filesystem doesn't support symbolic links (indication of special FS)
+        if let supportsSymlinks = resourceValues.volumeSupportsSymbolicLinks,
+           !supportsSymlinks {
+            return false
+        }
+        
+    } catch {
+        // If we can't get filesystem info, be conservative and skip optimization
+        return false
+    }
+    
+    return true
+}
+
+// Optimized single-pass directory scan with proper size aggregation
+func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderItem], totalUsage: DiskUsage) {
+    // Check if this path is safe for getattrlistbulk
+    if !isPathSafeForOptimizedScan(rootPath) {
+        throw POSIXError(.EINVAL)  // Force fallback to traditional method
     }
     
     guard let dirFd = openDirectoryFd(path: rootPath) else {

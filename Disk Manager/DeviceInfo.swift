@@ -25,6 +25,10 @@ struct DeviceInfo: Identifiable, Hashable {
         formatBytes(availableStorage)
     }
     
+    var formattedUsedStorage: String {
+        formatBytes(usedStorage)
+    }
+    
     private func formatBytes(_ bytes: Double) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .decimal

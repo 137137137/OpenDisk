@@ -70,8 +70,8 @@ struct DeviceRow: View {
                 
                 // Subtitle for home folder or storage info
                 if device.totalStorage > 0 {
-                    // Available/Total storage format
-                    Text("\(device.formattedAvailableStorage)/\(device.formattedTotalStorage) Available")
+                    // Used/Total storage format with available
+                    Text("\(device.formattedUsedStorage)/\(device.formattedTotalStorage), \(device.formattedAvailableStorage) available")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                     
