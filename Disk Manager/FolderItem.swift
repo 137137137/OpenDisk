@@ -125,7 +125,7 @@ func ftsDirectoryScan(path: String) async throws -> (items: [FolderItem], totalU
             }
             
             let size = Int64(stat.st_blocks) * 512
-            let modTime = Date(timeIntervalSince1970: TimeInterval(stat.st_mtimespec.tv_sec))
+            let modTime = Date.distantPast  // Use placeholder since not displayed
             
             if entry.pointee.fts_info == FTS_D {
                 // Directory
@@ -290,7 +290,7 @@ struct OptimizedBulkEntry {
     let allocSize: Int64
     let deviceId: UInt32
     let fileId: UInt64
-    let modTime: timespec  // Use proper timespec instead of UInt32
+    // Removed modTime - not used in display
     let nlink: UInt32
     let parentDirFd: Int32
     
@@ -326,9 +326,9 @@ func optimizedBulkList(dirFd: Int32) throws -> [OptimizedBulkEntry] {
 func getattrlistbulkScan(dirFd: Int32) throws -> [OptimizedBulkEntry] {
     var attrList = attrlist()
     attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-    // Request ALL needed attributes in one call - no more separate lstat/stat calls
+    // Request only essential attributes for display performance
     attrList.commonattr = attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_DEVID | 
-                                     ATTR_CMN_FILEID | ATTR_CMN_MODTIME)
+                                     ATTR_CMN_FILEID)  // Removed ATTR_CMN_MODTIME (unused in UI)
     attrList.fileattr = attrgroup_t(ATTR_FILE_ALLOCSIZE)
     
     // Optimal buffer size: 128KB for most cases (research-backed)
@@ -384,7 +384,7 @@ func readDirFallback(dirFd: Int32) throws -> [OptimizedBulkEntry] {
     var result: [OptimizedBulkEntry] = []
     result.reserveCapacity(readdirEntries.count)
     
-    let currentTime = timespec(tv_sec: time_t(Date().timeIntervalSince1970), tv_nsec: 0)
+    // Removed currentTime since modTime is not used in display
     
     for entry in readdirEntries {
         // Skip symlinks consistently 
@@ -397,7 +397,7 @@ func readDirFallback(dirFd: Int32) throws -> [OptimizedBulkEntry] {
             allocSize: entry.isReg ? entry.allocSize : 0,
             deviceId: UInt32(entry.deviceId),
             fileId: entry.fileId,
-            modTime: currentTime, // Fallback: use current time
+            // Removed modTime - not used in display
             nlink: entry.nlink,
             parentDirFd: dirFd
         )
@@ -423,7 +423,7 @@ private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDir
         var objType: UInt32 = 0
         var deviceId: UInt32 = 0
         var fileId: UInt64 = 0
-        var modTime: timespec = timespec()
+        // Removed modTime parsing - not requested and not used in display
         var nlink: UInt32 = 1
         var allocSize: Int64 = 0
         var nameString: String = ""
@@ -444,11 +444,7 @@ private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDir
         fileId = rawBuffer.load(fromByteOffset: cursor, as: UInt64.self)
         cursor += 8
         
-        // ATTR_CMN_MODTIME (timespec: 8-byte aligned)
-        cursor = (cursor + 7) & ~7
-        guard cursor + MemoryLayout<timespec>.size <= recordEnd else { return nil }
-        modTime = rawBuffer.load(fromByteOffset: cursor, as: timespec.self)
-        cursor += MemoryLayout<timespec>.size
+        // ATTR_CMN_MODTIME removed - not requested and not used in display
         
         // NLINK not available via getattrlistbulk on macOS, use hardcoded value
         nlink = 1  // Most files have nlink=1, hardlinks are rare
@@ -495,7 +491,7 @@ private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDir
             allocSize: allocSize,
             deviceId: deviceId,
             fileId: fileId,
-            modTime: modTime,
+            // Removed modTime - not used in display
             nlink: nlink,
             parentDirFd: parentDirFd
         )
@@ -660,12 +656,14 @@ struct FolderItem: Identifiable, Comparable {
     let name: String
     let path: String
     let size: Int64
-    let itemCount: Int
-    let lastModified: Date
-    var children: [FolderItem] = []
     let isDirectory: Bool
     
     var percentage: Double = 0.0
+    
+    // Optional fields kept for internal processing but not displayed
+    let itemCount: Int
+    let lastModified: Date
+    var children: [FolderItem] = []
     
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
