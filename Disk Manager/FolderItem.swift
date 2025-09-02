@@ -527,8 +527,114 @@ class DiskAnalyzer: ObservableObject {
             self.lastProgressUpdate = Date()
         }
         
-        // Actually enumerate "/" to get all top-level directories
-        return await scanDirectoryContentsSafe("/")
+        // Enumerate accessible top-level directories with better error handling
+        return await scanRootDirectoriesSafely()
+    }
+    
+    private func scanRootDirectoriesSafely() async -> [FolderItem] {
+        // Try to enumerate "/" first to get all directories
+        do {
+            let rootContents = try FileManager.default.contentsOfDirectory(atPath: "/")
+            var accessibleDirs: [String] = []
+            
+            // Check which directories are actually accessible
+            for item in rootContents {
+                let fullPath = "/" + item
+                var isDirectory: ObjCBool = false
+                
+                if FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory) && 
+                   isDirectory.boolValue &&
+                   FileManager.default.isReadableFile(atPath: fullPath) {
+                    
+                    // Skip some problematic system directories that cause hangs
+                    let skipPaths = ["dev", "System/Volumes/Preboot", "System/Volumes/Update", "System/Volumes/xarts", "System/Volumes/iSCPreboot", "System/Volumes/Hardware"]
+                    let shouldSkip = skipPaths.contains { skipPath in
+                        fullPath.hasSuffix(skipPath) || fullPath == ("/" + skipPath)
+                    }
+                    
+                    if !shouldSkip {
+                        accessibleDirs.append(fullPath)
+                    }
+                }
+            }
+            
+            // Process accessible directories in parallel with limits
+            return await withTaskGroup(of: FolderItem?.self) { group in
+                var items: [FolderItem] = []
+                // Limit concurrent operations by processing in smaller batches
+                let batchSize = 4
+                
+                // Process directories in smaller batches to avoid overwhelming the system
+                let limitedDirs = Array(accessibleDirs.prefix(20))
+                let batches = limitedDirs.chunked(into: batchSize)
+                
+                for batch in batches {
+                    // Process current batch in parallel
+                    for dirPath in batch {
+                        group.addTask { [weak self] in
+                            let url = URL(fileURLWithPath: dirPath)
+                            await MainActor.run { [weak self] in
+                                self?.scanProgress = "Analyzing \(url.lastPathComponent)..."
+                            }
+                            
+                            // Use timeout to avoid hanging on problematic directories
+                            return await self?.buildFolderWithTimeout(url: url, timeoutSeconds: 30)
+                        }
+                    }
+                    
+                    // Wait for current batch to complete before starting next batch
+                    for _ in batch {
+                        if let item = await group.next() {
+                            if let validItem = item {
+                                items.append(validItem)
+                            }
+                        }
+                    }
+                }
+                
+                return items.sorted { $0.size > $1.size }
+            }
+            
+        } catch {
+            // Fallback to essential directories if "/" enumeration fails
+            await MainActor.run { [weak self] in
+                self?.scanProgress = "Scanning essential directories..."
+            }
+            
+            let essentialDirs = ["/Applications", "/Users", "/Library", "/System/Library", "/usr", "/opt"]
+            var items: [FolderItem] = []
+            
+            for dirPath in essentialDirs {
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory) && 
+                   isDirectory.boolValue && 
+                   FileManager.default.isReadableFile(atPath: dirPath) {
+                    
+                    if let item = await buildFolderWithTimeout(url: URL(fileURLWithPath: dirPath), timeoutSeconds: 30) {
+                        items.append(item)
+                    }
+                }
+            }
+            
+            return items.sorted { $0.size > $1.size }
+        }
+    }
+    
+    private func buildFolderWithTimeout(url: URL, timeoutSeconds: Double) async -> FolderItem? {
+        return await withTaskGroup(of: FolderItem?.self) { group in
+            group.addTask { [weak self] in
+                await self?.buildFolderWithCompleteChildrenFast(url: url)
+            }
+            
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+                return nil
+            }
+            
+            guard let result = await group.next() else { return nil }
+            group.cancelAll()
+            return result
+        }
     }
     
     private func buildFolderWithCompleteChildrenFast(url: URL) async -> FolderItem? {
