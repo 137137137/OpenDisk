@@ -2,6 +2,7 @@ import Foundation
 
 class DiskSpaceUtility: ObservableObject {
     @Published var devices: [DeviceInfo] = []
+    private let diskAnalyzer = DiskAnalyzer()
     
     init() {
         fetchDeviceInfo()
@@ -11,11 +12,12 @@ class DiskSpaceUtility: ObservableObject {
         DispatchQueue.global(qos: .background).async {
             var deviceList: [DeviceInfo] = []
             
-            // Get main disk info - only show Computer option for full disk analysis
+            // Get main disk info - show Computer option for full disk analysis
             if let mainDiskInfo = self.getDiskSpace(for: "/") {
                 let computerDevice = DeviceInfo(
                     name: "Computer",
                     icon: "desktopcomputer",
+                    path: "/",
                     totalStorage: mainDiskInfo.totalSpace,
                     availableStorage: mainDiskInfo.availableSpace,
                     subtitle: self.formatBytes(mainDiskInfo.totalSpace) + " Total"
@@ -23,8 +25,33 @@ class DiskSpaceUtility: ObservableObject {
                 deviceList.append(computerDevice)
             }
             
-            DispatchQueue.main.async {
-                self.devices = deviceList
+            // Scan for external volumes asynchronously
+            Task {
+                await self.diskAnalyzer.scanExternalVolumes()
+                let externalVolumes = await MainActor.run {
+                    self.diskAnalyzer.externalVolumes
+                }
+                
+                var updatedDeviceList = deviceList
+                
+                // Add external volumes as separate devices
+                for volume in externalVolumes {
+                    if let volumeInfo = self.getDiskSpace(for: volume.path) {
+                        let externalDevice = DeviceInfo(
+                            name: volume.name,
+                            icon: "externaldrive",
+                            path: volume.path,
+                            totalStorage: volumeInfo.totalSpace,
+                            availableStorage: volumeInfo.availableSpace,
+                            subtitle: self.formatBytes(volumeInfo.totalSpace) + " Total"
+                        )
+                        updatedDeviceList.append(externalDevice)
+                    }
+                }
+                
+                await MainActor.run {
+                    self.devices = updatedDeviceList
+                }
             }
         }
     }
@@ -34,11 +61,11 @@ class DiskSpaceUtility: ObservableObject {
             let url = URL(fileURLWithPath: path)
             let resourceValues = try url.resourceValues(forKeys: [
                 .volumeTotalCapacityKey,
-                .volumeAvailableCapacityKey
+                .volumeAvailableCapacityForImportantUsageKey
             ])
             
             guard let totalCapacity = resourceValues.volumeTotalCapacity,
-                  let availableCapacity = resourceValues.volumeAvailableCapacity else {
+                  let availableCapacity = resourceValues.volumeAvailableCapacityForImportantUsage else {
                 return nil
             }
             

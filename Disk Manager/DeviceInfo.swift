@@ -4,6 +4,7 @@ struct DeviceInfo: Identifiable, Hashable {
     let id = UUID()
     let name: String
     let icon: String
+    let path: String  // Path to scan when selected
     let totalStorage: Double
     let availableStorage: Double
     let subtitle: String?

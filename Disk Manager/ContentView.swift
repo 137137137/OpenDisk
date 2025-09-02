@@ -23,8 +23,8 @@ struct ContentView: View {
             .frame(minWidth: 250)
         } detail: {
             // Detail view
-            if let selectedDevice = selectedDevice, selectedDevice.name == "Computer" {
-                DiskAnalysisView(rootPath: "/") {
+            if let selectedDevice = selectedDevice {
+                DiskAnalysisView(rootPath: selectedDevice.path) {
                     self.selectedDevice = nil
                 }
             } else {

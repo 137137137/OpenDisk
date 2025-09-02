@@ -1294,6 +1294,11 @@ class DiskAnalyzer: ObservableObject {
             if FileManager.default.fileExists(atPath: volumePath, isDirectory: &isDirectory),
                isDirectory.boolValue {
                 
+                // Skip system volumes and Time Machine volumes
+                if shouldSkipVolume(named: volume) {
+                    continue
+                }
+                
                 // Get basic volume info
                 let volumeURL = URL(fileURLWithPath: volumePath)
                 
@@ -1301,15 +1306,23 @@ class DiskAnalyzer: ObservableObject {
                     let resourceValues = try volumeURL.resourceValues(forKeys: [
                         .contentModificationDateKey,
                         .volumeTotalCapacityKey,
-                        .volumeAvailableCapacityForImportantUsageKey
+                        .volumeAvailableCapacityForImportantUsageKey,
+                        .volumeIsRemovableKey,
+                        .volumeIsEjectableKey,
+                        .volumeIsInternalKey
                     ])
                     
                     let totalCapacity = Int64(resourceValues.volumeTotalCapacity ?? 0)
                     let availableCapacity = Int64(resourceValues.volumeAvailableCapacityForImportantUsage ?? 0)
                     let usedCapacity = totalCapacity - availableCapacity
                     
+                    // Determine if this is an external drive
+                    let isExternal = resourceValues.volumeIsRemovable == true || 
+                                   resourceValues.volumeIsEjectable == true || 
+                                   resourceValues.volumeIsInternal == false
+                    
                     let volumeItem = FolderItem(
-                        name: volume,
+                        name: isExternal ? "\(volume) (External)" : volume,
                         path: volumePath,
                         size: usedCapacity,
                         itemCount: 0, // Will be calculated when scanned
@@ -1319,9 +1332,9 @@ class DiskAnalyzer: ObservableObject {
                     
                     volumes.append(volumeItem)
                 } catch {
-                    // If we can't get volume info, create a basic item
+                    // If we can't get volume info, still include it as external
                     let volumeItem = FolderItem(
-                        name: volume,
+                        name: "\(volume) (External)",
                         path: volumePath,
                         size: 0,
                         itemCount: 0,
@@ -1336,5 +1349,31 @@ class DiskAnalyzer: ObservableObject {
         await MainActor.run {
             self.externalVolumes = volumes.sorted { $0.size > $1.size }
         }
+    }
+    
+    // Skip Time Machine, system, and other volumes that shouldn't be scanned automatically
+    private func shouldSkipVolume(named volume: String) -> Bool {
+        let skipPatterns = [
+            "Macintosh HD",              // Main system drive
+            "com.apple.TimeMachine",     // Time Machine local snapshots
+            "Time Machine Backups",      // Time Machine volumes
+            ".timemachine",              // Time Machine hidden volumes
+            "Preboot",                   // System preboot volume
+            "Recovery",                  // Recovery volume
+            "VM",                        // Virtual memory volume
+            "Update",                    // System update volume
+            "Data",                      // System data volume (if separate)
+            "Install"                    // Installation volumes
+        ]
+        
+        let volumeLower = volume.lowercased()
+        
+        for pattern in skipPatterns {
+            if volumeLower.contains(pattern.lowercased()) {
+                return true
+            }
+        }
+        
+        return false
     }
 }
