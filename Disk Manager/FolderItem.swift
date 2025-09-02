@@ -64,10 +64,11 @@ class DiskAnalyzer: ObservableObject {
     
     private var scanTask: Task<Void, Never>?
     private var scanStartTime: Date?
-    private var totalItemsToScan: Int = 0
-    private var itemsScanned: Int = 0
-    private var directoriesCompleted: Int = 0
-    private var totalDirectories: Int = 0
+    private var totalFilesProcessed: Int = 0
+    private var totalBytesProcessed: Int64 = 0
+    private var estimatedTotalFiles: Int = 0
+    private var lastProgressUpdate: Date = Date()
+    private var filesProcessedSinceLastUpdate: Int = 0
     
     // Complete folder tree for instant navigation
     private var folderTree: [String: [FolderItem]] = [:]
@@ -153,7 +154,10 @@ class DiskAnalyzer: ObservableObject {
         await MainActor.run {
             self.scanProgress = "Initializing disk analysis..."
             self.scanProgressPercentage = 0.0
-            self.directoriesCompleted = 0
+            self.totalFilesProcessed = 0
+            self.totalBytesProcessed = 0
+            self.estimatedTotalFiles = 0
+            self.lastProgressUpdate = Date()
         }
         
         // Major system directories to show at root level
@@ -179,11 +183,6 @@ class DiskAnalyzer: ObservableObject {
             }
         }
         
-        // Set total directories for progress tracking
-        await MainActor.run {
-            self.totalDirectories = rootDirectories.count
-        }
-        
         // Use actor-isolated approach for thread safety
         return await withTaskGroup(of: FolderItem?.self) { group in
             var items: [FolderItem] = []
@@ -195,24 +194,12 @@ class DiskAnalyzer: ObservableObject {
                 var isDirectory: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory),
                       isDirectory.boolValue else {
-                    await MainActor.run {
-                        self.directoriesCompleted += 1
-                        self.updateProgress()
-                    }
                     continue
                 }
                 
                 // Build complete recursive tree for this directory
                 group.addTask { [weak self] in
-                    let result = await self?.buildFolderWithCompleteChildren(url: url, maxDepth: 3)
-                    
-                    // Update progress after completing each directory
-                    await MainActor.run {
-                        self?.directoriesCompleted += 1
-                        self?.updateProgress()
-                    }
-                    
-                    return result
+                    return await self?.buildFolderWithCompleteChildren(url: url, maxDepth: 3)
                 }
             }
             
@@ -261,8 +248,6 @@ class DiskAnalyzer: ObservableObject {
             
             // Process immediate children for display
             var children: [FolderItem] = []
-            let totalChildren = contents.count
-            var processedChildren = 0
             
             for childURL in contents {
                 do {
@@ -304,18 +289,9 @@ class DiskAnalyzer: ObservableObject {
                     )
                     
                     children.append(childItem)
-                    processedChildren += 1
-                    
-                    // Update progress every 50 items or if it's a major directory
-                    if processedChildren % 50 == 0 || url.path.hasPrefix("/System") || url.path.hasPrefix("/Users") {
-                        await MainActor.run {
-                            self.scanProgress = "Analyzing \(url.lastPathComponent): \(processedChildren)/\(totalChildren) items..."
-                        }
-                    }
                     
                 } catch {
                     // Skip inaccessible items
-                    processedChildren += 1
                     continue
                 }
             }
