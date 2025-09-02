@@ -99,9 +99,9 @@ struct RingSegment: View {
 #Preview {
     RingsChart(
         items: [
-            FolderItem(name: "Documents", path: "/Users/test/Documents", size: 1000000000, itemCount: 100, lastModified: Date(), isDirectory: true),
-            FolderItem(name: "Pictures", path: "/Users/test/Pictures", size: 500000000, itemCount: 50, lastModified: Date(), isDirectory: true),
-            FolderItem(name: "Downloads", path: "/Users/test/Downloads", size: 300000000, itemCount: 30, lastModified: Date(), isDirectory: true)
+            FolderItem(name: "Documents", path: "/Users/test/Documents", size: 1000000000, isDirectory: true, itemCount: 100, lastModified: Date()),
+            FolderItem(name: "Pictures", path: "/Users/test/Pictures", size: 500000000, isDirectory: true, itemCount: 50, lastModified: Date()),
+            FolderItem(name: "Downloads", path: "/Users/test/Downloads", size: 300000000, isDirectory: true, itemCount: 30, lastModified: Date())
         ],
         totalSize: 1800000000
     )
