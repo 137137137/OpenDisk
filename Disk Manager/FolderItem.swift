@@ -52,6 +52,15 @@ func openDirectoryFd(path: String) -> Int32? {
     }
 }
 
+// Scoped file descriptor management - guarantees closure
+@inline(__always)
+func withDirectoryFD<R>(path: String, flags: Int32 = O_RDONLY, _ body: (Int32) async throws -> R) async throws -> R {
+    let fd = path.withCString { open($0, flags) }
+    guard fd >= 0 else { throw POSIXError(.init(rawValue: errno)!) }
+    defer { close(fd) }
+    return try await body(fd)
+}
+
 // Check system file descriptor limits
 func getSystemFDLimit() -> Int {
     var rlim = rlimit()
@@ -609,7 +618,6 @@ private func isPathSafeForOptimizedScan(_ path: String) -> Bool {
 
 // Work item for single-pass directory scan
 struct DirectoryWorkItem {
-    let dirFd: Int32
     let path: String
     let depth: Int
     let parentId: UUID?
@@ -644,7 +652,6 @@ actor WorkerPool {
     private var directoryNodes: [UUID: DirectoryNode] = [:]
     private var globalSeenInodes: Set<DevIno> = Set()
     private var totalUsage = DiskUsage()
-    private var openFileDescriptors: Set<Int32> = Set()  // Track all open FDs
     
     init(maxWorkers: Int = 4) {  // Conservative limit to prevent FD exhaustion
         let systemLimit = getSystemFDLimit()
@@ -656,16 +663,11 @@ actor WorkerPool {
     
     func addWork(_ item: DirectoryWorkItem) {
         workQueue.append(item)
-        openFileDescriptors.insert(item.dirFd)
     }
     
     func processWork() async throws -> (directoryNodes: [UUID: DirectoryNode], totalUsage: DiskUsage) {
         defer {
-            // Emergency cleanup: close any remaining open FDs
-            for fd in openFileDescriptors {
-                close(fd)
-            }
-            openFileDescriptors.removeAll()
+            // No cleanup needed - FDs are scoped within processWorkItem
         }
         
         return await withTaskGroup(of: Void.self) { group in
@@ -691,89 +693,86 @@ actor WorkerPool {
     
     private func processWorkItem(_ workItem: DirectoryWorkItem) async {
         defer {
-            // Always close the FD and remove from tracking
-            close(workItem.dirFd)
-            openFileDescriptors.remove(workItem.dirFd)
             activeWorkers -= 1
         }
         
         do {
-            // Get directory entries using getattrlistbulk
-            let bulkEntries = try optimizedBulkList(dirFd: workItem.dirFd)
-            
-            // Create directory node for this directory
-            let dirNode = DirectoryNode(
-                id: workItem.id,
-                path: workItem.path,
-                name: URL(fileURLWithPath: workItem.path).lastPathComponent,
-                parentId: workItem.parentId
-            )
-            
-            var childItems: [FolderItem] = []
-            var localDirSize: Int64 = 0
-            var localItemCount: Int = 0
-            var childWorkItems: [DirectoryWorkItem] = []
-            
-            for entry in bulkEntries {
-                let entryName = entry.actualName
+            try await withDirectoryFD(path: workItem.path) { dirFd in
+                // Get directory entries using getattrlistbulk
+                let bulkEntries = try optimizedBulkList(dirFd: dirFd)
                 
-                // Skip hidden and system files/directories 
-                if entryName.hasPrefix(".") || entryName == "lost+found" {
-                    continue
-                }
+                // Create directory node for this directory
+                let dirNode = DirectoryNode(
+                    id: workItem.id,
+                    path: workItem.path,
+                    name: URL(fileURLWithPath: workItem.path).lastPathComponent,
+                    parentId: workItem.parentId
+                )
                 
-                let itemPath = (workItem.path as NSString).appendingPathComponent(entryName)
-                let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.fileId)
+                var childItems: [FolderItem] = []
+                var localDirSize: Int64 = 0
+                var localItemCount: Int = 0
+                var childWorkItems: [DirectoryWorkItem] = []
                 
-                // Skip if we've seen this inode globally (hard link deduplication)
-                if entry.needsHardlinkDedup && globalSeenInodes.contains(devIno) {
-                    continue
-                }
-                if entry.needsHardlinkDedup {
-                    globalSeenInodes.insert(devIno)
-                }
-                
-                if entry.isDir {
-                    // For directories, prepare work item for later processing
-                    // Limit directory depth to prevent FD exhaustion
-                    if workItem.depth < 10, let childDirFd = openDirectoryFd(path: itemPath) {
-                        let childWorkItem = DirectoryWorkItem(
-                            dirFd: childDirFd,
-                            path: itemPath,
-                            depth: workItem.depth + 1,
-                            parentId: workItem.id
-                        )
-                        childWorkItems.append(childWorkItem)
-                    }
-                } else {
-                    // For files, accumulate size immediately
-                    localDirSize += entry.allocSize
-                    localItemCount += 1
+                for entry in bulkEntries {
+                    let entryName = entry.actualName
                     
-                    // Create file item
-                    let fileItem = FolderItem(
-                        name: entryName,
-                        path: itemPath,
-                        size: entry.allocSize,
-                        itemCount: 1,
-                        lastModified: entry.modificationDate,
-                        isDirectory: false
-                    )
-                    childItems.append(fileItem)
+                    // Skip hidden and system files/directories 
+                    if entryName.hasPrefix(".") || entryName == "lost+found" {
+                        continue
+                    }
+                    
+                    let itemPath = (workItem.path as NSString).appendingPathComponent(entryName)
+                    let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.fileId)
+                    
+                    // Skip if we've seen this inode globally (hard link deduplication)
+                    if entry.needsHardlinkDedup && globalSeenInodes.contains(devIno) {
+                        continue
+                    }
+                    if entry.needsHardlinkDedup {
+                        globalSeenInodes.insert(devIno)
+                    }
+                    
+                    if entry.isDir {
+                        // For directories, prepare work item for later processing
+                        // Limit directory depth to prevent FD exhaustion
+                        if workItem.depth < 10 {
+                            let childWorkItem = DirectoryWorkItem(
+                                path: itemPath,
+                                depth: workItem.depth + 1,
+                                parentId: workItem.id
+                            )
+                            childWorkItems.append(childWorkItem)
+                        }
+                    } else {
+                        // For files, accumulate size immediately
+                        localDirSize += entry.allocSize
+                        localItemCount += 1
+                        
+                        // Create file item
+                        let fileItem = FolderItem(
+                            name: entryName,
+                            path: itemPath,
+                            size: entry.allocSize,
+                            itemCount: 1,
+                            lastModified: entry.modificationDate,
+                            isDirectory: false
+                        )
+                        childItems.append(fileItem)
+                    }
                 }
+                
+                // Update directory node with file data
+                dirNode.size = localDirSize
+                dirNode.itemCount = localItemCount
+                dirNode.children = childItems.sorted { $0.size > $1.size }
+                
+                // Add to directory nodes and work queue atomically
+                await addProcessedNode(dirNode)
+                await addChildWork(childWorkItems)
             }
-            
-            // Update directory node with file data
-            dirNode.size = localDirSize
-            dirNode.itemCount = localItemCount
-            dirNode.children = childItems.sorted { $0.size > $1.size }
-            
-            // Add to directory nodes and work queue atomically
-            await addProcessedNode(dirNode)
-            await addChildWork(childWorkItems)
-            
         } catch {
-            // Error is handled by defer block which will close FD
+            // Error handled by withDirectoryFD cleanup
         }
     }
     
@@ -782,10 +781,6 @@ actor WorkerPool {
     }
     
     private func addChildWork(_ items: [DirectoryWorkItem]) async {
-        // Track newly opened FDs
-        for item in items {
-            openFileDescriptors.insert(item.dirFd)
-        }
         workQueue.append(contentsOf: items)
     }
 }
@@ -797,32 +792,19 @@ func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderIt
         throw POSIXError(.EINVAL)  // Force fallback to traditional method
     }
     
-    guard let rootDirFd = openDirectoryFd(path: rootPath) else {
-        throw POSIXError(.ENOENT)
-    }
-    
     // Create bounded worker pool for controlled I/O parallelism
     let workerPool = WorkerPool(maxWorkers: 4)  // Reduce to 4 to prevent FD exhaustion
     
     var result: (directoryNodes: [UUID: DirectoryNode], totalUsage: DiskUsage)
     var directoryNodes: [UUID: DirectoryNode]
     
-    do {
-        // Add root work item
-        let rootWorkItem = DirectoryWorkItem(dirFd: rootDirFd, path: rootPath, depth: 0, parentId: nil)
-        await workerPool.addWork(rootWorkItem)
-        
-        // Process all work with bounded parallelism
-        result = try await workerPool.processWork()
-        directoryNodes = result.directoryNodes
-        
-        // Root FD is managed by WorkerPool, don't close it here
-        
-    } catch {
-        // Ensure root FD is closed on error
-        close(rootDirFd)
-        throw error
-    }
+    // Add root work item
+    let rootWorkItem = DirectoryWorkItem(path: rootPath, depth: 0, parentId: nil)
+    await workerPool.addWork(rootWorkItem)
+    
+    // Process all work with bounded parallelism
+    result = try await workerPool.processWork()
+    directoryNodes = result.directoryNodes
     
     // Bottom-up aggregation: compute directory sizes from leaves to root
     bottomUpAggregation(directoryNodes: &directoryNodes)
