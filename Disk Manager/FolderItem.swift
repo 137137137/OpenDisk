@@ -66,6 +66,8 @@ class DiskAnalyzer: ObservableObject {
     private var scanStartTime: Date?
     private var totalItemsToScan: Int = 0
     private var itemsScanned: Int = 0
+    private var directoriesCompleted: Int = 0
+    private var totalDirectories: Int = 0
     
     // Complete folder tree for instant navigation
     private var folderTree: [String: [FolderItem]] = [:]
@@ -136,10 +138,22 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func buildCompleteTreeAsync() async -> [FolderItem] {
-        // For now, proceed with scan regardless of FDA detection
-        // We'll let permission errors surface naturally during enumeration
+        // Check Full Disk Access status first
+        let hasFDA = hasFullDiskAccess()
+        
+        if !hasFDA {
+            // Show FDA requirement message with guidance
+            await MainActor.run {
+                self.scanProgress = "Full Disk Access required for complete analysis"
+                self.isScanning = false
+            }
+            return []
+        }
+        
         await MainActor.run {
-            self.scanProgress = "Building complete directory tree..."
+            self.scanProgress = "Initializing disk analysis..."
+            self.scanProgressPercentage = 0.0
+            self.directoriesCompleted = 0
         }
         
         // Major system directories to show at root level
@@ -165,6 +179,11 @@ class DiskAnalyzer: ObservableObject {
             }
         }
         
+        // Set total directories for progress tracking
+        await MainActor.run {
+            self.totalDirectories = rootDirectories.count
+        }
+        
         // Use actor-isolated approach for thread safety
         return await withTaskGroup(of: FolderItem?.self) { group in
             var items: [FolderItem] = []
@@ -176,12 +195,24 @@ class DiskAnalyzer: ObservableObject {
                 var isDirectory: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory),
                       isDirectory.boolValue else {
+                    await MainActor.run {
+                        self.directoriesCompleted += 1
+                        self.updateProgress()
+                    }
                     continue
                 }
                 
                 // Build complete recursive tree for this directory
                 group.addTask { [weak self] in
-                    await self?.buildFolderWithCompleteChildren(url: url, maxDepth: 3)
+                    let result = await self?.buildFolderWithCompleteChildren(url: url, maxDepth: 3)
+                    
+                    // Update progress after completing each directory
+                    await MainActor.run {
+                        self?.directoriesCompleted += 1
+                        self?.updateProgress()
+                    }
+                    
+                    return result
                 }
             }
             
@@ -230,6 +261,8 @@ class DiskAnalyzer: ObservableObject {
             
             // Process immediate children for display
             var children: [FolderItem] = []
+            let totalChildren = contents.count
+            var processedChildren = 0
             
             for childURL in contents {
                 do {
@@ -271,9 +304,18 @@ class DiskAnalyzer: ObservableObject {
                     )
                     
                     children.append(childItem)
+                    processedChildren += 1
+                    
+                    // Update progress every 50 items or if it's a major directory
+                    if processedChildren % 50 == 0 || url.path.hasPrefix("/System") || url.path.hasPrefix("/Users") {
+                        await MainActor.run {
+                            self.scanProgress = "Analyzing \(url.lastPathComponent): \(processedChildren)/\(totalChildren) items..."
+                        }
+                    }
                     
                 } catch {
                     // Skip inaccessible items
+                    processedChildren += 1
                     continue
                 }
             }
@@ -460,6 +502,41 @@ class DiskAnalyzer: ObservableObject {
         }
     }
     
+    private func updateProgress() {
+        guard totalDirectories > 0 else { return }
+        
+        let progressPercent = Double(directoriesCompleted) / Double(totalDirectories) * 100.0
+        scanProgressPercentage = min(progressPercent, 100.0)
+        
+        // Update progress message
+        if directoriesCompleted < totalDirectories {
+            scanProgress = "Analyzing \(directoriesCompleted)/\(totalDirectories) directories..."
+        } else {
+            scanProgress = "Finalizing analysis..."
+        }
+        
+        // Calculate ETA
+        if let startTime = scanStartTime, directoriesCompleted > 0 {
+            let elapsed = Date().timeIntervalSince(startTime)
+            let rate = Double(directoriesCompleted) / elapsed
+            
+            if rate > 0 && directoriesCompleted < totalDirectories {
+                let remaining = Double(totalDirectories - directoriesCompleted) / rate
+                
+                if remaining > 60 {
+                    let minutes = Int(remaining / 60)
+                    estimatedTimeRemaining = "\(minutes) min remaining"
+                } else if remaining > 1 {
+                    estimatedTimeRemaining = "\(Int(remaining)) sec remaining"
+                } else {
+                    estimatedTimeRemaining = "Almost done..."
+                }
+            } else {
+                estimatedTimeRemaining = ""
+            }
+        }
+    }
+    
     private func calculatePercentages() {
         guard totalSize > 0 else { return }
         for i in rootItems.indices {
@@ -468,27 +545,32 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func hasFullDiskAccess() -> Bool {
-        // Simple test - try to read a known protected directory
+        // Test FDA by attempting to access TCC database and other protected locations
         let testPaths = [
-            "/Library/Application Support/com.apple.TCC",
+            "/Library/Application Support/com.apple.TCC/TCC.db",
             "/private/var/db/dslocal/nodes/Default/users",
-            "/System/Library/CoreServices/SystemUIServer.app"
+            "/System/Library/CoreServices"
         ]
         
         for testPath in testPaths {
-            if FileManager.default.isReadableFile(atPath: testPath) {
-                return true
+            do {
+                // For files, try to read attributes
+                // For directories, try to list contents  
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: testPath, isDirectory: &isDirectory) {
+                    if isDirectory.boolValue {
+                        let _ = try FileManager.default.contentsOfDirectory(atPath: testPath)
+                    } else {
+                        let _ = try FileManager.default.attributesOfItem(atPath: testPath)
+                    }
+                    return true
+                }
+            } catch {
+                continue
             }
         }
         
-        // Alternative: try reading directory contents
-        do {
-            let _ = try FileManager.default.contentsOfDirectory(atPath: "/private/var/db")
-            return true
-        } catch {
-            // Still try one more simple test
-            return FileManager.default.isReadableFile(atPath: "/private/var/db/dslocal")
-        }
+        return false
     }
     
     func cancelScan() {
