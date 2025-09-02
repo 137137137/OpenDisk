@@ -199,12 +199,14 @@ func fileManagerEnumeratorScan(path: String) async throws -> (items: [FolderItem
                     usage.addSize(size)
                     usage.addItem()
                     
-                    // Process based on whether it's in root directory
+                    // Track all files and their containing directories
                     let parentURL = fileURL.deletingLastPathComponent()
                     
                     if isDirectory && parentURL == rootURL {
-                        // Top-level directory
-                        directoryNodes[fileURL.path] = (size: 0, count: 0, modTime: Date.distantPast)
+                        // Top-level directory - initialize if not exists
+                        if directoryNodes[fileURL.path] == nil {
+                            directoryNodes[fileURL.path] = (size: 0, count: 0, modTime: Date.distantPast)
+                        }
                     } else if !isDirectory && parentURL == rootURL {
                         // File directly in root
                         let fileItem = FolderItem(
@@ -217,15 +219,24 @@ func fileManagerEnumeratorScan(path: String) async throws -> (items: [FolderItem
                         )
                         items.append(fileItem)
                     } else if !isDirectory {
-                        // File in subdirectory - add to parent directory size
-                        let grandparentURL = parentURL.deletingLastPathComponent()
-                        if grandparentURL == rootURL {
-                            let parentPath = parentURL.path
-                            if var dirNode = directoryNodes[parentPath] {
-                                dirNode.size += size
-                                dirNode.count += 1
-                                directoryNodes[parentPath] = dirNode
+                        // File in subdirectory - find which top-level directory it belongs to
+                        var currentURL = parentURL
+                        while currentURL != rootURL && currentURL.path != "/" {
+                            let parent = currentURL.deletingLastPathComponent()
+                            if parent == rootURL {
+                                // This is a top-level directory
+                                let topLevelPath = currentURL.path
+                                if var dirNode = directoryNodes[topLevelPath] {
+                                    dirNode.size += size
+                                    dirNode.count += 1
+                                    directoryNodes[topLevelPath] = dirNode
+                                } else {
+                                    // Initialize if not exists
+                                    directoryNodes[topLevelPath] = (size: size, count: 1, modTime: Date.distantPast)
+                                }
+                                break
                             }
+                            currentURL = parent
                         }
                     }
                 } catch {
@@ -335,22 +346,30 @@ func ftsDirectoryScan(path: String) async throws -> (items: [FolderItem], totalU
                 usage.addSize(size)
                 usage.addItem()
                 
-                // Find which root-level directory this file belongs to
-                let parentDir = (entryPath as NSString).deletingLastPathComponent
-                
-                // Update directory node if this is directly in root
-                if (parentDir as NSString).deletingLastPathComponent == rootPath {
-                    if var dirNode = directoryNodes[parentDir] {
-                        dirNode.size += size
-                        dirNode.count += 1
-                        if modTime > dirNode.modTime {
-                            dirNode.modTime = modTime
+                // Find which root-level directory this file belongs to by traversing up
+                var currentPath = (entryPath as NSString).deletingLastPathComponent
+                while currentPath != rootPath && currentPath != "/" {
+                    let parentPath = (currentPath as NSString).deletingLastPathComponent
+                    if parentPath == rootPath {
+                        // This is a root-level directory, accumulate the file size here
+                        if var dirNode = directoryNodes[currentPath] {
+                            dirNode.size += size
+                            dirNode.count += 1
+                            if modTime > dirNode.modTime {
+                                dirNode.modTime = modTime
+                            }
+                            directoryNodes[currentPath] = dirNode
+                        } else {
+                            // Initialize if not exists
+                            directoryNodes[currentPath] = (size: size, count: 1, modTime: modTime)
                         }
-                        directoryNodes[parentDir] = dirNode
+                        break
                     }
+                    currentPath = parentPath
                 }
                 
                 // Create file item if directly in root
+                let parentDir = (entryPath as NSString).deletingLastPathComponent
                 if parentDir == rootPath {
                     let fileItem = FolderItem(
                         name: name,
@@ -863,7 +882,15 @@ struct FolderItem: Identifiable, Comparable {
     var children: [FolderItem] = []
     
     var formattedSize: String {
-        ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        formatter.allowedUnits = [.useAll]
+        formatter.formattingContext = .standalone
+        formatter.zeroPadsFractionDigits = false
+        return formatter.string(fromByteCount: size).replacingOccurrences(of: ",", with: "")
     }
     
     var formattedItemCount: String {
@@ -2303,7 +2330,13 @@ class DiskAnalyzer: ObservableObject {
     private func formatBytes(_ bytes: Int64) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
+        formatter.allowsNonnumericFormatting = false
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        formatter.allowedUnits = [.useAll]
+        formatter.formattingContext = .standalone
+        formatter.zeroPadsFractionDigits = false
+        return formatter.string(fromByteCount: bytes).replacingOccurrences(of: ",", with: "")
     }
     
     private func calculatePercentages() {
