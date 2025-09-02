@@ -43,41 +43,158 @@ func getAllocatedSize(for path: String) -> Int64 {
 func openDirectoryFd(path: String) -> Int32? {
     return path.withCString { pathCStr in
         let fd = open(pathCStr, O_RDONLY)
+        if fd < 0 {
+            // Log specific error for debugging
+            let error = String(cString: strerror(errno))
+            print("Failed to open directory '\(path)': \(error)")
+        }
         return fd >= 0 ? fd : nil
     }
 }
 
-func getStatAt(dirFd: Int32, name: String) -> (dev: UInt64, ino: UInt64, blocks: Int64)? {
+// Check system file descriptor limits
+func getSystemFDLimit() -> Int {
+    var rlim = rlimit()
+    guard getrlimit(RLIMIT_NOFILE, &rlim) == 0 else {
+        return 256  // Conservative default
+    }
+    return min(Int(rlim.rlim_cur), 1024)  // Cap at reasonable limit
+}
+
+func getStatAt(dirFd: Int32, name: String) -> (dev: UInt64, ino: UInt64, blocks: Int64, isDir: Bool, isReg: Bool)? {
     return name.withCString { nameCStr in
         var stat = Darwin.stat()
         guard fstatat(dirFd, nameCStr, &stat, AT_SYMLINK_NOFOLLOW) == 0 else { return nil }
-        return (dev: UInt64(stat.st_dev), ino: stat.st_ino, blocks: Int64(stat.st_blocks))
+        let isDir = (stat.st_mode & S_IFMT) == S_IFDIR
+        let isReg = (stat.st_mode & S_IFMT) == S_IFREG
+        return (dev: UInt64(stat.st_dev), ino: stat.st_ino, blocks: Int64(stat.st_blocks), isDir: isDir, isReg: isReg)
     }
+}
+
+// Fast readdir fallback when getattrlistbulk fails
+struct ReadDirEntry {
+    let name: String
+    let isDir: Bool
+    let isReg: Bool
+    let allocSize: Int64
+    let deviceId: UInt64
+    let fileId: UInt64
+    let nlink: UInt32
+}
+
+func readDirectoryWithFstat(dirFd: Int32) throws -> [ReadDirEntry] {
+    // Duplicate the file descriptor since fdopendir takes ownership
+    let dupFd = dup(dirFd)
+    guard dupFd >= 0 else {
+        throw POSIXError(.EBADF)
+    }
+    
+    guard let dir = fdopendir(dupFd) else {
+        close(dupFd)
+        throw POSIXError(.EBADF)
+    }
+    defer { closedir(dir) }
+    
+    var entries: [ReadDirEntry] = []
+    entries.reserveCapacity(1000)
+    
+    while let dirent = readdir(dir) {
+        let namePtr = withUnsafePointer(to: &dirent.pointee.d_name) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: 256) { $0 }
+        }
+        
+        let name = String(cString: namePtr)
+        if name == "." || name == ".." { continue }
+        
+        // Use d_type if available, otherwise fall back to fstatat
+        var isDir = false
+        var isReg = false
+        var allocSize: Int64 = 0
+        var deviceId: UInt64 = 0
+        var fileId: UInt64 = 0
+        var nlink: UInt32 = 1
+        
+        if dirent.pointee.d_type != DT_UNKNOWN {
+            // Use d_type for file type (fast path)
+            isDir = dirent.pointee.d_type == DT_DIR
+            isReg = dirent.pointee.d_type == DT_REG
+            
+            // Still need fstatat for size, inode, etc.
+            if let stat = getStatAt(dirFd: dirFd, name: name) {
+                deviceId = stat.dev
+                fileId = stat.ino
+                allocSize = stat.blocks * 512
+                nlink = UInt32(stat.blocks > 0 ? 1 : 0) // Simplified nlink
+            }
+        } else {
+            // Fall back to fstatat for everything
+            if let stat = getStatAt(dirFd: dirFd, name: name) {
+                isDir = stat.isDir
+                isReg = stat.isReg
+                deviceId = stat.dev
+                fileId = stat.ino
+                allocSize = stat.blocks * 512
+                nlink = 1
+            }
+        }
+        
+        let entry = ReadDirEntry(
+            name: name,
+            isDir: isDir,
+            isReg: isReg,
+            allocSize: allocSize,
+            deviceId: deviceId,
+            fileId: fileId,
+            nlink: nlink
+        )
+        entries.append(entry)
+    }
+    
+    return entries
 }
 
 // Optimized entry with all metadata from getattrlistbulk
 struct OptimizedBulkEntry {
-    let name: UnsafeRawBufferPointer  // Keep as buffer slice until needed
+    let name: String  // Copy name immediately to avoid dangling pointer
     let isDir: Bool
     let isSymlink: Bool
     let allocSize: Int64
     let deviceId: UInt32
     let fileId: UInt64
-    let modTime: UInt32
+    let modTime: timespec  // Use proper timespec instead of UInt32
     let nlink: UInt32
     let parentDirFd: Int32
     
     var actualName: String {
-        String(bytes: name, encoding: .utf8) ?? ""
+        name
     }
     
     var needsHardlinkDedup: Bool {
         nlink > 1
     }
+    
+    var modificationDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(modTime.tv_sec) + TimeInterval(modTime.tv_nsec) / 1_000_000_000)
+    }
 }
 
-// High-performance bulk metadata using getattrlistbulk(2) - gets ALL needed attributes in one call
+// High-performance bulk metadata using getattrlistbulk(2) with readdir fallback
 func optimizedBulkList(dirFd: Int32) throws -> [OptimizedBulkEntry] {
+    // First try getattrlistbulk for maximum performance
+    do {
+        return try getattrlistbulkScan(dirFd: dirFd)
+    } catch {
+        // Fall back to readdir + fstatat for compatibility
+        do {
+            return try readDirFallback(dirFd: dirFd)
+        } catch {
+            throw error
+        }
+    }
+}
+
+// Primary fast path using getattrlistbulk(2) 
+func getattrlistbulkScan(dirFd: Int32) throws -> [OptimizedBulkEntry] {
     var attrList = attrlist()
     attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
     // Request ALL needed attributes in one call - no more separate lstat/stat calls
@@ -115,6 +232,36 @@ func optimizedBulkList(dirFd: Int32) throws -> [OptimizedBulkEntry] {
     return result
 }
 
+// Fallback using readdir + fstatat for compatibility
+func readDirFallback(dirFd: Int32) throws -> [OptimizedBulkEntry] {
+    let readdirEntries = try readDirectoryWithFstat(dirFd: dirFd)
+    
+    var result: [OptimizedBulkEntry] = []
+    result.reserveCapacity(readdirEntries.count)
+    
+    let currentTime = timespec(tv_sec: time_t(Date().timeIntervalSince1970), tv_nsec: 0)
+    
+    for entry in readdirEntries {
+        // Skip symlinks consistently 
+        if !entry.isDir && !entry.isReg { continue }
+        
+        let optimizedEntry = OptimizedBulkEntry(
+            name: entry.name,
+            isDir: entry.isDir,
+            isSymlink: false, // We already filtered out symlinks
+            allocSize: entry.isReg ? entry.allocSize : 0,
+            deviceId: UInt32(entry.deviceId),
+            fileId: entry.fileId,
+            modTime: currentTime, // Fallback: use current time
+            nlink: entry.nlink,
+            parentDirFd: dirFd
+        )
+        result.append(optimizedEntry)
+    }
+    
+    return result
+}
+
 // Optimized attribute buffer parser - gets all attributes in one pass, no extra syscalls
 private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDirFd: Int32) -> OptimizedBulkEntry? {
     guard offset + 4 <= buffer.count else { return nil }
@@ -131,10 +278,10 @@ private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDir
         var objType: UInt32 = 0
         var deviceId: UInt32 = 0
         var fileId: UInt64 = 0
-        var modTime: UInt32 = 0
+        var modTime: timespec = timespec()
         var nlink: UInt32 = 1
         var allocSize: Int64 = 0
-        var nameBuffer: UnsafeRawBufferPointer = UnsafeRawBufferPointer(start: nil, count: 0)
+        var nameString: String = ""
         
         // ATTR_CMN_OBJTYPE
         guard cursor + 4 <= recordEnd else { return nil }
@@ -152,13 +299,14 @@ private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDir
         fileId = rawBuffer.load(fromByteOffset: cursor, as: UInt64.self)
         cursor += 8
         
-        // ATTR_CMN_MODTIME
-        guard cursor + 4 <= recordEnd else { return nil }
-        modTime = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
-        cursor += 4
+        // ATTR_CMN_MODTIME (timespec: 8-byte aligned)
+        cursor = (cursor + 7) & ~7
+        guard cursor + MemoryLayout<timespec>.size <= recordEnd else { return nil }
+        modTime = rawBuffer.load(fromByteOffset: cursor, as: timespec.self)
+        cursor += MemoryLayout<timespec>.size
         
-        // NLINK not available via getattrlistbulk on macOS, assume nlink = 1 for simplicity
-        nlink = 1
+        // NLINK not available via getattrlistbulk on macOS, use hardcoded value
+        nlink = 1  // Most files have nlink=1, hardlinks are rare
         
         // ATTR_FILE_ALLOCSIZE (8-byte aligned, only present for files)
         let isFile = objType == UInt32(VREG.rawValue)
@@ -178,10 +326,11 @@ private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDir
         let nameLength = Int(nameRef.attr_length)
         guard nameOffset + nameLength <= buffer.count else { return nil }
         
-        // Keep name as buffer slice - don't convert to String until needed
+        // Copy name immediately to avoid dangling pointer issues
         if let baseAddr = rawBuffer.baseAddress {
             let namePtr = baseAddr.advanced(by: nameOffset)
-            nameBuffer = UnsafeRawBufferPointer(start: namePtr, count: nameLength)
+            let nameBuffer = UnsafeRawBufferPointer(start: namePtr, count: nameLength - 1) // -1 to exclude null terminator
+            nameString = String(decoding: nameBuffer, as: UTF8.self)
         }
         
         offset = recordEnd
@@ -195,7 +344,7 @@ private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDir
         }
         
         return OptimizedBulkEntry(
-            name: nameBuffer,
+            name: nameString,
             isDir: isDir,
             isSymlink: isSymlink,
             allocSize: allocSize,
@@ -401,9 +550,31 @@ struct FolderItem: Identifiable, Comparable {
 // MARK: - Single-Walk Bottom-Up Aggregation (eliminates N² re-walks)
 
 
+// Check filesystem type using statfs (POSIX) instead of URLResourceValues
+func getFilesystemType(path: String) -> String? {
+    return path.withCString { pathCStr in
+        var fs = statfs()
+        guard statfs(pathCStr, &fs) == 0 else { return nil }
+        return withUnsafePointer(to: fs.f_fstypename) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: 16) { cStr in
+                String(cString: cStr)
+            }
+        }
+    }
+}
+
 // Check if a path is safe for getattrlistbulk usage
 private func isPathSafeForOptimizedScan(_ path: String) -> Bool {
-    // Be very conservative - only use optimized scan on well-known safe directories
+    // Check filesystem type using POSIX statfs (faster than URLResourceValues)
+    guard let fsType = getFilesystemType(path: path) else { return false }
+    
+    // Only use optimized scan on APFS and HFS+ filesystems
+    let safeFSTypes = ["apfs", "hfs"]
+    if !safeFSTypes.contains(fsType.lowercased()) {
+        return false
+    }
+    
+    // Be conservative - only use optimized scan on well-known safe directories
     let safePaths = [
         "/Applications", "/Users", "/Library", "/usr/local", "/opt"
     ]
@@ -433,93 +604,300 @@ private func isPathSafeForOptimizedScan(_ path: String) -> Bool {
         }
     }
     
-    // Check filesystem type - avoid getattrlistbulk on special filesystems
-    let url = URL(fileURLWithPath: path)
-    do {
-        let resourceValues = try url.resourceValues(forKeys: [
-            .volumeLocalizedFormatDescriptionKey,
-            .volumeSupportsSymbolicLinksKey
-        ])
-        
-        // Skip if filesystem doesn't support symbolic links (indication of special FS)
-        if let supportsSymlinks = resourceValues.volumeSupportsSymbolicLinks,
-           !supportsSymlinks {
-            return false
-        }
-        
-    } catch {
-        // If we can't get filesystem info, be conservative and skip optimization
-        return false
-    }
-    
     return true
 }
 
-// Optimized single-pass directory scan with proper size aggregation
+// Work item for single-pass directory scan
+struct DirectoryWorkItem {
+    let dirFd: Int32
+    let path: String
+    let depth: Int
+    let parentId: UUID?
+    let id: UUID = UUID()
+}
+
+// Directory node for bottom-up aggregation
+class DirectoryNode {
+    let id: UUID
+    let path: String
+    let name: String
+    var size: Int64 = 0
+    var itemCount: Int = 0
+    var modTime: Date = Date.distantPast
+    var children: [FolderItem] = []
+    var isCompleted = false
+    let parentId: UUID?
+    
+    init(id: UUID, path: String, name: String, parentId: UUID?) {
+        self.id = id
+        self.path = path
+        self.name = name
+        self.parentId = parentId
+    }
+}
+
+// Bounded worker pool for controlled I/O parallelism with proper FD management
+actor WorkerPool {
+    private let maxWorkers: Int
+    private var activeWorkers: Int = 0
+    private var workQueue: [DirectoryWorkItem] = []
+    private var directoryNodes: [UUID: DirectoryNode] = [:]
+    private var globalSeenInodes: Set<DevIno> = Set()
+    private var totalUsage = DiskUsage()
+    private var openFileDescriptors: Set<Int32> = Set()  // Track all open FDs
+    
+    init(maxWorkers: Int = 4) {  // Conservative limit to prevent FD exhaustion
+        let systemLimit = getSystemFDLimit()
+        // Use at most 1/4 of available FDs to leave room for other operations
+        let safeLimit = max(2, min(maxWorkers, systemLimit / 4))
+        self.maxWorkers = safeLimit
+        print("WorkerPool initialized with \(safeLimit) workers (system FD limit: \(systemLimit))")
+    }
+    
+    func addWork(_ item: DirectoryWorkItem) {
+        workQueue.append(item)
+        openFileDescriptors.insert(item.dirFd)
+    }
+    
+    func processWork() async throws -> (directoryNodes: [UUID: DirectoryNode], totalUsage: DiskUsage) {
+        defer {
+            // Emergency cleanup: close any remaining open FDs
+            for fd in openFileDescriptors {
+                close(fd)
+            }
+            openFileDescriptors.removeAll()
+        }
+        
+        return await withTaskGroup(of: Void.self) { group in
+            
+            while !workQueue.isEmpty || activeWorkers > 0 {
+                // Start new workers if we have work and capacity
+                while !workQueue.isEmpty && activeWorkers < maxWorkers {
+                    let workItem = workQueue.removeFirst()
+                    activeWorkers += 1
+                    
+                    group.addTask { [weak self] in
+                        await self?.processWorkItem(workItem)
+                    }
+                }
+                
+                // Wait for at least one worker to complete
+                await group.next()
+            }
+            
+            return (directoryNodes: directoryNodes, totalUsage: totalUsage)
+        }
+    }
+    
+    private func processWorkItem(_ workItem: DirectoryWorkItem) async {
+        defer {
+            // Always close the FD and remove from tracking
+            close(workItem.dirFd)
+            openFileDescriptors.remove(workItem.dirFd)
+            activeWorkers -= 1
+        }
+        
+        do {
+            // Get directory entries using getattrlistbulk
+            let bulkEntries = try optimizedBulkList(dirFd: workItem.dirFd)
+            
+            // Create directory node for this directory
+            let dirNode = DirectoryNode(
+                id: workItem.id,
+                path: workItem.path,
+                name: URL(fileURLWithPath: workItem.path).lastPathComponent,
+                parentId: workItem.parentId
+            )
+            
+            var childItems: [FolderItem] = []
+            var localDirSize: Int64 = 0
+            var localItemCount: Int = 0
+            var childWorkItems: [DirectoryWorkItem] = []
+            
+            for entry in bulkEntries {
+                let entryName = entry.actualName
+                
+                // Skip hidden and system files/directories 
+                if entryName.hasPrefix(".") || entryName == "lost+found" {
+                    continue
+                }
+                
+                let itemPath = (workItem.path as NSString).appendingPathComponent(entryName)
+                let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.fileId)
+                
+                // Skip if we've seen this inode globally (hard link deduplication)
+                if entry.needsHardlinkDedup && globalSeenInodes.contains(devIno) {
+                    continue
+                }
+                if entry.needsHardlinkDedup {
+                    globalSeenInodes.insert(devIno)
+                }
+                
+                if entry.isDir {
+                    // For directories, prepare work item for later processing
+                    // Limit directory depth to prevent FD exhaustion
+                    if workItem.depth < 10, let childDirFd = openDirectoryFd(path: itemPath) {
+                        let childWorkItem = DirectoryWorkItem(
+                            dirFd: childDirFd,
+                            path: itemPath,
+                            depth: workItem.depth + 1,
+                            parentId: workItem.id
+                        )
+                        childWorkItems.append(childWorkItem)
+                    }
+                } else {
+                    // For files, accumulate size immediately
+                    localDirSize += entry.allocSize
+                    localItemCount += 1
+                    
+                    // Create file item
+                    let fileItem = FolderItem(
+                        name: entryName,
+                        path: itemPath,
+                        size: entry.allocSize,
+                        itemCount: 1,
+                        lastModified: entry.modificationDate,
+                        isDirectory: false
+                    )
+                    childItems.append(fileItem)
+                }
+            }
+            
+            // Update directory node with file data
+            dirNode.size = localDirSize
+            dirNode.itemCount = localItemCount
+            dirNode.children = childItems.sorted { $0.size > $1.size }
+            
+            // Add to directory nodes and work queue atomically
+            await addProcessedNode(dirNode)
+            await addChildWork(childWorkItems)
+            
+        } catch {
+            // Error is handled by defer block which will close FD
+        }
+    }
+    
+    private func addProcessedNode(_ node: DirectoryNode) async {
+        directoryNodes[node.id] = node
+    }
+    
+    private func addChildWork(_ items: [DirectoryWorkItem]) async {
+        // Track newly opened FDs
+        for item in items {
+            openFileDescriptors.insert(item.dirFd)
+        }
+        workQueue.append(contentsOf: items)
+    }
+}
+
+// Single-pass concurrent scan with bounded worker pool (eliminates N² work)
 func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderItem], totalUsage: DiskUsage) {
     // Check if this path is safe for getattrlistbulk
     if !isPathSafeForOptimizedScan(rootPath) {
         throw POSIXError(.EINVAL)  // Force fallback to traditional method
     }
     
-    guard let dirFd = openDirectoryFd(path: rootPath) else {
+    guard let rootDirFd = openDirectoryFd(path: rootPath) else {
         throw POSIXError(.ENOENT)
     }
-    defer { close(dirFd) }
     
-    // Get immediate directory entries using getattrlistbulk
-    let bulkEntries = try optimizedBulkList(dirFd: dirFd)
+    // Create bounded worker pool for controlled I/O parallelism
+    let workerPool = WorkerPool(maxWorkers: 4)  // Reduce to 4 to prevent FD exhaustion
     
-    var items: [FolderItem] = []
-    var totalUsage = DiskUsage()
-    var seenInodes = Set<DevIno>()
+    var result: (directoryNodes: [UUID: DirectoryNode], totalUsage: DiskUsage)
+    var directoryNodes: [UUID: DirectoryNode]
     
-    for entry in bulkEntries {
-        let entryName = entry.actualName
+    do {
+        // Add root work item
+        let rootWorkItem = DirectoryWorkItem(dirFd: rootDirFd, path: rootPath, depth: 0, parentId: nil)
+        await workerPool.addWork(rootWorkItem)
         
-        // Skip hidden and system files/directories 
-        if entryName.hasPrefix(".") || entryName == "lost+found" {
-            continue
-        }
+        // Process all work with bounded parallelism
+        result = try await workerPool.processWork()
+        directoryNodes = result.directoryNodes
         
-        let itemPath = (rootPath as NSString).appendingPathComponent(entryName)
-        let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.fileId)
+        // Root FD is managed by WorkerPool, don't close it here
         
-        // Skip if we've seen this inode (hard link deduplication)
-        if seenInodes.contains(devIno) {
-            continue
-        }
-        seenInodes.insert(devIno)
-        
-        let size: Int64
-        let itemCount: Int
-        
-        if entry.isDir {
-            // For directories, recursively calculate size using traditional method
-            let subdirUsage = await traditionalDirectorySize(at: itemPath)
-            size = subdirUsage.size
-            itemCount = subdirUsage.itemCount
-        } else {
-            // For files, use the allocated size from getattrlistbulk
-            size = entry.allocSize
-            itemCount = 1
-        }
-        
-        let item = FolderItem(
-            name: entryName,
-            path: itemPath,
-            size: size,
-            itemCount: itemCount,
-            lastModified: Date(timeIntervalSince1970: TimeInterval(entry.modTime)),
-            isDirectory: entry.isDir
-        )
-        
-        items.append(item)
-        totalUsage.addSize(size)
-        totalUsage.fileCount += itemCount
+    } catch {
+        // Ensure root FD is closed on error
+        close(rootDirFd)
+        throw error
     }
     
+    // Bottom-up aggregation: compute directory sizes from leaves to root
+    bottomUpAggregation(directoryNodes: &directoryNodes)
+    
+    // Extract root directory contents as FolderItem array
+    let rootNode = directoryNodes.values.first { $0.parentId == nil }
+    guard let rootNode = rootNode else {
+        return ([], DiskUsage())
+    }
+    
+    // Create FolderItem array from root's immediate children + subdirectories
+    var items: [FolderItem] = []
+    
+    // Add files
+    items.append(contentsOf: rootNode.children)
+    
+    // Add directories
+    for (_, node) in directoryNodes {
+        if node.parentId == rootNode.id {
+            let dirItem = FolderItem(
+                name: node.name,
+                path: node.path,
+                size: node.size,
+                itemCount: node.itemCount,
+                lastModified: node.modTime,
+                isDirectory: true
+            )
+            items.append(dirItem)
+        }
+    }
+    
+    var totalUsage = DiskUsage()
+    totalUsage.totalAllocated = Int(rootNode.size)
+    totalUsage.fileCount = rootNode.itemCount
+    
     return (items.sorted { $0.size > $1.size }, totalUsage)
+}
+
+// Bottom-up aggregation to compute directory sizes
+func bottomUpAggregation(directoryNodes: inout [UUID: DirectoryNode]) {
+    // Find leaf nodes (nodes with no directory children) and work backwards
+    var processedNodes = Set<UUID>()
+    var hasChanges = true
+    
+    while hasChanges {
+        hasChanges = false
+        
+        for (nodeId, node) in directoryNodes {
+            if processedNodes.contains(nodeId) { continue }
+            
+            // Check if all child directories are processed
+            let childDirIds = directoryNodes.values.compactMap { childNode in
+                childNode.parentId == nodeId ? childNode.id : nil
+            }
+            
+            let allChildrenProcessed = childDirIds.allSatisfy { processedNodes.contains($0) }
+            
+            if allChildrenProcessed {
+                // Aggregate child directory sizes into this node
+                for childId in childDirIds {
+                    if let childNode = directoryNodes[childId] {
+                        node.size += childNode.size
+                        node.itemCount += childNode.itemCount
+                        // Update modification time to latest child
+                        if childNode.modTime > node.modTime {
+                            node.modTime = childNode.modTime
+                        }
+                    }
+                }
+                
+                processedNodes.insert(nodeId)
+                hasChanges = true
+            }
+        }
+    }
 }
 
 
