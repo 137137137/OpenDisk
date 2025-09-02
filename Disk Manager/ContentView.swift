@@ -20,7 +20,7 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Devices & Locations")
-            .frame(minWidth: 250)
+            .frame(minWidth: 280, idealWidth: 320, maxWidth: 400)
         } detail: {
             // Detail view
             if let selectedDevice = selectedDevice {
