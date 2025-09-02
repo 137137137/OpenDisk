@@ -90,7 +90,7 @@ class DiskAnalyzer: ObservableObject {
         rootItems = []
         scanProgressPercentage = 0.0
         estimatedTimeRemaining = ""
-        itemsScanned = 0
+        totalFilesProcessed = 0
         scanStartTime = Date()
         
         // For root directory scan, request full disk access
@@ -183,11 +183,14 @@ class DiskAnalyzer: ObservableObject {
             }
         }
         
+        // Create immutable copy to avoid capture issues
+        let directoriesToScan = rootDirectories
+        
         // Use actor-isolated approach for thread safety
         return await withTaskGroup(of: FolderItem?.self) { group in
             var items: [FolderItem] = []
             
-            for dirPath in rootDirectories {
+            for dirPath in directoriesToScan {
                 let url = URL(fileURLWithPath: dirPath)
                 
                 // Check if directory exists and is accessible
@@ -439,6 +442,8 @@ class DiskAnalyzer: ObservableObject {
             }
             
             var usage = DiskUsage()
+            var localFilesProcessed = 0
+            let updateInterval = 100 // Update progress every 100 files
             
             for case let url as URL in enumerator {
                 autoreleasepool {
@@ -460,11 +465,23 @@ class DiskAnalyzer: ObservableObject {
                         
                         // Count all items (files and directories)
                         usage.addItem()
+                        localFilesProcessed += 1
                         
                         // Only count regular files for size (directories are counted by their contents)
                         if resourceValues.isRegularFile == true {
                             let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
                             usage.addSize(Int64(allocatedSize))
+                        }
+                        
+                        // Update progress periodically
+                        if localFilesProcessed % updateInterval == 0 {
+                            let currentSize = usage.size
+                            let currentPath = rootURL.path
+                            Task { @MainActor [weak self] in
+                                self?.totalFilesProcessed += updateInterval
+                                self?.totalBytesProcessed = currentSize
+                                self?.updateDynamicProgress(currentPath: currentPath)
+                            }
                         }
                         
                     } catch {
@@ -474,43 +491,95 @@ class DiskAnalyzer: ObservableObject {
                 }
             }
             
+            // Final update for remaining files
+            if localFilesProcessed % updateInterval != 0 {
+                let remainingFiles = localFilesProcessed % updateInterval
+                let finalSize = usage.size
+                let finalPath = rootURL.path
+                Task { @MainActor [weak self] in
+                    self?.totalFilesProcessed += remainingFiles
+                    self?.totalBytesProcessed = finalSize
+                    self?.updateDynamicProgress(currentPath: finalPath)
+                }
+            }
+            
             return usage
         }
     }
     
-    private func updateProgress() {
-        guard totalDirectories > 0 else { return }
+    private func updateDynamicProgress(currentPath: String) {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastProgressUpdate)
         
-        let progressPercent = Double(directoriesCompleted) / Double(totalDirectories) * 100.0
-        scanProgressPercentage = min(progressPercent, 100.0)
-        
-        // Update progress message
-        if directoriesCompleted < totalDirectories {
-            scanProgress = "Analyzing \(directoriesCompleted)/\(totalDirectories) directories..."
-        } else {
-            scanProgress = "Finalizing analysis..."
-        }
-        
-        // Calculate ETA
-        if let startTime = scanStartTime, directoriesCompleted > 0 {
-            let elapsed = Date().timeIntervalSince(startTime)
-            let rate = Double(directoriesCompleted) / elapsed
+        // Dynamic estimation based on file processing rate
+        if elapsed > 0.5 && totalFilesProcessed > 0 { // Update every 0.5 seconds minimum
+            let filesPerSecond = Double(filesProcessedSinceLastUpdate) / elapsed
             
-            if rate > 0 && directoriesCompleted < totalDirectories {
-                let remaining = Double(totalDirectories - directoriesCompleted) / rate
+            // Adaptive estimation: start conservative, adjust based on actual rate
+            if estimatedTotalFiles == 0 {
+                // Initial estimate based on processing rate
+                estimatedTotalFiles = max(totalFilesProcessed * 50, 10000) // Conservative start
+            } else if filesPerSecond > 0 {
+                // Adjust estimate based on current directory
+                let pathDepth = currentPath.components(separatedBy: "/").count
+                let estimateMultiplier = pathDepth > 4 ? 2.0 : 1.5 // Deep paths likely have more files
                 
-                if remaining > 60 {
-                    let minutes = Int(remaining / 60)
-                    estimatedTimeRemaining = "\(minutes) min remaining"
-                } else if remaining > 1 {
-                    estimatedTimeRemaining = "\(Int(remaining)) sec remaining"
-                } else {
-                    estimatedTimeRemaining = "Almost done..."
-                }
-            } else {
-                estimatedTimeRemaining = ""
+                let newEstimate = Int(Double(totalFilesProcessed) * estimateMultiplier)
+                estimatedTotalFiles = max(estimatedTotalFiles, newEstimate)
             }
+            
+            // Calculate progress percentage
+            let progressPercent = min(Double(totalFilesProcessed) / Double(estimatedTotalFiles) * 100.0, 95.0)
+            scanProgressPercentage = progressPercent
+            
+            // Update progress message with current location and file count
+            let pathComponent = URL(fileURLWithPath: currentPath).lastPathComponent
+            scanProgress = "Analyzing \(pathComponent): \(formatFileCount(totalFilesProcessed)) files (\(formatBytes(totalBytesProcessed)))"
+            
+            // Calculate ETA based on file processing rate
+            if let startTime = scanStartTime, totalFilesProcessed > 100 {
+                let totalElapsed = now.timeIntervalSince(startTime)
+                let overallRate = Double(totalFilesProcessed) / totalElapsed
+                
+                if overallRate > 0 {
+                    let remainingFiles = estimatedTotalFiles - totalFilesProcessed
+                    let remainingTime = Double(remainingFiles) / overallRate
+                    
+                    if remainingTime > 120 {
+                        let minutes = Int(remainingTime / 60)
+                        estimatedTimeRemaining = "~\(minutes) min remaining"
+                    } else if remainingTime > 10 {
+                        estimatedTimeRemaining = "~\(Int(remainingTime)) sec remaining"
+                    } else {
+                        estimatedTimeRemaining = "Almost done..."
+                    }
+                } else {
+                    estimatedTimeRemaining = ""
+                }
+            }
+            
+            // Reset for next update
+            filesProcessedSinceLastUpdate = 0
+            lastProgressUpdate = now
         }
+        
+        filesProcessedSinceLastUpdate += 1
+    }
+    
+    private func formatFileCount(_ count: Int) -> String {
+        if count >= 1000000 {
+            return String(format: "%.1fM", Double(count) / 1_000_000.0)
+        } else if count >= 1000 {
+            return String(format: "%.1fK", Double(count) / 1000.0)
+        } else {
+            return "\(count)"
+        }
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
     
     private func calculatePercentages() {
