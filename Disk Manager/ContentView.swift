@@ -8,76 +8,69 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var devices: [DeviceInfo] = []
+    @StateObject private var diskUtility = DiskSpaceUtility()
+    @State private var showingDiskAnalysis = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Devices & Locations")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Spacer()
+        if showingDiskAnalysis {
+            DiskAnalysisView(rootPath: "/") {
+                showingDiskAnalysis = false
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
-            
-            Divider()
-            
-            // This Device Section
-            VStack(alignment: .leading, spacing: 0) {
+        } else {
+            VStack(spacing: 0) {
+                // Header
                 HStack {
-                    Text("This Device")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
+                    Text("Devices & Locations")
+                        .font(.title2)
+                        .fontWeight(.semibold)
                     
                     Spacer()
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
                 
-                // Device items
-                ForEach(devices) { device in
-                    DeviceRow(device: device)
+                Divider()
+                
+                // This Device Section
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("This Device")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 16)
+                            .padding(.bottom, 8)
+                        
+                        Spacer()
+                    }
+                    
+                    // Device items
+                    ForEach(diskUtility.devices) { device in
+                        DeviceRow(device: device) {
+                            if device.name == "Computer" {
+                                showingDiskAnalysis = true
+                            }
+                        }
                         .padding(.horizontal, 4)
+                    }
                 }
+                
+                Spacer()
             }
-            
-            Spacer()
-        }
-        .background(Color(NSColor.controlBackgroundColor))
-        .frame(minWidth: 400, minHeight: 300)
-        .onAppear {
-            loadDeviceInfo()
+            .background(Color(NSColor.controlBackgroundColor))
+            .frame(minWidth: 400, minHeight: 300)
+            .onAppear {
+                // DiskSpaceUtility automatically loads device info on init
+            }
         }
     }
     
-    private func loadDeviceInfo() {
-        // Simple static data first to avoid crashes
-        devices = [
-            DeviceInfo(
-                name: "Home Folder",
-                icon: "house",
-                totalStorage: 0,
-                availableStorage: 0,
-                subtitle: NSHomeDirectory()
-            ),
-            DeviceInfo(
-                name: "Computer",
-                icon: "desktopcomputer",
-                totalStorage: 1000000000000, // 1TB placeholder
-                availableStorage: 100000000000, // 100GB placeholder
-                subtitle: "1 TB Total"
-            )
-        ]
-    }
 }
 
 struct DeviceRow: View {
     let device: DeviceInfo
+    let onTap: () -> Void
     
     var body: some View {
         HStack(spacing: 12) {
@@ -139,6 +132,9 @@ struct DeviceRow: View {
         )
         .onHover { isHovering in
             // Add hover effect if needed
+        }
+        .onTapGesture {
+            onTap()
         }
     }
 }

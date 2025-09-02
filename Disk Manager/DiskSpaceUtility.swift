@@ -11,18 +11,7 @@ class DiskSpaceUtility: ObservableObject {
         DispatchQueue.global(qos: .background).async {
             var deviceList: [DeviceInfo] = []
             
-            // Get home folder info
-            let homeURL = FileManager.default.homeDirectoryForCurrentUser
-            let homeDevice = DeviceInfo(
-                name: "Home Folder",
-                icon: "house",
-                totalStorage: 0,
-                availableStorage: 0,
-                subtitle: homeURL.path
-            )
-            deviceList.append(homeDevice)
-            
-            // Get main disk info
+            // Get main disk info - only show Computer option for full disk analysis
             if let mainDiskInfo = self.getDiskSpace(for: "/") {
                 let computerDevice = DeviceInfo(
                     name: "Computer",
