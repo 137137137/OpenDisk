@@ -55,52 +55,156 @@ func getStatAt(dirFd: Int32, name: String) -> (dev: UInt64, ino: UInt64, blocks:
     }
 }
 
-// High-performance bulk metadata using getattrlistbulk(2) system call
-func bulkList(at path: String) throws -> [BulkEntry] {
-    return try path.withCString { pathCStr in
-        let fd = open(pathCStr, O_RDONLY)
-        guard fd >= 0 else {
-            throw POSIXError(.init(rawValue: errno)!)
-        }
-        defer { close(fd) }
-        
-        var attrList = attrlist()
-        attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-        // Request basic attributes only - we'll get size with separate lstat calls
-        attrList.commonattr = attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_DEVID | ATTR_CMN_FILEID)
-        
-        // Use larger buffer (256KB) for fewer syscalls
-        var buffer = [UInt8](repeating: 0, count: 256 * 1024)
-        var result: [BulkEntry] = []
-        result.reserveCapacity(1000)
-        
-        repeat {
-            let count = getattrlistbulk(fd, &attrList, &buffer, buffer.count, UInt64(FSOPT_PACK_INVAL_ATTRS))
-            guard count >= 0 else {
-                if errno == ENOENT { break }
+// Optimized entry with all metadata from getattrlistbulk
+struct OptimizedBulkEntry {
+    let name: UnsafeRawBufferPointer  // Keep as buffer slice until needed
+    let isDir: Bool
+    let isSymlink: Bool
+    let allocSize: Int64
+    let deviceId: UInt32
+    let fileId: UInt64
+    let modTime: UInt32
+    let nlink: UInt32
+    let parentDirFd: Int32
+    
+    var actualName: String {
+        String(bytes: name, encoding: .utf8) ?? ""
+    }
+    
+    var needsHardlinkDedup: Bool {
+        nlink > 1
+    }
+}
+
+// High-performance bulk metadata using getattrlistbulk(2) - gets ALL needed attributes in one call
+func optimizedBulkList(dirFd: Int32) throws -> [OptimizedBulkEntry] {
+    var attrList = attrlist()
+    attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+    // Request ALL needed attributes in one call - no more separate lstat/stat calls
+    attrList.commonattr = attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_DEVID | 
+                                     ATTR_CMN_FILEID | ATTR_CMN_MODTIME)
+    attrList.fileattr = attrgroup_t(ATTR_FILE_ALLOCSIZE)
+    
+    // Large buffer for fewer syscalls
+    var buffer = [UInt8](repeating: 0, count: 512 * 1024)
+    var result: [OptimizedBulkEntry] = []
+    result.reserveCapacity(1000)
+    
+    repeat {
+        let count = getattrlistbulk(dirFd, &attrList, &buffer, buffer.count, UInt64(FSOPT_PACK_INVAL_ATTRS))
+        guard count >= 0 else {
+            if errno == ENOENT { break }
+            // Handle common cases where getattrlistbulk doesn't work (special filesystems, etc.)
+            if errno == EINVAL || errno == ENOTDIR || errno == EACCES || errno == EPERM {
                 throw POSIXError(.init(rawValue: errno)!)
             }
-            
-            if count == 0 { break }
-            
-            var offset = 0
-            for _ in 0..<count {
-                let entryLength = buffer.withUnsafeBufferPointer { ptr in
-                    ptr.baseAddress!.advanced(by: offset).withMemoryRebound(to: UInt32.self, capacity: 1) { $0.pointee }
-                }
-                
-                guard offset + Int(entryLength) <= buffer.count else { break }
-                
-                let entryData = buffer[offset..<offset + Int(entryLength)]
-                if let entry = parseAttrBuf(Array(entryData), basePath: pathCStr) {
-                    result.append(entry)
-                }
-                
-                offset += Int(entryLength)
-            }
-        } while true
+            // For other errors, also throw to trigger fallback
+            throw POSIXError(.init(rawValue: errno)!)
+        }
         
-        return result
+        if count == 0 { break }
+        
+        var offset = 0
+        for _ in 0..<count {
+            if let entry = parseOptimizedAttrBuf(buffer: buffer, offset: &offset, parentDirFd: dirFd) {
+                result.append(entry)
+            }
+        }
+    } while true
+    
+    return result
+}
+
+// Optimized attribute buffer parser - gets all attributes in one pass, no extra syscalls
+private func parseOptimizedAttrBuf(buffer: [UInt8], offset: inout Int, parentDirFd: Int32) -> OptimizedBulkEntry? {
+    guard offset + 4 <= buffer.count else { return nil }
+    
+    return buffer.withUnsafeBytes { rawBuffer -> OptimizedBulkEntry? in
+        // Read record length
+        let length = rawBuffer.load(fromByteOffset: offset, as: UInt32.self)
+        guard offset + Int(length) <= buffer.count else { return nil }
+        let recordEnd = offset + Int(length)
+        
+        var cursor = offset + 4
+        
+        // Parse attributes in the order Apple specifies (see getattrlist man page)
+        var objType: UInt32 = 0
+        var deviceId: UInt32 = 0
+        var fileId: UInt64 = 0
+        var modTime: UInt32 = 0
+        var nlink: UInt32 = 1
+        var allocSize: Int64 = 0
+        var nameBuffer: UnsafeRawBufferPointer = UnsafeRawBufferPointer(start: nil, count: 0)
+        
+        // ATTR_CMN_OBJTYPE
+        guard cursor + 4 <= recordEnd else { return nil }
+        objType = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+        cursor += 4
+        
+        // ATTR_CMN_DEVID
+        guard cursor + 4 <= recordEnd else { return nil }
+        deviceId = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+        cursor += 4
+        
+        // ATTR_CMN_FILEID (8-byte aligned)
+        cursor = (cursor + 7) & ~7
+        guard cursor + 8 <= recordEnd else { return nil }
+        fileId = rawBuffer.load(fromByteOffset: cursor, as: UInt64.self)
+        cursor += 8
+        
+        // ATTR_CMN_MODTIME
+        guard cursor + 4 <= recordEnd else { return nil }
+        modTime = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+        cursor += 4
+        
+        // NLINK not available via getattrlistbulk on macOS, assume nlink = 1 for simplicity
+        nlink = 1
+        
+        // ATTR_FILE_ALLOCSIZE (8-byte aligned, only present for files)
+        let isFile = objType == UInt32(VREG.rawValue)
+        if isFile {
+            cursor = (cursor + 7) & ~7
+            guard cursor + 8 <= recordEnd else { return nil }
+            allocSize = rawBuffer.load(fromByteOffset: cursor, as: Int64.self)
+            cursor += 8
+        }
+        
+        // ATTR_CMN_NAME (attrreference_t)
+        cursor = (cursor + 3) & ~3  // 4-byte align
+        guard cursor + 8 <= recordEnd else { return nil }
+        let nameRef = rawBuffer.load(fromByteOffset: cursor, as: attrreference_t.self)
+        
+        let nameOffset = offset + Int(nameRef.attr_dataoffset)
+        let nameLength = Int(nameRef.attr_length)
+        guard nameOffset + nameLength <= buffer.count else { return nil }
+        
+        // Keep name as buffer slice - don't convert to String until needed
+        if let baseAddr = rawBuffer.baseAddress {
+            let namePtr = baseAddr.advanced(by: nameOffset)
+            nameBuffer = UnsafeRawBufferPointer(start: namePtr, count: nameLength)
+        }
+        
+        offset = recordEnd
+        
+        let isDir = objType == UInt32(VDIR.rawValue)
+        let isSymlink = objType == UInt32(VLNK.rawValue)
+        
+        // Skip symlinks unconditionally (don't follow them)
+        if isSymlink {
+            return nil
+        }
+        
+        return OptimizedBulkEntry(
+            name: nameBuffer,
+            isDir: isDir,
+            isSymlink: isSymlink,
+            allocSize: allocSize,
+            deviceId: deviceId,
+            fileId: fileId,
+            modTime: modTime,
+            nlink: nlink,
+            parentDirFd: parentDirFd
+        )
     }
 }
 
@@ -297,52 +401,141 @@ struct FolderItem: Identifiable, Comparable {
 // MARK: - Single-Walk Bottom-Up Aggregation (eliminates N² re-walks)
 
 
-// Optimized Directory Enumeration
-func enumerateDirectoryRecursiveBulk(at rootPath: String, seenInodes: Set<DevIno>) async throws -> (usage: DiskUsage, updatedInodes: Set<DevIno>) {
-    var usage = DiskUsage()
-    var localSeenInodes = seenInodes
-    var directoriesToProcess = [rootPath]
+// Optimized single-pass directory scan with proper size aggregation
+func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderItem], totalUsage: DiskUsage) {
+    // Skip optimized scan for paths known to cause system-level errors
+    let problematicPaths = [
+        "/System/Volumes/", "/System/Cryptexes/", "/private/var/db/",
+        "/Library/Trial", "/Library/Bluetooth", "/dev/", "/Volumes/"
+    ]
     
-    while !directoriesToProcess.isEmpty {
-        let currentPath = directoriesToProcess.removeFirst()
-        
-        do {
-            let entries = try bulkList(at: currentPath)
-            
-            for entry in entries {
-                let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.inode)
-                
-                // Skip if we've seen this inode (hard link deduplication)
-                if localSeenInodes.contains(devIno) {
-                    continue
-                }
-                localSeenInodes.insert(devIno)
-                
-                // Count the item
-                usage.addItem()
-                
-                if entry.isDir {
-                    // Add directory to processing queue
-                    let fullPath = (currentPath as NSString).appendingPathComponent(entry.name)
-                    directoriesToProcess.append(fullPath)
-                } else {
-                    // Add file size
-                    if entry.allocSize > 0 {
-                        usage.addSize(entry.allocSize)
-                    }
-                }
-            }
-            
-        } catch {
-            // Fall back to traditional enumeration for this directory
-            let fallbackResult = await fallbackDirectoryEnumeration(at: currentPath, seenInodes: localSeenInodes)
-            usage.fileCount += fallbackResult.usage.fileCount
-            usage.totalAllocated += fallbackResult.usage.totalAllocated
-            localSeenInodes = fallbackResult.updatedInodes
+    for problematicPath in problematicPaths {
+        if rootPath.hasPrefix(problematicPath) || rootPath == String(problematicPath.dropLast()) {
+            throw POSIXError(.EINVAL)  // Force fallback to traditional method
         }
     }
     
-    return (usage, localSeenInodes)
+    guard let dirFd = openDirectoryFd(path: rootPath) else {
+        throw POSIXError(.ENOENT)
+    }
+    defer { close(dirFd) }
+    
+    // Get immediate directory entries using getattrlistbulk
+    let bulkEntries = try optimizedBulkList(dirFd: dirFd)
+    
+    var items: [FolderItem] = []
+    var totalUsage = DiskUsage()
+    var seenInodes = Set<DevIno>()
+    
+    for entry in bulkEntries {
+        let entryName = entry.actualName
+        
+        // Skip hidden and system files/directories 
+        if entryName.hasPrefix(".") || entryName == "lost+found" {
+            continue
+        }
+        
+        let itemPath = (rootPath as NSString).appendingPathComponent(entryName)
+        let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.fileId)
+        
+        // Skip if we've seen this inode (hard link deduplication)
+        if seenInodes.contains(devIno) {
+            continue
+        }
+        seenInodes.insert(devIno)
+        
+        let size: Int64
+        let itemCount: Int
+        
+        if entry.isDir {
+            // For directories, recursively calculate size using traditional method
+            let subdirUsage = await traditionalDirectorySize(at: itemPath)
+            size = subdirUsage.size
+            itemCount = subdirUsage.itemCount
+        } else {
+            // For files, use the allocated size from getattrlistbulk
+            size = entry.allocSize
+            itemCount = 1
+        }
+        
+        let item = FolderItem(
+            name: entryName,
+            path: itemPath,
+            size: size,
+            itemCount: itemCount,
+            lastModified: Date(timeIntervalSince1970: TimeInterval(entry.modTime)),
+            isDirectory: entry.isDir
+        )
+        
+        items.append(item)
+        totalUsage.addSize(size)
+        totalUsage.fileCount += itemCount
+    }
+    
+    return (items.sorted { $0.size > $1.size }, totalUsage)
+}
+
+
+// Simple traditional directory size calculation that works
+private func traditionalDirectorySize(at path: String) async -> DiskUsage {
+    return await Task.detached {
+        var usage = DiskUsage()
+        let rootURL = URL(fileURLWithPath: path)
+        
+        let keys: [URLResourceKey] = [
+            .isRegularFileKey,
+            .isDirectoryKey,
+            .isSymbolicLinkKey
+        ]
+        
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: keys,
+            options: []
+        ) else {
+            return usage
+        }
+        
+        var seenInodes = Set<DevIno>()
+        
+        while let url = enumerator.nextObject() as? URL {
+            autoreleasepool {
+                do {
+                    let resourceValues = try url.resourceValues(forKeys: Set(keys))
+                    
+                    // Follow symlinks to directories, skip others
+                    if resourceValues.isSymbolicLink == true {
+                        // Check if symlink points to a directory
+                        let targetValues = try? url.resourceValues(forKeys: [.isDirectoryKey])
+                        if targetValues?.isDirectory != true {
+                            return // Skip non-directory symlinks
+                        }
+                    }
+                    
+                    // Get real device and inode for deduplication
+                    if let devIno = getDevIno(for: url.path) {
+                        if seenInodes.contains(devIno) {
+                            return
+                        }
+                        seenInodes.insert(devIno)
+                    }
+                    
+                    usage.addItem()
+                    
+                    if resourceValues.isRegularFile == true {
+                        let allocatedSize = getAllocatedSize(for: url.path)
+                        usage.addSize(allocatedSize)
+                    }
+                    
+                } catch {
+                    // Skip inaccessible files
+                    return
+                }
+            }
+        }
+        
+        return usage
+    }.value
 }
 
 
@@ -781,65 +974,28 @@ class DiskAnalyzer: ObservableObject {
             return []
         }
         
-        // Use optimized bulk scanning that eliminates N² behavior
-        return await buildFolderItemsFromBulkScan(path: path)
+        // Use optimized single-pass scanning that eliminates N² behavior
+        return await buildFolderItemsFromOptimizedScan(path: path)
     }
     
-    // Build FolderItems using optimized bulk scanning
-    private func buildFolderItemsFromBulkScan(path: String) async -> [FolderItem] {
-        // Get immediate children using bulk enumeration
+    // Use optimized single-pass scanner - eliminates N² behavior
+    private func buildFolderItemsFromOptimizedScan(path: String) async -> [FolderItem] {
         do {
-            let entries = try bulkList(at: path)
-            var items: [FolderItem] = []
-            var seenInodes = Set<DevIno>(minimumCapacity: entries.count)
+            let result = try await optimizedSinglePassScan(rootPath: path)
             
-            for entry in entries {
-                let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.inode)
-                
-                // Skip if we've seen this inode (hard link deduplication)
-                if seenInodes.contains(devIno) {
-                    continue
-                }
-                seenInodes.insert(devIno)
-                
-                let size: Int64
-                let itemCount: Int
-                
-                if entry.isDir {
-                    // Get size recursively for directories
-                    let subdirPath = (path as NSString).appendingPathComponent(entry.name)
-                    do {
-                        let subdirUsage = try await enumerateDirectoryRecursiveBulk(at: subdirPath, seenInodes: Set<DevIno>())
-                        size = subdirUsage.usage.size
-                        itemCount = subdirUsage.usage.itemCount
-                    } catch {
-                        // Fall back to traditional enumeration if bulk fails
-                        let subdirUsage = await fallbackDirectoryEnumeration(at: subdirPath, seenInodes: Set<DevIno>())
-                        size = subdirUsage.usage.size
-                        itemCount = subdirUsage.usage.itemCount
-                    }
-                } else {
-                    // Use size directly from bulk attributes
-                    size = entry.allocSize
-                    itemCount = 1
-                }
-                
-                let item = FolderItem(
-                    name: entry.name,
-                    path: (path as NSString).appendingPathComponent(entry.name),
-                    size: size,
-                    itemCount: itemCount,
-                    lastModified: Date.distantPast, // Skip expensive date lookup for now
-                    isDirectory: entry.isDir
-                )
-                
-                items.append(item)
+            // Update total size from the scan results
+            await MainActor.run {
+                self.totalSize = result.totalUsage.size
+                self.totalFilesProcessed = result.totalUsage.fileCount
+                self.totalBytesProcessed = result.totalUsage.size
             }
             
-            return items.sorted { $0.size > $1.size }
-            
+            return result.items
         } catch {
-            // Fall back to traditional enumeration only if bulk fails
+            // Fall back to traditional enumeration if optimized scan fails
+            await MainActor.run {
+                self.scanProgress = "Using traditional scan method..."
+            }
             return await scanDirectoryContentsFallback(path)
         }
     }
@@ -1076,14 +1232,24 @@ class DiskAnalyzer: ObservableObject {
         // Disable caching temporarily to avoid thread safety issues
         // TODO: Re-enable with proper actor-based isolation later
         
-        // Try optimized bulk enumeration first, fall back to traditional method if it fails
+        // Use optimized single-pass scan
         do {
-            let seenInodes = Set<DevIno>()
-            let result = try await enumerateDirectoryRecursiveBulk(at: path, seenInodes: seenInodes)
-            return result.usage
+            let result = try await optimizedSinglePassScan(rootPath: path)
+            return result.totalUsage
         } catch {
-            // Fall back to traditional enumeration if bulk fails
-            print("Bulk enumeration failed for \(path), falling back to traditional method: \(error)")
+            // Fall back to traditional enumeration if optimized scan fails
+            // Only show debug message for unexpected errors (suppress common/expected errors)
+            if let posixError = error as? POSIXError {
+                let errorCode = posixError.code.rawValue
+                // These are expected on special filesystems, missing directories, etc.
+                if errorCode == EINVAL || errorCode == ENOENT || errorCode == EACCES || errorCode == EPERM {
+                    // Silently fall back for expected errors
+                } else {
+                    print("Optimized scan failed for \(path), falling back to traditional method: \(error)")
+                }
+            } else {
+                print("Optimized scan failed for \(path), falling back to traditional method: \(error)")
+            }
             let seenInodes = Set<DevIno>()
             let result = await fallbackDirectoryEnumeration(at: path, seenInodes: seenInodes)
             return result.usage

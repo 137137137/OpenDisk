@@ -211,7 +211,7 @@ struct DiskAnalysisView: View {
                 }
             }
         }
-        .onChange(of: currentPath) { newPath in
+        .onChange(of: currentPath) {
             // Update the navigation title when path changes
             // This ensures the UI reflects the current location
         }
