@@ -14,19 +14,8 @@ struct StorageProgressBar: View {
     }
     
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                // Background
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(height: 4)
-                
-                // Used storage
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.blue)
-                    .frame(width: geometry.size.width * usagePercentage, height: 4)
-            }
-        }
-        .frame(height: 4)
+        ProgressView(value: usagePercentage)
+            .progressViewStyle(LinearProgressViewStyle())
+            .tint(.primary)
     }
 }

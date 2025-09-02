@@ -9,59 +9,40 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var diskUtility = DiskSpaceUtility()
-    @State private var showingDiskAnalysis = false
+    @State private var selectedDevice: DeviceInfo?
     
     var body: some View {
-        if showingDiskAnalysis {
-            DiskAnalysisView(rootPath: "/") {
-                showingDiskAnalysis = false
-            }
-        } else {
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Text("Devices & Locations")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    
-                    Spacer()
+        NavigationSplitView {
+            // Sidebar
+            List(diskUtility.devices, selection: $selectedDevice) { device in
+                DeviceRow(device: device) {
+                    selectedDevice = device
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                
-                Divider()
-                
-                // This Device Section
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("This Device")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 16)
-                            .padding(.bottom, 8)
-                        
-                        Spacer()
-                    }
-                    
-                    // Device items
-                    ForEach(diskUtility.devices) { device in
-                        DeviceRow(device: device) {
-                            if device.name == "Computer" {
-                                showingDiskAnalysis = true
-                            }
-                        }
-                        .padding(.horizontal, 4)
-                    }
-                }
-                
-                Spacer()
             }
-            .background(Color(NSColor.controlBackgroundColor))
-            .frame(minWidth: 400, minHeight: 300)
-            .onAppear {
-                // DiskSpaceUtility automatically loads device info on init
+            .navigationTitle("Devices & Locations")
+        } detail: {
+            // Detail view
+            if let selectedDevice = selectedDevice, selectedDevice.name == "Computer" {
+                DiskAnalysisView(rootPath: "/") {
+                    self.selectedDevice = nil
+                }
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "externaldrive")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary)
+                    
+                    Text("Select a device to analyze")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear {
+            // Auto-select Computer device
+            if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
+                selectedDevice = computerDevice
             }
         }
     }
@@ -123,16 +104,7 @@ struct DeviceRow: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.clear)
-                .contentShape(Rectangle())
-        )
-        .onHover { isHovering in
-            // Add hover effect if needed
-        }
+        .contentShape(Rectangle())
         .onTapGesture {
             onTap()
         }

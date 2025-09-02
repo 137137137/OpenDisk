@@ -110,18 +110,15 @@ struct DiskAnalysisView: View {
                 // Main content with list and chart
                 HStack(spacing: 0) {
                     // Folder list
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(analyzer.rootItems) { item in
-                                FolderRowView(item: item) {
-                                    if item.isDirectory {
-                                        navigateToFolder(item)
-                                    }
-                                }
-                                .padding(.horizontal, 4)
+                    List(analyzer.rootItems) { item in
+                        FolderRowView(item: item) {
+                            if item.isDirectory {
+                                navigateToFolder(item)
                             }
                         }
+                        .listRowInsets(EdgeInsets())
                     }
+                    .listStyle(PlainListStyle())
                     .frame(maxWidth: .infinity)
                     
                     // Vertical divider
@@ -156,7 +153,26 @@ struct DiskAnalysisView: View {
                 }
             }
         }
-        .background(Color(NSColor.controlBackgroundColor))
+        .navigationTitle("Computer")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Refresh") {
+                    analyzer.scanDirectory(currentPath)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+            }
+            
+            ToolbarItem(placement: .navigation) {
+                Button("Back") {
+                    if breadcrumbs.isEmpty {
+                        onBack()
+                    } else {
+                        goBack()
+                    }
+                }
+                .keyboardShortcut(.leftArrow, modifiers: .command)
+            }
+        }
         .onAppear {
             // Automatically start scanning when view appears
             analyzer.scanDirectory(currentPath)
@@ -190,12 +206,12 @@ struct FolderRowView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
-                    .background(Color.blue)
+                    .background(Color.accentColor)
                     .clipShape(RoundedRectangle(cornerRadius: 3))
                 
                 Image(systemName: item.isDirectory ? "folder" : "doc")
                     .font(.title3)
-                    .foregroundColor(item.isDirectory ? .blue : .secondary)
+                    .foregroundColor(item.isDirectory ? Color.accentColor : .secondary)
                     .frame(width: 20)
             }
             
@@ -237,11 +253,11 @@ struct FolderRowView: View {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.gray.opacity(0.2))
+                                .fill(.quaternary)
                                 .frame(height: 2)
                             
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.blue)
+                                .fill(Color.accentColor)
                                 .frame(width: geometry.size.width * (item.percentage / 100), height: 2)
                         }
                     }
@@ -250,18 +266,9 @@ struct FolderRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.clear)
-                .contentShape(Rectangle())
-        )
+        .contentShape(Rectangle())
         .onTapGesture {
             onTap()
-        }
-        .onHover { isHovering in
-            // Add hover effect if needed
         }
     }
 }
