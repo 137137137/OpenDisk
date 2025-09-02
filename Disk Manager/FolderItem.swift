@@ -150,11 +150,10 @@ class DiskAnalyzer: ObservableObject {
             "/Volumes"
         ]
         
-        let maxConcurrency = min(ProcessInfo.processInfo.activeProcessorCount * 2, 8)
-        var items: [FolderItem] = []
-        var activeTasks = 0
-        
+        // Use actor-isolated approach for thread safety
         return await withTaskGroup(of: FolderItem?.self) { group in
+            var items: [FolderItem] = []
+            
             for dirPath in rootDirectories {
                 let url = URL(fileURLWithPath: dirPath)
                 
@@ -165,25 +164,14 @@ class DiskAnalyzer: ObservableObject {
                     continue
                 }
                 
-                // Bound the parallelism
-                while activeTasks >= maxConcurrency {
-                    if let item = await group.next() {
-                        if let validItem = item {
-                            items.append(validItem)
-                        }
-                        activeTasks -= 1
-                    }
-                }
-                
                 // Build complete recursive tree for this directory
                 group.addTask { [weak self] in
                     await self?.buildFolderWithCompleteChildren(url: url, maxDepth: 3)
                 }
-                activeTasks += 1
             }
             
-            // Collect remaining results
-            while let item = await group.next() {
+            // Collect all results
+            for await item in group {
                 if let validItem = item {
                     items.append(validItem)
                 }
@@ -222,91 +210,68 @@ class DiskAnalyzer: ObservableObject {
                 options: [.skipsPackageDescendants]
             )
             
+            // Process children sequentially to avoid async issues in task groups
             var children: [FolderItem] = []
             var totalSize: Int64 = 0
             var totalItemCount = 0
             
             // Process each child
             for childURL in contents {
-                autoreleasepool {
-                    do {
-                        let childValues = try childURL.resourceValues(forKeys: [
-                            .isDirectoryKey,
-                            .isRegularFileKey,
-                            .isSymbolicLinkKey,
-                            .totalFileAllocatedSizeKey,
-                            .contentModificationDateKey
-                        ])
-                        
-                        // Skip symlinks
-                        if childValues.isSymbolicLink == true {
-                            return
-                        }
-                        
-                        let childIsDirectory = childValues.isDirectory ?? false
-                        let childSize: Int64
-                        let childItemCount: Int
-                        
-                        if childIsDirectory {
-                            // Recursively calculate for subdirectories (but limit depth)
-                            if maxDepth > 0 {
-                                if let childItem = await buildFolderWithCompleteChildren(url: childURL, maxDepth: maxDepth - 1) {
-                                    children.append(childItem)
-                                    totalSize += childItem.size
-                                    totalItemCount += childItem.itemCount
-                                    
-                                    // Store in tree for navigation
-                                    await MainActor.run {
-                                        self.folderTree[childURL.path] = childItem.children
-                                    }
-                                }
-                            } else {
-                                // At max depth, just use disk usage
-                                let usage = await directoryDiskUsage(at: childURL)
-                                childSize = usage.size
-                                childItemCount = usage.itemCount
-                                
-                                let childItem = FolderItem(
-                                    name: childURL.lastPathComponent,
-                                    path: childURL.path,
-                                    size: childSize,
-                                    itemCount: childItemCount,
-                                    lastModified: childValues.contentModificationDate ?? Date.distantPast,
-                                    isDirectory: true
-                                )
-                                
-                                children.append(childItem)
-                                totalSize += childSize
-                                totalItemCount += childItemCount
-                            }
-                        } else {
-                            // Regular file
-                            childSize = Int64(childValues.totalFileAllocatedSize ?? 0)
-                            childItemCount = 1
-                            
-                            let childItem = FolderItem(
-                                name: childURL.lastPathComponent,
-                                path: childURL.path,
-                                size: childSize,
-                                itemCount: childItemCount,
-                                lastModified: childValues.contentModificationDate ?? Date.distantPast,
-                                isDirectory: false
-                            )
-                            
-                            children.append(childItem)
-                            totalSize += childSize
-                            totalItemCount += childItemCount
-                        }
-                        
-                    } catch {
-                        // Skip inaccessible items
+                do {
+                    let childValues = try childURL.resourceValues(forKeys: [
+                        .isDirectoryKey,
+                        .isRegularFileKey,
+                        .isSymbolicLinkKey,
+                        .totalFileAllocatedSizeKey,
+                        .contentModificationDateKey
+                    ])
+                    
+                    // Skip symlinks
+                    if childValues.isSymbolicLink == true {
+                        continue
                     }
+                    
+                    let childIsDirectory = childValues.isDirectory ?? false
+                    let childSize: Int64
+                    let childItemCount: Int
+                    
+                    if childIsDirectory {
+                        // For directories, use disk usage calculation
+                        let usage = await directoryDiskUsage(at: childURL)
+                        childSize = usage.size
+                        childItemCount = usage.itemCount
+                    } else {
+                        // Regular file
+                        childSize = Int64(childValues.totalFileAllocatedSize ?? 0)
+                        childItemCount = 1
+                    }
+                    
+                    let childItem = FolderItem(
+                        name: childURL.lastPathComponent,
+                        path: childURL.path,
+                        size: childSize,
+                        itemCount: childItemCount,
+                        lastModified: childValues.contentModificationDate ?? Date.distantPast,
+                        isDirectory: childIsDirectory
+                    )
+                    
+                    children.append(childItem)
+                    totalSize += childSize
+                    totalItemCount += childItemCount
+                    
+                } catch {
+                    // Skip inaccessible items
+                    continue
                 }
             }
             
-            // Store children in tree for this directory
+            // Sort children by size
+            children.sort { $0.size > $1.size }
+            
+            // Store children in tree for navigation (create copy to avoid capture issues)
+            let sortedChildren = children
             await MainActor.run {
-                self.folderTree[url.path] = children.sorted { $0.size > $1.size }
+                self.folderTree[url.path] = sortedChildren
             }
             
             var item = FolderItem(
@@ -318,7 +283,7 @@ class DiskAnalyzer: ObservableObject {
                 isDirectory: true
             )
             
-            item.children = children.sorted { $0.size > $1.size }
+            item.children = children
             
             return item
             
@@ -356,58 +321,56 @@ class DiskAnalyzer: ObservableObject {
             let seenResourceIDs = NSMutableSet()
             
             for url in contents {
-                autoreleasepool {
-                    do {
-                        let resourceValues = try url.resourceValues(forKeys: [
-                            .isDirectoryKey,
-                            .isRegularFileKey,
-                            .isSymbolicLinkKey,
-                            .totalFileAllocatedSizeKey,
-                            .contentModificationDateKey,
-                            .fileResourceIdentifierKey
-                        ])
-                        
-                        // Skip symlinks
-                        if resourceValues.isSymbolicLink == true {
-                            return
-                        }
-                        
-                        // Skip if we've already seen this resource (hard link deduplication)
-                        if let resourceID = resourceValues.fileResourceIdentifier {
-                            if seenResourceIDs.contains(resourceID) {
-                                return
-                            }
-                            seenResourceIDs.add(resourceID)
-                        }
-                        
-                        let isDirectory = resourceValues.isDirectory ?? false
-                        let size: Int64
-                        let itemCount: Int
-                        
-                        if isDirectory {
-                            let diskUsage = await directoryDiskUsage(at: url)
-                            size = diskUsage.size
-                            itemCount = diskUsage.itemCount
-                        } else {
-                            size = Int64(resourceValues.totalFileAllocatedSize ?? 0)
-                            itemCount = 1
-                        }
-                        
-                        let item = FolderItem(
-                            name: url.lastPathComponent,
-                            path: url.path,
-                            size: size,
-                            itemCount: itemCount,
-                            lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
-                            isDirectory: isDirectory
-                        )
-                        
-                        items.append(item)
-                        
-                    } catch {
-                        // Skip files we can't access
-                        print("Error accessing \(url.path): \(error)")
+                do {
+                    let resourceValues = try url.resourceValues(forKeys: [
+                        .isDirectoryKey,
+                        .isRegularFileKey,
+                        .isSymbolicLinkKey,
+                        .totalFileAllocatedSizeKey,
+                        .contentModificationDateKey,
+                        .fileResourceIdentifierKey
+                    ])
+                    
+                    // Skip symlinks
+                    if resourceValues.isSymbolicLink == true {
+                        continue
                     }
+                    
+                    // Skip if we've already seen this resource (hard link deduplication)
+                    if let resourceID = resourceValues.fileResourceIdentifier {
+                        if seenResourceIDs.contains(resourceID) {
+                            continue
+                        }
+                        seenResourceIDs.add(resourceID)
+                    }
+                    
+                    let isDirectory = resourceValues.isDirectory ?? false
+                    let size: Int64
+                    let itemCount: Int
+                    
+                    if isDirectory {
+                        let diskUsage = await directoryDiskUsage(at: url)
+                        size = diskUsage.size
+                        itemCount = diskUsage.itemCount
+                    } else {
+                        size = Int64(resourceValues.totalFileAllocatedSize ?? 0)
+                        itemCount = 1
+                    }
+                    
+                    let item = FolderItem(
+                        name: url.lastPathComponent,
+                        path: url.path,
+                        size: size,
+                        itemCount: itemCount,
+                        lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
+                        isDirectory: isDirectory
+                    )
+                    
+                    items.append(item)
+                    
+                } catch {
+                    // Skip files we can't access
+                    print("Error accessing \(url.path): \(error)")
                 }
             }
             
@@ -420,23 +383,9 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func directoryDiskUsage(at rootURL: URL) async -> DiskUsage {
-        return await withTaskGroup(of: DiskUsage.self) { group in
-            var totalUsage = DiskUsage()
-            
-            // Start with the directory enumeration
-            group.addTask {
-                let seenResourceIDs = NSMutableSet()
-                return await enumerateDirectoryRecursive(at: rootURL, seenResourceIDs: seenResourceIDs)
-            }
-            
-            // Collect results
-            for await usage in group {
-                totalUsage.addSize(usage.size)
-                totalUsage.fileCount += usage.itemCount
-            }
-            
-            return totalUsage
-        }
+        // Direct enumeration without task groups to avoid async issues
+        let seenResourceIDs = NSMutableSet()
+        return await enumerateDirectoryRecursive(at: rootURL, seenResourceIDs: seenResourceIDs)
     }
     
     private func enumerateDirectoryRecursive(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
