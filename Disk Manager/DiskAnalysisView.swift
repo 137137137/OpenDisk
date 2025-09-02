@@ -42,6 +42,32 @@ struct DiskAnalysisView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
                         
+                        // Show current scanning path and rate
+                        if !analyzer.currentScanPath.isEmpty && !analyzer.filesPerSecond.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "folder")
+                                    .foregroundColor(.blue)
+                                    .font(.caption)
+                                
+                                Text(analyzer.currentScanPath)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "speedometer")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                                
+                                Text(analyzer.filesPerSecond)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(width: 300)
+                        }
+                        
                         if analyzer.scanProgressPercentage > 0 {
                             VStack(spacing: 8) {
                                 ProgressView(value: analyzer.scanProgressPercentage, total: 100)

@@ -1,5 +1,86 @@
 import Foundation
 
+// MARK: - Bulk Metadata Optimization
+
+struct BulkEntry {
+    let name: String
+    let isDir: Bool
+    let allocSize: Int64
+    let inode: UInt64
+    let deviceId: UInt32
+}
+
+struct DevIno: Hashable {
+    let dev: UInt64
+    let ino: UInt64
+}
+
+// Simplified bulk metadata using traditional FileManager but with optimized deduplication
+func bulkList(at path: String) throws -> [BulkEntry] {
+    let url = URL(fileURLWithPath: path)
+    
+    let contents = try FileManager.default.contentsOfDirectory(
+        at: url,
+        includingPropertiesForKeys: [
+            .isDirectoryKey,
+            .isRegularFileKey,
+            .isSymbolicLinkKey,
+            .totalFileAllocatedSizeKey,
+            .fileResourceIdentifierKey
+        ],
+        options: [.skipsPackageDescendants]
+    )
+    
+    var result: [BulkEntry] = []
+    result.reserveCapacity(contents.count)
+    
+    for itemURL in contents {
+        do {
+            let resourceValues = try itemURL.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey,
+                .fileResourceIdentifierKey
+            ])
+            
+            // Skip symlinks
+            if resourceValues.isSymbolicLink == true {
+                continue
+            }
+            
+            let isDirectory = resourceValues.isDirectory ?? false
+            let allocSize = Int64(resourceValues.totalFileAllocatedSize ?? 0)
+            
+            // Extract inode information for deduplication
+            var inode: UInt64 = 0
+            var deviceId: UInt32 = 0
+            
+            if let resourceID = resourceValues.fileResourceIdentifier {
+                // Use a stable hash of the resource identifier
+                inode = UInt64(abs(resourceID.hash))
+                deviceId = 0 // Default device ID
+            }
+            
+            let entry = BulkEntry(
+                name: itemURL.lastPathComponent,
+                isDir: isDirectory,
+                allocSize: allocSize,
+                inode: inode,
+                deviceId: deviceId
+            )
+            
+            result.append(entry)
+            
+        } catch {
+            // Skip inaccessible items
+            continue
+        }
+    }
+    
+    return result
+}
+
 extension Array {
     func chunked(into size: Int) -> [[Element]] {
         return stride(from: 0, to: count, by: size).map {
@@ -22,6 +103,65 @@ struct DiskUsage {
     
     mutating func addItem() {
         fileCount += 1
+    }
+}
+
+// MARK: - Adaptive Progress Tracking
+
+struct EWMA {
+    var v = 0.0
+    
+    mutating func add(_ x: Double, alpha: Double = 0.2) {
+        v = alpha * x + (1 - alpha) * v
+    }
+}
+
+final class RateModel {
+    var files = EWMA()
+    var bytes = EWMA()
+    var estTotalFiles: Double = 50_000 // start modestly
+    private var lastUpdateTime: Date?
+    private var lastFileCount: Int = 0
+    
+    func update(observedFiles: Int, observedBytes: Int64, currentTime: Date = Date()) {
+        defer {
+            lastUpdateTime = currentTime
+            lastFileCount = observedFiles
+        }
+        
+        guard let lastTime = lastUpdateTime else {
+            lastUpdateTime = currentTime
+            lastFileCount = observedFiles
+            return
+        }
+        
+        let elapsed = currentTime.timeIntervalSince(lastTime)
+        guard elapsed > 0 else { return }
+        
+        let deltaFiles = observedFiles - lastFileCount
+        guard deltaFiles > 0 else { return }
+        
+        // Update EWMA rates
+        files.add(Double(deltaFiles) / elapsed)
+        bytes.add(Double(observedBytes) / elapsed)
+        
+        // Adjust total estimate toward observed * multiplier, but allow downward movement with inertia
+        let implied = max(10_000.0, Double(observedFiles) * 1.6)
+        estTotalFiles = 0.9 * estTotalFiles + 0.1 * implied
+    }
+    
+    func getProgress(processedFiles: Int) -> Double {
+        return min(99.0, Double(processedFiles) / estTotalFiles * 100.0)
+    }
+    
+    func getETA(processedFiles: Int) -> TimeInterval? {
+        guard files.v > 0, processedFiles > 0 else { return nil }
+        let remainingFiles = max(0, estTotalFiles - Double(processedFiles))
+        return remainingFiles / files.v
+    }
+    
+    func getCurrentRate() -> (filesPerSec: Double, bytesPerSec: Double) {
+        return (files.v, bytes.v)
     }
 }
 
@@ -62,6 +202,115 @@ struct FolderItem: Identifiable, Comparable {
     }
 }
 
+// MARK: - Optimized Directory Enumeration
+
+func enumerateDirectoryRecursiveBulk(at rootPath: String, seenInodes: Set<DevIno>) async -> (usage: DiskUsage, updatedInodes: Set<DevIno>) {
+    var usage = DiskUsage()
+    var localSeenInodes = seenInodes
+    var directoriesToProcess = [rootPath]
+    
+    while !directoriesToProcess.isEmpty {
+        let currentPath = directoriesToProcess.removeFirst()
+        
+        do {
+            let entries = try bulkList(at: currentPath)
+            
+            for entry in entries {
+                let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.inode)
+                
+                // Skip if we've seen this inode (hard link deduplication)
+                if localSeenInodes.contains(devIno) {
+                    continue
+                }
+                localSeenInodes.insert(devIno)
+                
+                // Count the item
+                usage.addItem()
+                
+                if entry.isDir {
+                    // Add directory to processing queue
+                    let fullPath = (currentPath as NSString).appendingPathComponent(entry.name)
+                    directoriesToProcess.append(fullPath)
+                } else {
+                    // Add file size
+                    if entry.allocSize > 0 {
+                        usage.addSize(entry.allocSize)
+                    }
+                }
+            }
+            
+        } catch {
+            // Fall back to traditional enumeration for this directory
+            let fallbackResult = await fallbackDirectoryEnumeration(at: currentPath, seenInodes: localSeenInodes)
+            usage.fileCount += fallbackResult.usage.fileCount
+            usage.totalAllocated += fallbackResult.usage.totalAllocated
+            localSeenInodes = fallbackResult.updatedInodes
+        }
+    }
+    
+    return (usage, localSeenInodes)
+}
+
+func fallbackDirectoryEnumeration(at rootPath: String, seenInodes: Set<DevIno>) async -> (usage: DiskUsage, updatedInodes: Set<DevIno>) {
+    return await Task.detached {
+        var usage = DiskUsage()
+        var localSeenInodes = seenInodes
+        let rootURL = URL(fileURLWithPath: rootPath)
+        
+        let keys: [URLResourceKey] = [
+            .isRegularFileKey,
+            .isDirectoryKey,
+            .isSymbolicLinkKey,
+            .totalFileAllocatedSizeKey,
+            .fileResourceIdentifierKey
+        ]
+        
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: keys,
+            options: []
+        ) else {
+            return (usage, localSeenInodes)
+        }
+        
+        for case let url as URL in enumerator {
+            autoreleasepool {
+                do {
+                    let resourceValues = try url.resourceValues(forKeys: Set(keys))
+                    
+                    // Skip symlinks
+                    if resourceValues.isSymbolicLink == true {
+                        return
+                    }
+                    
+                    // Extract device and inode for deduplication
+                    if let resourceID = resourceValues.fileResourceIdentifier {
+                        let devIno = DevIno(dev: 0, ino: UInt64(abs(resourceID.hash)))
+                        
+                        if localSeenInodes.contains(devIno) {
+                            return
+                        }
+                        localSeenInodes.insert(devIno)
+                    }
+                    
+                    usage.addItem()
+                    
+                    if resourceValues.isRegularFile == true {
+                        let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
+                        usage.addSize(Int64(allocatedSize))
+                    }
+                    
+                } catch {
+                    // Skip inaccessible files
+                    return
+                }
+            }
+        }
+        
+        return (usage, localSeenInodes)
+    }.value
+}
+
 class DiskAnalyzer: ObservableObject {
     @Published var rootItems: [FolderItem] = []
     @Published var isScanning: Bool = false
@@ -69,14 +318,16 @@ class DiskAnalyzer: ObservableObject {
     @Published var scanProgressPercentage: Double = 0.0
     @Published var estimatedTimeRemaining: String = ""
     @Published var totalSize: Int64 = 0
+    @Published var currentScanPath: String = ""
+    @Published var filesPerSecond: String = ""
+    @Published var externalVolumes: [FolderItem] = []
     
     private var scanTask: Task<Void, Never>?
     private var scanStartTime: Date?
     private var totalFilesProcessed: Int = 0
     private var totalBytesProcessed: Int64 = 0
-    private var estimatedTotalFiles: Int = 0
+    private var progressModel = RateModel()
     private var lastProgressUpdate: Date = Date()
-    private var filesProcessedSinceLastUpdate: Int = 0
     
     // Complete folder tree for instant navigation
     private var folderTree: [String: [FolderItem]] = [:]
@@ -99,7 +350,14 @@ class DiskAnalyzer: ObservableObject {
         scanProgressPercentage = 0.0
         estimatedTimeRemaining = ""
         totalFilesProcessed = 0
+        totalBytesProcessed = 0
         scanStartTime = Date()
+        lastProgressUpdate = Date()
+        currentScanPath = ""
+        filesPerSecond = ""
+        
+        // Initialize fresh progress model
+        progressModel = RateModel()
         
         // For root directory scan, request full disk access
         var scanPath = path
@@ -115,7 +373,13 @@ class DiskAnalyzer: ObservableObject {
         }
         
         scanTask = Task {
-            let items = await performScanWithProgress(path: scanPath)
+            // Scan external volumes in parallel
+            async let volumesScan = scanExternalVolumes()
+            async let diskScan = performScanWithProgress(path: scanPath)
+            
+            let items = await diskScan
+            await volumesScan
+            
             let sortedItems = items.sorted()
             
             await MainActor.run {
@@ -164,12 +428,11 @@ class DiskAnalyzer: ObservableObject {
             self.scanProgressPercentage = 0.0
             self.totalFilesProcessed = 0
             self.totalBytesProcessed = 0
-            self.estimatedTotalFiles = 0
             self.lastProgressUpdate = Date()
         }
         
-        // Major system directories to show at root level
-        var rootDirectories = [
+        // Major system directories to show at root level (excluding /Volumes)
+        let rootDirectories = [
             "/Applications",
             "/Users",
             "/System", 
@@ -178,18 +441,6 @@ class DiskAnalyzer: ObservableObject {
             "/opt",
             "/private"
         ]
-        
-        // Add external volumes from /Volumes (but not /Volumes itself)
-        if let volumeContents = try? FileManager.default.contentsOfDirectory(atPath: "/Volumes") {
-            for volume in volumeContents {
-                let volumePath = "/Volumes/\(volume)"
-                var isDirectory: ObjCBool = false
-                if FileManager.default.fileExists(atPath: volumePath, isDirectory: &isDirectory),
-                   isDirectory.boolValue {
-                    rootDirectories.append(volumePath)
-                }
-            }
-        }
         
         // Create immutable copy to avoid capture issues
         let directoriesToScan = rootDirectories
@@ -210,6 +461,11 @@ class DiskAnalyzer: ObservableObject {
                 // Check if directory exists and is accessible
                 var isDirectory: ObjCBool = false
                 if FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory) && isDirectory.boolValue {
+                    // Update progress to show which directory we're starting
+                    await MainActor.run {
+                        self.scanProgress = "Analyzing \(url.lastPathComponent)..."
+                    }
+                    
                     group.addTask { [weak self] in
                         return await self?.buildFolderWithCompleteChildrenFast(url: url)
                     }
@@ -222,6 +478,11 @@ class DiskAnalyzer: ObservableObject {
             for await item in group {
                 if let validItem = item {
                     items.append(validItem)
+                    
+                    // Update progress to show completion
+                    await MainActor.run {
+                        self.scanProgress = "Completed \(validItem.name) (\(items.count)/\(directoriesToScan.count) directories)"
+                    }
                 }
                 activeTasks -= 1
                 
@@ -246,8 +507,28 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func buildFolderWithCompleteChildrenFast(url: URL) async -> FolderItem? {
-        // High-performance directory analysis with parallel subdirectory processing
-        return await buildFolderWithParallelChildren(url: url, depth: 0, maxDepth: 2)
+        // High-performance directory analysis with parallel subdirectory processing and timeout
+        return await withTimeout(seconds: 30) {
+            await buildFolderWithParallelChildren(url: url, depth: 0, maxDepth: 2)
+        }
+    }
+    
+    // Timeout helper function
+    private func withTimeout<T>(seconds: Double, operation: @escaping () async -> T?) async -> T? {
+        return await withTaskGroup(of: T?.self) { group in
+            group.addTask {
+                await operation()
+            }
+            
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            
+            guard let result = await group.next() else { return nil }
+            group.cancelAll()
+            return result
+        }
     }
     
     private func buildFolderWithCompleteChildren(url: URL, maxDepth: Int) async -> FolderItem? {
@@ -362,16 +643,75 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func scanDirectoryContentsSafe(_ path: String) async -> [FolderItem] {
-        let rootURL = URL(fileURLWithPath: path)
-        
         // Check if we can access this directory
         guard FileManager.default.isReadableFile(atPath: path) else {
             print("No read access to \(path)")
             return []
         }
         
+        // Try bulk metadata first, fall back to traditional enumeration if needed
         do {
-            // Get immediate children
+            let entries = try bulkList(at: path)
+            var items: [FolderItem] = []
+            var seenInodes = Set<DevIno>(minimumCapacity: entries.count)
+            
+            for entry in entries {
+                let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.inode)
+                
+                // Skip if we've seen this inode (hard link deduplication)
+                if seenInodes.contains(devIno) {
+                    continue
+                }
+                seenInodes.insert(devIno)
+                
+                let size: Int64
+                let itemCount: Int
+                
+                if entry.isDir {
+                    let fullPath = (path as NSString).appendingPathComponent(entry.name)
+                    let diskUsage = await directoryDiskUsage(at: URL(fileURLWithPath: fullPath))
+                    size = diskUsage.size
+                    itemCount = diskUsage.itemCount
+                } else {
+                    size = entry.allocSize
+                    itemCount = 1
+                }
+                
+                // Get modification date using traditional method
+                let itemURL = URL(fileURLWithPath: (path as NSString).appendingPathComponent(entry.name))
+                let modificationDate: Date
+                do {
+                    let resourceValues = try itemURL.resourceValues(forKeys: [.contentModificationDateKey])
+                    modificationDate = resourceValues.contentModificationDate ?? Date.distantPast
+                } catch {
+                    modificationDate = Date.distantPast
+                }
+                
+                let item = FolderItem(
+                    name: entry.name,
+                    path: itemURL.path,
+                    size: size,
+                    itemCount: itemCount,
+                    lastModified: modificationDate,
+                    isDirectory: entry.isDir
+                )
+                
+                items.append(item)
+            }
+            
+            return items.sorted { $0.size > $1.size }
+            
+        } catch {
+            // Fall back to traditional enumeration
+            return await scanDirectoryContentsFallback(path)
+        }
+    }
+    
+    private func scanDirectoryContentsFallback(_ path: String) async -> [FolderItem] {
+        let rootURL = URL(fileURLWithPath: path)
+        
+        do {
+            // Get immediate children using traditional FileManager
             let contents = try FileManager.default.contentsOfDirectory(
                 at: rootURL,
                 includingPropertiesForKeys: [
@@ -386,7 +726,7 @@ class DiskAnalyzer: ObservableObject {
             )
             
             var items: [FolderItem] = []
-            let seenResourceIDs = NSMutableSet()
+            var seenInodes = Set<DevIno>()
             
             for url in contents {
                 do {
@@ -404,12 +744,13 @@ class DiskAnalyzer: ObservableObject {
                         continue
                     }
                     
-                    // Skip if we've already seen this resource (hard link deduplication)
+                    // Convert resourceID to DevIno for deduplication
                     if let resourceID = resourceValues.fileResourceIdentifier {
-                        if seenResourceIDs.contains(resourceID) {
+                        let devIno = DevIno(dev: 0, ino: UInt64(abs(resourceID.hash)))
+                        if seenInodes.contains(devIno) {
                             continue
                         }
-                        seenResourceIDs.add(resourceID)
+                        seenInodes.insert(devIno)
                     }
                     
                     let isDirectory = resourceValues.isDirectory ?? false
@@ -437,7 +778,6 @@ class DiskAnalyzer: ObservableObject {
                     items.append(item)
                     
                 } catch {
-                    // Skip files we can't access
                     print("Error accessing \(url.path): \(error)")
                 }
             }
@@ -591,103 +931,108 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func directoryDiskUsage(at rootURL: URL) async -> DiskUsage {
-        // Direct enumeration without task groups to avoid async issues
-        let seenResourceIDs = NSMutableSet()
-        return await enumerateDirectoryRecursive(at: rootURL, seenResourceIDs: seenResourceIDs)
+        // Use optimized bulk metadata calls
+        let seenInodes = Set<DevIno>(minimumCapacity: 1_000_000)
+        let result = await enumerateDirectoryRecursiveBulk(at: rootURL.path, seenInodes: seenInodes)
+        return result.usage
     }
     
     private func directoryDiskUsageFast(at rootURL: URL) async -> DiskUsage {
-        // Optimized enumeration with reduced progress updates for speed
-        let seenResourceIDs = NSMutableSet()
-        return await enumerateDirectoryRecursiveFast(at: rootURL, seenResourceIDs: seenResourceIDs)
+        // Use the same optimized bulk metadata calls (already fast)
+        let seenInodes = Set<DevIno>(minimumCapacity: 1_000_000)
+        let result = await enumerateDirectoryRecursiveBulk(at: rootURL.path, seenInodes: seenInodes)
+        return result.usage
     }
     
     private func enumerateDirectoryRecursive(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
-        return autoreleasepool {
-            let keys: [URLResourceKey] = [
-                .isRegularFileKey,
-                .isDirectoryKey,
-                .isSymbolicLinkKey,
-                .totalFileAllocatedSizeKey,
-                .fileResourceIdentifierKey
-            ]
-            
-            guard let enumerator = FileManager.default.enumerator(
-                at: rootURL,
-                includingPropertiesForKeys: keys,
-                options: [] // Include everything like baobab - no skipping
-            ) else {
-                return DiskUsage()
-            }
-            
-            var usage = DiskUsage()
-            var localFilesProcessed = 0
-            let updateInterval = 100 // Update progress every 100 files
-            
-            for case let url as URL in enumerator {
-                autoreleasepool {
-                    do {
-                        let resourceValues = try url.resourceValues(forKeys: Set(keys))
-                        
-                        // Skip symlinks entirely to avoid double counting
-                        if resourceValues.isSymbolicLink == true {
-                            return
-                        }
-                        
-                        // Skip if we've seen this resource (hard link deduplication)
-                        if let resourceID = resourceValues.fileResourceIdentifier {
-                            if seenResourceIDs.contains(resourceID) {
+        return await Task.detached { [weak self] in
+            return autoreleasepool {
+                let keys: [URLResourceKey] = [
+                    .isRegularFileKey,
+                    .isDirectoryKey,
+                    .isSymbolicLinkKey,
+                    .totalFileAllocatedSizeKey,
+                    .fileResourceIdentifierKey
+                ]
+                
+                guard let enumerator = FileManager.default.enumerator(
+                    at: rootURL,
+                    includingPropertiesForKeys: keys,
+                    options: [] // Include everything like baobab - no skipping
+                ) else {
+                    return DiskUsage()
+                }
+                
+                var usage = DiskUsage()
+                var localFilesProcessed = 0
+                let updateInterval = 100 // Update progress every 100 files
+                
+                for case let url as URL in enumerator {
+                    autoreleasepool {
+                        do {
+                            let resourceValues = try url.resourceValues(forKeys: Set(keys))
+                            
+                            // Skip symlinks entirely to avoid double counting
+                            if resourceValues.isSymbolicLink == true {
                                 return
                             }
-                            seenResourceIDs.add(resourceID)
-                        }
-                        
-                        // Count all items (files and directories)
-                        usage.addItem()
-                        localFilesProcessed += 1
-                        
-                        // Only count regular files for size (directories are counted by their contents)
-                        if resourceValues.isRegularFile == true {
-                            let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
-                            usage.addSize(Int64(allocatedSize))
-                        }
-                        
-                        // Update progress periodically
-                        if localFilesProcessed % updateInterval == 0 {
-                            let currentSize = usage.size
-                            let currentPath = rootURL.path
-                            Task { @MainActor [weak self] in
-                                self?.totalFilesProcessed += updateInterval
-                                self?.totalBytesProcessed = currentSize
-                                self?.updateDynamicProgress(currentPath: currentPath)
+                            
+                            // Skip if we've seen this resource (hard link deduplication)
+                            if let resourceID = resourceValues.fileResourceIdentifier {
+                                if seenResourceIDs.contains(resourceID) {
+                                    return
+                                }
+                                seenResourceIDs.add(resourceID)
                             }
+                            
+                            // Count all items (files and directories)
+                            usage.addItem()
+                            localFilesProcessed += 1
+                            
+                            // Only count regular files for size (directories are counted by their contents)
+                            if resourceValues.isRegularFile == true {
+                                let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
+                                usage.addSize(Int64(allocatedSize))
+                            }
+                            
+                            // Update progress periodically
+                            if localFilesProcessed % updateInterval == 0 {
+                                let currentSize = usage.size
+                                let currentPath = rootURL.path
+                                Task { @MainActor [weak self] in
+                                    self?.totalFilesProcessed += updateInterval
+                                    self?.totalBytesProcessed = currentSize
+                                    self?.updateDynamicProgress(currentPath: currentPath)
+                                }
+                            }
+                            
+                        } catch {
+                            // Skip files we can't access - return from autoreleasepool
+                            return
                         }
-                        
-                    } catch {
-                        // Skip files we can't access - return from autoreleasepool
-                        return
                     }
                 }
-            }
-            
-            // Final update for remaining files
-            if localFilesProcessed % updateInterval != 0 {
-                let remainingFiles = localFilesProcessed % updateInterval
-                let finalSize = usage.size
-                let finalPath = rootURL.path
-                Task { @MainActor [weak self] in
-                    self?.totalFilesProcessed += remainingFiles
-                    self?.totalBytesProcessed = finalSize
-                    self?.updateDynamicProgress(currentPath: finalPath)
+                
+                // Final update for remaining files
+                if localFilesProcessed % updateInterval != 0 {
+                    let remainingFiles = localFilesProcessed % updateInterval
+                    let finalSize = usage.size
+                    let finalPath = rootURL.path
+                    Task { @MainActor [weak self] in
+                        self?.totalFilesProcessed += remainingFiles
+                        self?.totalBytesProcessed = finalSize
+                        self?.updateDynamicProgress(currentPath: finalPath)
+                    }
                 }
+                
+                return usage
             }
-            
-            return usage
-        }
+        }.value
     }
     
     private func enumerateDirectoryRecursiveFast(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
-        return autoreleasepool {
+        return await Task.detached { [weak self] in
+            return autoreleasepool {
             let keys: [URLResourceKey] = [
                 .isRegularFileKey,
                 .isDirectoryKey,
@@ -767,66 +1112,63 @@ class DiskAnalyzer: ObservableObject {
             }
             
             return usage
-        }
+            }
+        }.value
     }
     
     private func updateDynamicProgress(currentPath: String) {
         let now = Date()
         let elapsed = now.timeIntervalSince(lastProgressUpdate)
         
-        // Dynamic estimation based on file processing rate
-        if elapsed > 0.5 && totalFilesProcessed > 0 { // Update every 0.5 seconds minimum
-            let filesPerSecond = Double(filesProcessedSinceLastUpdate) / elapsed
+        // Update adaptive progress model every 0.3 seconds minimum for responsiveness
+        if elapsed > 0.3 && totalFilesProcessed > 0 {
+            // Update rate model with current observations
+            progressModel.update(
+                observedFiles: totalFilesProcessed,
+                observedBytes: totalBytesProcessed,
+                currentTime: now
+            )
             
-            // Adaptive estimation: start conservative, adjust based on actual rate
-            if estimatedTotalFiles == 0 {
-                // Initial estimate based on processing rate
-                estimatedTotalFiles = max(totalFilesProcessed * 50, 10000) // Conservative start
-            } else if filesPerSecond > 0 {
-                // Adjust estimate based on current directory
-                let pathDepth = currentPath.components(separatedBy: "/").count
-                let estimateMultiplier = pathDepth > 4 ? 2.0 : 1.5 // Deep paths likely have more files
-                
-                let newEstimate = Int(Double(totalFilesProcessed) * estimateMultiplier)
-                estimatedTotalFiles = max(estimatedTotalFiles, newEstimate)
-            }
+            // Get adaptive progress percentage (can go down if estimate improves)
+            scanProgressPercentage = progressModel.getProgress(processedFiles: totalFilesProcessed)
             
-            // Calculate progress percentage
-            let progressPercent = min(Double(totalFilesProcessed) / Double(estimatedTotalFiles) * 100.0, 95.0)
-            scanProgressPercentage = progressPercent
-            
-            // Update progress message with current location and file count
+            // Show current path being scanned
             let pathComponent = URL(fileURLWithPath: currentPath).lastPathComponent
-            scanProgress = "Analyzing \(pathComponent): \(formatFileCount(totalFilesProcessed)) files (\(formatBytes(totalBytesProcessed)))"
+            currentScanPath = pathComponent
             
-            // Calculate ETA based on file processing rate
-            if let startTime = scanStartTime, totalFilesProcessed > 100 {
-                let totalElapsed = now.timeIntervalSince(startTime)
-                let overallRate = Double(totalFilesProcessed) / totalElapsed
-                
-                if overallRate > 0 {
-                    let remainingFiles = estimatedTotalFiles - totalFilesProcessed
-                    let remainingTime = Double(remainingFiles) / overallRate
-                    
-                    if remainingTime > 120 {
-                        let minutes = Int(remainingTime / 60)
-                        estimatedTimeRemaining = "~\(minutes) min remaining"
-                    } else if remainingTime > 10 {
-                        estimatedTimeRemaining = "~\(Int(remainingTime)) sec remaining"
-                    } else {
-                        estimatedTimeRemaining = "Almost done..."
-                    }
+            // Get current processing rates
+            let rates = progressModel.getCurrentRate()
+            filesPerSecond = formatRate(rates.filesPerSec)
+            
+            // Update main progress message with rate and current location
+            scanProgress = "Scanning \(pathComponent): \(formatFileCount(totalFilesProcessed)) files (\(formatBytes(totalBytesProcessed))) • \(filesPerSecond)"
+            
+            // Calculate ETA using adaptive model
+            if let eta = progressModel.getETA(processedFiles: totalFilesProcessed) {
+                if eta > 120 {
+                    let minutes = Int(eta / 60)
+                    estimatedTimeRemaining = "~\(minutes) min remaining"
+                } else if eta > 10 {
+                    estimatedTimeRemaining = "~\(Int(eta)) sec remaining"
                 } else {
-                    estimatedTimeRemaining = ""
+                    estimatedTimeRemaining = "Almost done..."
                 }
+            } else {
+                estimatedTimeRemaining = "Calculating..."
             }
             
-            // Reset for next update
-            filesProcessedSinceLastUpdate = 0
             lastProgressUpdate = now
         }
-        
-        filesProcessedSinceLastUpdate += 1
+    }
+    
+    private func formatRate(_ rate: Double) -> String {
+        if rate >= 1000 {
+            return String(format: "%.1fK files/sec", rate / 1000.0)
+        } else if rate >= 1 {
+            return String(format: "%.0f files/sec", rate)
+        } else {
+            return "< 1 file/sec"
+        }
     }
     
     private func formatFileCount(_ count: Int) -> String {
@@ -885,5 +1227,67 @@ class DiskAnalyzer: ObservableObject {
         scanTask?.cancel()
         isScanning = false
         scanProgress = ""
+    }
+    
+    func scanExternalVolumes() async {
+        await MainActor.run {
+            self.externalVolumes = []
+        }
+        
+        guard let volumeContents = try? FileManager.default.contentsOfDirectory(atPath: "/Volumes") else {
+            return
+        }
+        
+        var volumes: [FolderItem] = []
+        
+        for volume in volumeContents {
+            let volumePath = "/Volumes/\(volume)"
+            var isDirectory: ObjCBool = false
+            
+            if FileManager.default.fileExists(atPath: volumePath, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                
+                // Get basic volume info
+                let volumeURL = URL(fileURLWithPath: volumePath)
+                
+                do {
+                    let resourceValues = try volumeURL.resourceValues(forKeys: [
+                        .contentModificationDateKey,
+                        .volumeTotalCapacityKey,
+                        .volumeAvailableCapacityKey
+                    ])
+                    
+                    let totalCapacity = resourceValues.volumeTotalCapacity ?? 0
+                    let availableCapacity = resourceValues.volumeAvailableCapacity ?? 0
+                    let usedCapacity = Int64(totalCapacity - availableCapacity)
+                    
+                    let volumeItem = FolderItem(
+                        name: volume,
+                        path: volumePath,
+                        size: usedCapacity,
+                        itemCount: 0, // Will be calculated when scanned
+                        lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
+                        isDirectory: true
+                    )
+                    
+                    volumes.append(volumeItem)
+                } catch {
+                    // If we can't get volume info, create a basic item
+                    let volumeItem = FolderItem(
+                        name: volume,
+                        path: volumePath,
+                        size: 0,
+                        itemCount: 0,
+                        lastModified: Date.distantPast,
+                        isDirectory: true
+                    )
+                    volumes.append(volumeItem)
+                }
+            }
+        }
+        
+        await MainActor.run {
+            self.externalVolumes = volumes.sorted { $0.size > $1.size }
+        }
     }
 }
