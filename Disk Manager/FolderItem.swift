@@ -3,6 +3,18 @@ import Foundation
 struct DiskUsage {
     var fileCount = 0
     var totalAllocated = 0
+    
+    // Convenience accessors for consistency
+    var size: Int64 { Int64(totalAllocated) }
+    var itemCount: Int { fileCount }
+    
+    mutating func addSize(_ bytes: Int64) {
+        totalAllocated += Int(bytes)
+    }
+    
+    mutating func addItem() {
+        fileCount += 1
+    }
 }
 
 struct FolderItem: Identifiable, Comparable {
@@ -226,11 +238,10 @@ class DiskAnalyzer: ObservableObject {
         }
     }
     
-    private static func scanDirectoryContentsSafe(_ path: String) -> [FolderItem] {
-        // Do a complete recursive scan and build a tree structure
+    private static func scanDirectoryContentsSafe(_ path: String) async -> [FolderItem] {
+        // Use high-performance bounded parallel scanning
         let rootURL = URL(fileURLWithPath: path)
-        let allItems = Self.buildCompleteDirectoryTree(at: rootURL)
-        return allItems.sorted()
+        return await boundedParallelScan(rootURL: rootURL)
     }
     
     private static func buildCompleteDirectoryTree(at rootURL: URL) -> [FolderItem] {
@@ -566,5 +577,335 @@ class DiskAnalyzer: ObservableObject {
         scanTask?.cancel()
         isScanning = false
         scanProgress = ""
+    }
+    
+    // MARK: - High-Performance Bounded Parallel Scanning
+    
+    private static func boundedParallelScan(rootURL: URL) async -> [FolderItem] {
+        // For full recursive scanning, we need to build the complete tree upfront
+        // This ensures all folder sizes are calculated immediately
+        
+        // Check if we can access this directory
+        guard FileManager.default.isReadableFile(atPath: rootURL.path) else {
+            print("No read access to \(rootURL.path)")
+            return []
+        }
+        
+        // Special handling for root directory - use the existing optimized approach
+        if rootURL.path == "/" {
+            return await buildRootDirectoryItemsAsync()
+        }
+        
+        // For other directories, do a complete recursive scan
+        return await buildCompleteDirectoryTreeAsync(at: rootURL)
+    }
+    
+    private static func processURL(_ url: URL, seenResourceIDs: NSMutableSet) async -> FolderItem? {
+        do {
+            // All metadata is prefetched in one go
+            let resourceValues = try url.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey,
+                .contentModificationDateKey,
+                .fileResourceIdentifierKey
+            ])
+            
+            // Skip symlinks to prevent cycles
+            if resourceValues.isSymbolicLink == true {
+                return nil
+            }
+            
+            // Skip if we've already seen this resource (hard link deduplication)
+            if let resourceID = resourceValues.fileResourceIdentifier {
+                if seenResourceIDs.contains(resourceID) {
+                    return nil
+                }
+                seenResourceIDs.add(resourceID)
+            }
+            
+            let isDirectory = resourceValues.isDirectory ?? false
+            let size: Int64
+            let itemCount: Int
+            
+            if isDirectory {
+                let diskUsage = await directoryDiskUsageAsync(at: url)
+                size = diskUsage.size
+                itemCount = diskUsage.itemCount
+            } else {
+                size = Int64(resourceValues.totalFileAllocatedSize ?? 0)
+                itemCount = 1
+            }
+            
+            return FolderItem(
+                name: url.lastPathComponent,
+                path: url.path,
+                size: size,
+                itemCount: itemCount,
+                lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
+                isDirectory: isDirectory
+            )
+            
+        } catch {
+            // Skip files we can't access
+            print("Error accessing \(url.path): \(error)")
+            return nil
+        }
+    }
+    
+    private static func directoryDiskUsageAsync(at rootURL: URL) async -> DiskUsage {
+        return await withTaskGroup(of: DiskUsage.self) { group in
+            var totalUsage = DiskUsage()
+            
+            // Start with the directory enumeration
+            group.addTask {
+                let seenResourceIDs = NSMutableSet()
+                return await enumerateDirectoryRecursive(at: rootURL, seenResourceIDs: seenResourceIDs)
+            }
+            
+            // Collect results
+            for await usage in group {
+                totalUsage.addSize(usage.size)
+                totalUsage.fileCount += usage.itemCount
+            }
+            
+            return totalUsage
+        }
+    }
+    
+    private static func enumerateDirectoryRecursive(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
+        return autoreleasepool {
+            let keys: [URLResourceKey] = [
+                .isRegularFileKey,
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey,
+                .fileResourceIdentifierKey
+            ]
+            
+            guard let enumerator = FileManager.default.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: keys,
+                options: [.skipsPackageDescendants, .skipsHiddenFiles]
+            ) else {
+                return DiskUsage()
+            }
+            
+            var usage = DiskUsage()
+            
+            for case let url as URL in enumerator {
+                autoreleasepool {
+                    do {
+                        let resourceValues = try url.resourceValues(forKeys: Set(keys))
+                        
+                        // Skip symlinks
+                        if resourceValues.isSymbolicLink == true {
+                            enumerator.skipDescendants()
+                            return
+                        }
+                        
+                        // Skip if we've seen this resource (hard link deduplication)
+                        if let resourceID = resourceValues.fileResourceIdentifier {
+                            if seenResourceIDs.contains(resourceID) {
+                                return
+                            }
+                            seenResourceIDs.add(resourceID)
+                        }
+                        
+                        // Only count regular files for size (directories are counted by their contents)
+                        if resourceValues.isRegularFile == true {
+                            usage.addSize(Int64(resourceValues.totalFileAllocatedSize ?? 0))
+                        }
+                        usage.addItem()
+                        
+                    } catch {
+                        // Skip files we can't access
+                        enumerator.skipDescendants()
+                    }
+                }
+            }
+            
+            return usage
+        }
+    }
+    
+    private static func buildRootDirectoryItemsAsync() async -> [FolderItem] {
+        // Major system directories to show at root level
+        let rootDirectories = [
+            "/Applications",
+            "/Users", 
+            "/System",
+            "/Library",
+            "/private",
+            "/usr",
+            "/bin",
+            "/sbin",
+            "/opt",
+            "/Volumes"
+        ]
+        
+        let maxConcurrency = min(ProcessInfo.processInfo.activeProcessorCount * 2, 16)
+        var items: [FolderItem] = []
+        var activeTasks = 0
+        
+        return await withTaskGroup(of: FolderItem?.self) { group in
+            for dirPath in rootDirectories {
+                let url = URL(fileURLWithPath: dirPath)
+                
+                // Check if directory exists and is accessible
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory),
+                      isDirectory.boolValue else {
+                    continue
+                }
+                
+                // Bound the parallelism
+                while activeTasks >= maxConcurrency {
+                    if let item = await group.next() {
+                        if let validItem = item {
+                            items.append(validItem)
+                        }
+                        activeTasks -= 1
+                    }
+                }
+                
+                // Calculate full directory size asynchronously
+                group.addTask {
+                    let diskUsage = await directoryDiskUsageAsync(at: url)
+                    
+                    return FolderItem(
+                        name: url.lastPathComponent,
+                        path: url.path,
+                        size: diskUsage.size,
+                        itemCount: diskUsage.itemCount,
+                        lastModified: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast,
+                        isDirectory: true
+                    )
+                }
+                activeTasks += 1
+            }
+            
+            // Collect remaining results
+            while let item = await group.next() {
+                if let validItem = item {
+                    items.append(validItem)
+                }
+            }
+            
+            return items.sorted { $0.size > $1.size }
+        }
+    }
+    
+    private static func buildCompleteDirectoryTreeAsync(at rootURL: URL) async -> [FolderItem] {
+        let maxConcurrency = min(ProcessInfo.processInfo.activeProcessorCount * 2, 16)
+        
+        do {
+            // Get immediate children
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: rootURL,
+                includingPropertiesForKeys: [
+                    .isDirectoryKey,
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                    .totalFileAllocatedSizeKey,
+                    .contentModificationDateKey,
+                    .fileResourceIdentifierKey
+                ],
+                options: [.skipsPackageDescendants]
+            )
+            
+            var items: [FolderItem] = []
+            var activeTasks = 0
+            
+            return await withTaskGroup(of: FolderItem?.self) { group in
+                for url in contents {
+                    // Bound the parallelism
+                    while activeTasks >= maxConcurrency {
+                        if let item = await group.next() {
+                            if let validItem = item {
+                                items.append(validItem)
+                            }
+                            activeTasks -= 1
+                        }
+                    }
+                    
+                    // Process each item with full recursive calculation
+                    group.addTask {
+                        let seenResourceIDs = NSMutableSet()
+                        return await processURLComplete(url, seenResourceIDs: seenResourceIDs)
+                    }
+                    activeTasks += 1
+                }
+                
+                // Collect remaining results
+                while let item = await group.next() {
+                    if let validItem = item {
+                        items.append(validItem)
+                    }
+                }
+                
+                return items.sorted { $0.size > $1.size }
+            }
+            
+        } catch {
+            print("Error scanning directory \(rootURL.path): \(error)")
+            return []
+        }
+    }
+    
+    private static func processURLComplete(_ url: URL, seenResourceIDs: NSMutableSet) async -> FolderItem? {
+        do {
+            // All metadata is prefetched in one go
+            let resourceValues = try url.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey,
+                .contentModificationDateKey,
+                .fileResourceIdentifierKey
+            ])
+            
+            // Skip symlinks to prevent cycles
+            if resourceValues.isSymbolicLink == true {
+                return nil
+            }
+            
+            // Skip if we've already seen this resource (hard link deduplication)
+            if let resourceID = resourceValues.fileResourceIdentifier {
+                if seenResourceIDs.contains(resourceID) {
+                    return nil
+                }
+                seenResourceIDs.add(resourceID)
+            }
+            
+            let isDirectory = resourceValues.isDirectory ?? false
+            let size: Int64
+            let itemCount: Int
+            
+            if isDirectory {
+                // Always do full recursive calculation for directories
+                let diskUsage = await directoryDiskUsageAsync(at: url)
+                size = diskUsage.size
+                itemCount = diskUsage.itemCount
+            } else {
+                size = Int64(resourceValues.totalFileAllocatedSize ?? 0)
+                itemCount = 1
+            }
+            
+            return FolderItem(
+                name: url.lastPathComponent,
+                path: url.path,
+                size: size,
+                itemCount: itemCount,
+                lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
+                isDirectory: isDirectory
+            )
+            
+        } catch {
+            // Skip files we can't access
+            print("Error accessing \(url.path): \(error)")
+            return nil
+        }
     }
 }
