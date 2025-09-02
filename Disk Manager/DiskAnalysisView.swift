@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DiskAnalysisView: View {
     @StateObject private var analyzer = DiskAnalyzer()
@@ -15,32 +16,6 @@ struct DiskAnalysisView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Button(action: {
-                    if breadcrumbs.isEmpty {
-                        onBack()
-                    } else {
-                        goBack()
-                    }
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.title2)
-                }
-                
-                Image(systemName: "desktopcomputer")
-                    .font(.title2)
-                
-                Text("Computer")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            
-            Divider()
             
             if !analyzer.isScanning && !analyzer.rootItems.isEmpty {
                 Text("Files may take more space than shown")
@@ -96,14 +71,40 @@ struct DiskAnalysisView: View {
                 Spacer()
             } else if analyzer.rootItems.isEmpty {
                 Spacer()
-                VStack(spacing: 16) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
-                    
-                    Text("Ready to analyze")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
+                if analyzer.scanProgress.contains("Full Disk Access required") {
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.shield")
+                            .font(.system(size: 64))
+                            .foregroundColor(.orange)
+                        
+                        VStack(spacing: 12) {
+                            Text("Full Disk Access Required")
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                            
+                            Text("Disk Manager needs Full Disk Access to analyze your entire system. This allows accurate measurement of all files and directories.")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 400)
+                            
+                            Button("Open System Settings") {
+                                openFullDiskAccessSettings()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                        }
+                    }
+                } else {
+                    VStack(spacing: 16) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary)
+                        
+                        Text("Ready to analyze")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 Spacer()
             } else {
@@ -161,17 +162,6 @@ struct DiskAnalysisView: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }
-            
-            ToolbarItem(placement: .navigation) {
-                Button("Back") {
-                    if breadcrumbs.isEmpty {
-                        onBack()
-                    } else {
-                        goBack()
-                    }
-                }
-                .keyboardShortcut(.leftArrow, modifiers: .command)
-            }
         }
         .onAppear {
             // Automatically start scanning when view appears
@@ -189,6 +179,12 @@ struct DiskAnalysisView: View {
         if let previousPath = breadcrumbs.popLast() {
             currentPath = previousPath
             analyzer.navigateToPath(currentPath)
+        }
+    }
+    
+    private func openFullDiskAccessSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
         }
     }
 }

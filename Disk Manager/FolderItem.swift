@@ -136,19 +136,33 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func buildCompleteTreeAsync() async -> [FolderItem] {
+        // For now, proceed with scan regardless of FDA detection
+        // We'll let permission errors surface naturally during enumeration
+        await MainActor.run {
+            self.scanProgress = "Building complete directory tree..."
+        }
+        
         // Major system directories to show at root level
         var rootDirectories = [
             "/Applications",
-            "/System",
+            "/Users",
+            "/System", 
             "/Library",
-            "/bin",
-            "/sbin",
-            "/Volumes"
+            "/usr",
+            "/opt",
+            "/private"
         ]
         
-        // Add protected directories only if we have Full Disk Access
-        if hasFullDiskAccess() {
-            rootDirectories.append(contentsOf: ["/Users", "/private", "/usr", "/opt"])
+        // Add external volumes from /Volumes (but not /Volumes itself)
+        if let volumeContents = try? FileManager.default.contentsOfDirectory(atPath: "/Volumes") {
+            for volume in volumeContents {
+                let volumePath = "/Volumes/\(volume)"
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: volumePath, isDirectory: &isDirectory),
+                   isDirectory.boolValue {
+                    rootDirectories.append(volumePath)
+                }
+            }
         }
         
         // Use actor-isolated approach for thread safety
@@ -287,18 +301,7 @@ class DiskAnalyzer: ObservableObject {
             return item
             
         } catch {
-            // For permission errors, create a placeholder item with estimated size
-            if url.path.hasPrefix("/Users") || url.path.hasPrefix("/private") || url.path.hasPrefix("/usr") || url.path.hasPrefix("/opt") {
-                // These require Full Disk Access
-                return FolderItem(
-                    name: url.lastPathComponent,
-                    path: url.path,
-                    size: 0, // Will show as needing Full Disk Access
-                    itemCount: 0,
-                    lastModified: Date.distantPast,
-                    isDirectory: true
-                )
-            }
+            // Don't create zero-byte placeholders - just skip inaccessible directories
             print("Error building folder tree for \(url.path): \(error)")
             return nil
         }
@@ -465,11 +468,11 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func hasFullDiskAccess() -> Bool {
-        // Test by trying to access multiple protected directories
+        // Simple test - try to read a known protected directory
         let testPaths = [
-            "/Users",
-            "/private/var",
-            "/System/Library/Extensions"
+            "/Library/Application Support/com.apple.TCC",
+            "/private/var/db/dslocal/nodes/Default/users",
+            "/System/Library/CoreServices/SystemUIServer.app"
         ]
         
         for testPath in testPaths {
@@ -477,7 +480,15 @@ class DiskAnalyzer: ObservableObject {
                 return true
             }
         }
-        return false
+        
+        // Alternative: try reading directory contents
+        do {
+            let _ = try FileManager.default.contentsOfDirectory(atPath: "/private/var/db")
+            return true
+        } catch {
+            // Still try one more simple test
+            return FileManager.default.isReadableFile(atPath: "/private/var/db/dslocal")
+        }
     }
     
     func cancelScan() {
