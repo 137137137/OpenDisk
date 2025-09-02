@@ -211,8 +211,8 @@ func getattrlistbulkScan(dirFd: Int32) throws -> [OptimizedBulkEntry] {
                                      ATTR_CMN_FILEID | ATTR_CMN_MODTIME)
     attrList.fileattr = attrgroup_t(ATTR_FILE_ALLOCSIZE)
     
-    // Large buffer for fewer syscalls
-    var buffer = [UInt8](repeating: 0, count: 512 * 1024)
+    // Large buffer for fewer syscalls - increased to 2MB for better performance
+    var buffer = [UInt8](repeating: 0, count: 2 * 1024 * 1024)
     var result: [OptimizedBulkEntry] = []
     result.reserveCapacity(1000)
     
@@ -714,51 +714,77 @@ actor WorkerPool {
                 var localItemCount: Int = 0
                 var childWorkItems: [DirectoryWorkItem] = []
                 
-                for entry in bulkEntries {
+                // Filter valid entries first
+                let validEntries = bulkEntries.filter { entry in
                     let entryName = entry.actualName
-                    
                     // Skip hidden and system files/directories 
                     if entryName.hasPrefix(".") || entryName == "lost+found" {
-                        continue
+                        return false
                     }
                     
-                    let itemPath = (workItem.path as NSString).appendingPathComponent(entryName)
                     let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.fileId)
-                    
                     // Skip if we've seen this inode globally (hard link deduplication)
                     if entry.needsHardlinkDedup && globalSeenInodes.contains(devIno) {
-                        continue
+                        return false
                     }
                     if entry.needsHardlinkDedup {
                         globalSeenInodes.insert(devIno)
                     }
-                    
-                    if entry.isDir {
-                        // For directories, prepare work item for later processing
-                        // Limit directory depth to prevent FD exhaustion
-                        if workItem.depth < 10 {
-                            let childWorkItem = DirectoryWorkItem(
-                                path: itemPath,
-                                depth: workItem.depth + 1,
-                                parentId: workItem.id
-                            )
-                            childWorkItems.append(childWorkItem)
+                    return true
+                }
+                
+                // Process entries in batches for better performance
+                let batchSize = 100
+                let batches = validEntries.chunked(into: batchSize)
+                
+                await withTaskGroup(of: (files: [FolderItem], dirs: [DirectoryWorkItem], size: Int64, count: Int).self) { group in
+                    for batch in batches {
+                        group.addTask {
+                            var batchFiles: [FolderItem] = []
+                            var batchDirs: [DirectoryWorkItem] = []
+                            var batchSize: Int64 = 0
+                            var batchCount: Int = 0
+                            
+                            for entry in batch {
+                                let entryName = entry.actualName
+                                let itemPath = (workItem.path as NSString).appendingPathComponent(entryName)
+                                
+                                if entry.isDir {
+                                    // For directories, prepare work item for later processing
+                                    let childWorkItem = DirectoryWorkItem(
+                                        path: itemPath,
+                                        depth: workItem.depth + 1,
+                                        parentId: workItem.id
+                                    )
+                                    batchDirs.append(childWorkItem)
+                                } else {
+                                    // For files, accumulate size immediately
+                                    batchSize += entry.allocSize
+                                    batchCount += 1
+                                    
+                                    // Create file item
+                                    let fileItem = FolderItem(
+                                        name: entryName,
+                                        path: itemPath,
+                                        size: entry.allocSize,
+                                        itemCount: 1,
+                                        lastModified: entry.modificationDate,
+                                        isDirectory: false
+                                    )
+                                    batchFiles.append(fileItem)
+                                }
+                            }
+                            
+                            return (files: batchFiles, dirs: batchDirs, size: batchSize, count: batchCount)
                         }
-                    } else {
-                        // For files, accumulate size immediately
-                        localDirSize += entry.allocSize
-                        localItemCount += 1
-                        
-                        // Create file item
-                        let fileItem = FolderItem(
-                            name: entryName,
-                            path: itemPath,
-                            size: entry.allocSize,
-                            itemCount: 1,
-                            lastModified: entry.modificationDate,
-                            isDirectory: false
-                        )
-                        childItems.append(fileItem)
+                    }
+                    
+                    // Collect results from all batches
+                    for await result in group {
+                        childItems.append(contentsOf: result.files)
+                        childWorkItems.append(contentsOf: result.dirs)
+                        localDirSize += result.size
+                        localItemCount += result.count
                     }
                 }
                 
@@ -807,7 +833,7 @@ func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderIt
     directoryNodes = result.directoryNodes
     
     // Bottom-up aggregation: compute directory sizes from leaves to root
-    bottomUpAggregation(directoryNodes: &directoryNodes)
+    await bottomUpAggregation(directoryNodes: &directoryNodes)
     
     // Extract root directory contents as FolderItem array
     let rootNode = directoryNodes.values.first { $0.parentId == nil }
@@ -843,38 +869,65 @@ func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderIt
     return (items.sorted { $0.size > $1.size }, totalUsage)
 }
 
-// Bottom-up aggregation to compute directory sizes
-func bottomUpAggregation(directoryNodes: inout [UUID: DirectoryNode]) {
-    // Find leaf nodes (nodes with no directory children) and work backwards
+// Bottom-up aggregation to compute directory sizes concurrently
+func bottomUpAggregation(directoryNodes: inout [UUID: DirectoryNode]) async {
+    // Build parent-child relationships for efficient lookup
+    var childrenMap: [UUID: [UUID]] = [:]
+    for (nodeId, node) in directoryNodes {
+        if let parentId = node.parentId {
+            childrenMap[parentId, default: []].append(nodeId)
+        }
+    }
+    
     var processedNodes = Set<UUID>()
     var hasChanges = true
     
     while hasChanges {
         hasChanges = false
         
-        for (nodeId, node) in directoryNodes {
-            if processedNodes.contains(nodeId) { continue }
-            
-            // Check if all child directories are processed
-            let childDirIds = directoryNodes.values.compactMap { childNode in
-                childNode.parentId == nodeId ? childNode.id : nil
-            }
-            
-            let allChildrenProcessed = childDirIds.allSatisfy { processedNodes.contains($0) }
-            
-            if allChildrenProcessed {
-                // Aggregate child directory sizes into this node
-                for childId in childDirIds {
-                    if let childNode = directoryNodes[childId] {
-                        node.size += childNode.size
-                        node.itemCount += childNode.itemCount
-                        // Update modification time to latest child
-                        if childNode.modTime > node.modTime {
-                            node.modTime = childNode.modTime
+        // Find all nodes ready for processing (leaf nodes or nodes with all children processed)
+        let readyNodes = directoryNodes.compactMap { (nodeId, node) -> UUID? in
+            if processedNodes.contains(nodeId) { return nil }
+            let childIds = childrenMap[nodeId] ?? []
+            return childIds.allSatisfy { processedNodes.contains($0) } ? nodeId : nil
+        }
+        
+        if readyNodes.isEmpty { break }
+        
+        // Prepare data for concurrent processing with all child data captured
+        let nodeData = readyNodes.compactMap { nodeId -> (UUID, Int64, Int, Date, [DirectoryNode])? in
+            guard let node = directoryNodes[nodeId] else { return nil }
+            let childIds = childrenMap[nodeId] ?? []
+            let childNodes = childIds.compactMap { directoryNodes[$0] }
+            return (nodeId, node.size, node.itemCount, node.modTime, childNodes)
+        }
+        
+        // Process ready nodes concurrently
+        await withTaskGroup(of: (UUID, Int64, Int, Date).self) { group in
+            for (nodeId, nodeSize, nodeCount, nodeModTime, childNodes) in nodeData {
+                group.addTask {
+                    var totalSize = nodeSize
+                    var totalCount = nodeCount
+                    var latestModTime = nodeModTime
+                    
+                    // Aggregate child directory sizes
+                    for childNode in childNodes {
+                        totalSize += childNode.size
+                        totalCount += childNode.itemCount
+                        if childNode.modTime > latestModTime {
+                            latestModTime = childNode.modTime
                         }
                     }
+                    
+                    return (nodeId, totalSize, totalCount, latestModTime)
                 }
-                
+            }
+            
+            // Collect results and update nodes
+            for await (nodeId, size, count, modTime) in group {
+                directoryNodes[nodeId]?.size = size
+                directoryNodes[nodeId]?.itemCount = count
+                directoryNodes[nodeId]?.modTime = modTime
                 processedNodes.insert(nodeId)
                 hasChanges = true
             }
