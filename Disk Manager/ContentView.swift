@@ -19,19 +19,6 @@ struct ContentView: View {
                     .fontWeight(.semibold)
                 
                 Spacer()
-                
-                // Window controls placeholder
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(Color.yellow)
-                        .frame(width: 12, height: 12)
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 12, height: 12)
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 12, height: 12)
-                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
