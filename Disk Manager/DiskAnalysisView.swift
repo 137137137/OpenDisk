@@ -185,15 +185,13 @@ struct FolderRowView: View {
         HStack(spacing: 12) {
             // Icon and progress indicator
             HStack(spacing: 4) {
-                if item.percentage >= 5.0 {
-                    Text(String(format: "%.1f%%", item.percentage))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
+                Text(String(format: "%.1f%%", item.percentage))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
                 
                 Image(systemName: item.isDirectory ? "folder" : "doc")
                     .font(.title3)
