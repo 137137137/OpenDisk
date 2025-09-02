@@ -31,14 +31,14 @@ struct RingsChart: View {
                         .foregroundColor(.secondary)
                 }
                 
-                // Rings
+                // Rings - concentric circles from largest to smallest
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     if item.size > 0 {
                         RingSegment(
                             item: item,
                             color: colors[index % colors.count],
-                            radius: Double(size * 0.45) - Double(index * 15),
-                            thickness: 12,
+                            radius: Double(size * 0.45) - Double(index * 8), // Closer rings
+                            thickness: 6, // Thinner rings for better visibility
                             totalSize: totalSize,
                             center: center
                         )
@@ -87,62 +87,12 @@ struct RingSegment: View {
     let totalSize: Int64
     let center: CGPoint
     
-    private var angle: Double {
-        guard totalSize > 0 else { return 0 }
-        return (Double(item.size) / Double(totalSize)) * 360
-    }
-    
     var body: some View {
-        Path { path in
-            let startAngle = -90.0 // Start from top
-            let endAngle = startAngle + angle
-            
-            // Outer arc
-            path.addArc(
-                center: center,
-                radius: radius,
-                startAngle: .degrees(startAngle),
-                endAngle: .degrees(endAngle),
-                clockwise: false
-            )
-            
-            // Inner arc
-            path.addArc(
-                center: center,
-                radius: radius - thickness,
-                startAngle: .degrees(endAngle),
-                endAngle: .degrees(startAngle),
-                clockwise: true
-            )
-            
-            path.closeSubpath()
-        }
-        .fill(color.opacity(0.8))
-        .overlay(
-            Path { path in
-                let startAngle = -90.0
-                let endAngle = startAngle + angle
-                
-                path.addArc(
-                    center: center,
-                    radius: radius,
-                    startAngle: .degrees(startAngle),
-                    endAngle: .degrees(endAngle),
-                    clockwise: false
-                )
-                
-                path.addArc(
-                    center: center,
-                    radius: radius - thickness,
-                    startAngle: .degrees(endAngle),
-                    endAngle: .degrees(startAngle),
-                    clockwise: true
-                )
-                
-                path.closeSubpath()
-            }
-            .stroke(color, lineWidth: 1)
-        )
+        // Create a full circle ring (concentric ring like baobab)
+        Circle()
+            .stroke(color.opacity(0.8), lineWidth: thickness)
+            .frame(width: radius * 2, height: radius * 2)
+            .position(center)
     }
 }
 

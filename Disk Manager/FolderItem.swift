@@ -96,7 +96,7 @@ class DiskAnalyzer: ObservableObject {
         if path == "/" {
             if !hasFullDiskAccess() {
                 // Guide user to grant full disk access
-                scanProgress = "Full Disk Access required. Please grant in System Settings > Privacy & Security > Full Disk Access"
+                scanProgress = "Full Disk Access required. Please grant in System Settings > Privacy & Security > Full Disk Access > Add your app"
                 isScanning = false
                 return
             }
@@ -137,18 +137,19 @@ class DiskAnalyzer: ObservableObject {
     
     private func buildCompleteTreeAsync() async -> [FolderItem] {
         // Major system directories to show at root level
-        let rootDirectories = [
+        var rootDirectories = [
             "/Applications",
-            "/Users", 
             "/System",
             "/Library",
-            "/private",
-            "/usr",
             "/bin",
             "/sbin",
-            "/opt",
             "/Volumes"
         ]
+        
+        // Add protected directories only if we have Full Disk Access
+        if hasFullDiskAccess() {
+            rootDirectories.append(contentsOf: ["/Users", "/private", "/usr", "/opt"])
+        }
         
         // Use actor-isolated approach for thread safety
         return await withTaskGroup(of: FolderItem?.self) { group in
@@ -197,7 +198,10 @@ class DiskAnalyzer: ObservableObject {
             let isDirectory = resourceValues.isDirectory ?? false
             guard isDirectory else { return nil }
             
-            // Get immediate children
+            // First, calculate total size and item count for this directory using recursive enumeration
+            let totalUsage = await directoryDiskUsage(at: url)
+            
+            // Get immediate children for navigation purposes
             let contents = try FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: [
@@ -210,12 +214,9 @@ class DiskAnalyzer: ObservableObject {
                 options: [.skipsPackageDescendants]
             )
             
-            // Process children sequentially to avoid async issues in task groups
+            // Process immediate children for display
             var children: [FolderItem] = []
-            var totalSize: Int64 = 0
-            var totalItemCount = 0
             
-            // Process each child
             for childURL in contents {
                 do {
                     let childValues = try childURL.resourceValues(forKeys: [
@@ -256,8 +257,6 @@ class DiskAnalyzer: ObservableObject {
                     )
                     
                     children.append(childItem)
-                    totalSize += childSize
-                    totalItemCount += childItemCount
                     
                 } catch {
                     // Skip inaccessible items
@@ -268,7 +267,7 @@ class DiskAnalyzer: ObservableObject {
             // Sort children by size
             children.sort { $0.size > $1.size }
             
-            // Store children in tree for navigation (create copy to avoid capture issues)
+            // Store children in tree for navigation
             let sortedChildren = children
             await MainActor.run {
                 self.folderTree[url.path] = sortedChildren
@@ -277,8 +276,8 @@ class DiskAnalyzer: ObservableObject {
             var item = FolderItem(
                 name: url.lastPathComponent,
                 path: url.path,
-                size: totalSize,
-                itemCount: totalItemCount,
+                size: totalUsage.size, // Use the accurate total from recursive enumeration
+                itemCount: totalUsage.itemCount, // Use the accurate count from recursive enumeration
                 lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
                 isDirectory: true
             )
@@ -288,6 +287,18 @@ class DiskAnalyzer: ObservableObject {
             return item
             
         } catch {
+            // For permission errors, create a placeholder item with estimated size
+            if url.path.hasPrefix("/Users") || url.path.hasPrefix("/private") || url.path.hasPrefix("/usr") || url.path.hasPrefix("/opt") {
+                // These require Full Disk Access
+                return FolderItem(
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: 0, // Will show as needing Full Disk Access
+                    itemCount: 0,
+                    lastModified: Date.distantPast,
+                    isDirectory: true
+                )
+            }
             print("Error building folder tree for \(url.path): \(error)")
             return nil
         }
@@ -401,7 +412,7 @@ class DiskAnalyzer: ObservableObject {
             guard let enumerator = FileManager.default.enumerator(
                 at: rootURL,
                 includingPropertiesForKeys: keys,
-                options: [.skipsPackageDescendants, .skipsHiddenFiles]
+                options: [] // Include everything like baobab - no skipping
             ) else {
                 return DiskUsage()
             }
@@ -413,9 +424,8 @@ class DiskAnalyzer: ObservableObject {
                     do {
                         let resourceValues = try url.resourceValues(forKeys: Set(keys))
                         
-                        // Skip symlinks
+                        // Skip symlinks entirely to avoid double counting
                         if resourceValues.isSymbolicLink == true {
-                            enumerator.skipDescendants()
                             return
                         }
                         
@@ -427,15 +437,18 @@ class DiskAnalyzer: ObservableObject {
                             seenResourceIDs.add(resourceID)
                         }
                         
-                        // Only count regular files for size (directories are counted by their contents)
-                        if resourceValues.isRegularFile == true {
-                            usage.addSize(Int64(resourceValues.totalFileAllocatedSize ?? 0))
-                        }
+                        // Count all items (files and directories)
                         usage.addItem()
                         
+                        // Only count regular files for size (directories are counted by their contents)
+                        if resourceValues.isRegularFile == true {
+                            let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
+                            usage.addSize(Int64(allocatedSize))
+                        }
+                        
                     } catch {
-                        // Skip files we can't access
-                        enumerator.skipDescendants()
+                        // Skip files we can't access - return from autoreleasepool
+                        return
                     }
                 }
             }
@@ -452,9 +465,19 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func hasFullDiskAccess() -> Bool {
-        // Test by trying to access a protected system directory
-        let testPath = "/System/Library/Extensions"
-        return FileManager.default.isReadableFile(atPath: testPath)
+        // Test by trying to access multiple protected directories
+        let testPaths = [
+            "/Users",
+            "/private/var",
+            "/System/Library/Extensions"
+        ]
+        
+        for testPath in testPaths {
+            if FileManager.default.isReadableFile(atPath: testPath) {
+                return true
+            }
+        }
+        return false
     }
     
     func cancelScan() {
