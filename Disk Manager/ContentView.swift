@@ -70,15 +70,10 @@ struct DeviceRow: View {
                 
                 // Subtitle for home folder or storage info
                 if device.totalStorage > 0 {
-                    HStack(spacing: 4) {
-                        Text(device.formattedAvailableStorage)
-                            .font(.system(size: 12))
-                            .foregroundColor(.primary)
-                        
-                        Text("Available")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
+                    // Available/Total storage format
+                    Text("\(device.formattedAvailableStorage)/\(device.formattedTotalStorage) Available")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
                     
                     // Storage progress bar
                     StorageProgressBar(
@@ -86,11 +81,6 @@ struct DeviceRow: View {
                         availableStorage: device.availableStorage
                     )
                     .padding(.top, 2)
-                    
-                    // Total storage
-                    Text(device.subtitle ?? "")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
                 } else {
                     Text(device.subtitle ?? "")
                         .font(.system(size: 12))
