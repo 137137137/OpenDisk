@@ -138,11 +138,27 @@ private func parseAttrBuf(_ buffer: [UInt8], basePath: UnsafePointer<CChar>) -> 
     let nameData = Data(buffer[offset..<offset + Int(nameLength)])
     guard let name = String(data: nameData, encoding: .utf8) else { return nil }
     
-    let isDir = (objType & UInt32(DT_DIR)) != 0
-    let isSymlink = (objType & UInt32(DT_LNK)) != 0
+    // objType contains vnode types (VDIR=2, VREG=1, VLNK=5), not dirent DT_* constants
+    let isDir = objType == UInt32(VDIR.rawValue)
+    let isSymlink = objType == UInt32(VLNK.rawValue)
     
-    // Skip symlinks
-    if isSymlink { return nil }
+    // For symlinks, check what they point to using lstat vs stat
+    var actualIsDir = isDir
+    if isSymlink {
+        let fullPath = String(cString: basePath) + "/" + name
+        fullPath.withCString { pathCStr in
+            var statBuf = stat()
+            // Use stat() instead of lstat() to follow the symlink
+            if stat(pathCStr, &statBuf) == 0 {
+                actualIsDir = (statBuf.st_mode & S_IFMT) == S_IFDIR
+            } else {
+                // If we can't follow the symlink, skip it
+                return
+            }
+        }
+        // Skip symlinks that don't point to directories
+        if !actualIsDir { return nil }
+    }
     
     // Get allocated size using stat() for better accuracy
     let fullPath = String(cString: basePath) + "/" + name
@@ -150,7 +166,7 @@ private func parseAttrBuf(_ buffer: [UInt8], basePath: UnsafePointer<CChar>) -> 
     
     return BulkEntry(
         name: name,
-        isDir: isDir,
+        isDir: actualIsDir,
         allocSize: allocSize,
         inode: inode,
         deviceId: deviceId
@@ -511,60 +527,8 @@ class DiskAnalyzer: ObservableObject {
             self.lastProgressUpdate = Date()
         }
         
-        // Major system directories to show at root level (excluding /Volumes)
-        let rootDirectories = [
-            "/Applications",
-            "/Users",
-            "/System", 
-            "/Library",
-            "/usr",
-            "/opt",
-            "/private"
-        ]
-        
-        // Create immutable copy to avoid capture issues
-        let directoriesToScan = rootDirectories
-        
-        return await withTaskGroup(of: FolderItem?.self) { group in
-            let totalDirectories = directoriesToScan.count
-            
-            // Start tasks for all directories
-            for dirPath in directoriesToScan {
-                let url = URL(fileURLWithPath: dirPath)
-                
-                // Check if directory exists and is accessible
-                var isDirectory: ObjCBool = false
-                if FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory) && isDirectory.boolValue {
-                    // Update progress to show which directory we're starting
-                    await MainActor.run {
-                        self.scanProgress = "Analyzing \(url.lastPathComponent)..."
-                    }
-                    
-                    group.addTask { [weak self] in
-                        return await self?.buildFolderWithCompleteChildrenFast(url: url)
-                    }
-                }
-            }
-            
-            // Collect all results
-            var items: [FolderItem] = []
-            var completedCount = 0
-            
-            for await item in group {
-                if let validItem = item {
-                    items.append(validItem)
-                    completedCount += 1
-                    
-                    // Update progress to show completion
-                    let currentCount = completedCount
-                    await MainActor.run {
-                        self.scanProgress = "Completed \(validItem.name) (\(currentCount)/\(totalDirectories) directories)"
-                    }
-                }
-            }
-            
-            return items.sorted { $0.size > $1.size }
-        }
+        // Actually enumerate "/" to get all top-level directories
+        return await scanDirectoryContentsSafe("/")
     }
     
     private func buildFolderWithCompleteChildrenFast(url: URL) async -> FolderItem? {
@@ -801,9 +765,13 @@ class DiskAnalyzer: ObservableObject {
                         .fileResourceIdentifierKey
                     ])
                     
-                    // Skip symlinks
+                    // Follow symlinks to directories, skip others
                     if resourceValues.isSymbolicLink == true {
-                        continue
+                        // Check if symlink points to a directory
+                        let targetValues = try? url.resourceValues(forKeys: [.isDirectoryKey])
+                        if targetValues?.isDirectory != true {
+                            continue // Skip non-directory symlinks
+                        }
                     }
                     
                     // Get real device and inode for deduplication
