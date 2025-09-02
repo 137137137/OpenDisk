@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // MARK: - Bulk Metadata Optimization
 
@@ -13,72 +14,145 @@ struct BulkEntry {
 struct DevIno: Hashable {
     let dev: UInt64
     let ino: UInt64
+    
+    init(dev: UInt64, ino: UInt64) {
+        self.dev = dev
+        self.ino = ino
+    }
 }
 
-// Simplified bulk metadata using traditional FileManager but with optimized deduplication
-func bulkList(at path: String) throws -> [BulkEntry] {
-    let url = URL(fileURLWithPath: path)
-    
-    let contents = try FileManager.default.contentsOfDirectory(
-        at: url,
-        includingPropertiesForKeys: [
-            .isDirectoryKey,
-            .isRegularFileKey,
-            .isSymbolicLinkKey,
-            .totalFileAllocatedSizeKey,
-            .fileResourceIdentifierKey
-        ],
-        options: [.skipsPackageDescendants]
-    )
-    
-    var result: [BulkEntry] = []
-    result.reserveCapacity(contents.count)
-    
-    for itemURL in contents {
-        do {
-            let resourceValues = try itemURL.resourceValues(forKeys: [
-                .isDirectoryKey,
-                .isRegularFileKey,
-                .isSymbolicLinkKey,
-                .totalFileAllocatedSizeKey,
-                .fileResourceIdentifierKey
-            ])
-            
-            // Skip symlinks
-            if resourceValues.isSymbolicLink == true {
-                continue
-            }
-            
-            let isDirectory = resourceValues.isDirectory ?? false
-            let allocSize = Int64(resourceValues.totalFileAllocatedSize ?? 0)
-            
-            // Extract inode information for deduplication
-            var inode: UInt64 = 0
-            var deviceId: UInt32 = 0
-            
-            if let resourceID = resourceValues.fileResourceIdentifier {
-                // Use a stable hash of the resource identifier
-                inode = UInt64(abs(resourceID.hash))
-                deviceId = 0 // Default device ID
-            }
-            
-            let entry = BulkEntry(
-                name: itemURL.lastPathComponent,
-                isDir: isDirectory,
-                allocSize: allocSize,
-                inode: inode,
-                deviceId: deviceId
-            )
-            
-            result.append(entry)
-            
-        } catch {
-            // Skip inaccessible items
-            continue
-        }
+// Get real device and inode using fstatat for proper hard link deduplication
+func getDevIno(for path: String) -> DevIno? {
+    return path.withCString { pathCStr in
+        var stat = Darwin.stat()
+        guard lstat(pathCStr, &stat) == 0 else { return nil }
+        return DevIno(dev: UInt64(stat.st_dev), ino: stat.st_ino)
     }
+}
+
+// Get allocated bytes from st_blocks * 512 (more efficient than totalFileAllocatedSizeKey)
+func getAllocatedSize(for path: String) -> Int64 {
+    return path.withCString { pathCStr in
+        var stat = Darwin.stat()
+        guard lstat(pathCStr, &stat) == 0 else { return 0 }
+        return Int64(stat.st_blocks) * 512  // st_blocks is in 512-byte units
+    }
+}
+
+// File descriptor-based directory operations to avoid repeated path resolution
+func openDirectoryFd(path: String) -> Int32? {
+    return path.withCString { pathCStr in
+        let fd = open(pathCStr, O_RDONLY)
+        return fd >= 0 ? fd : nil
+    }
+}
+
+func getStatAt(dirFd: Int32, name: String) -> (dev: UInt64, ino: UInt64, blocks: Int64)? {
+    return name.withCString { nameCStr in
+        var stat = Darwin.stat()
+        guard fstatat(dirFd, nameCStr, &stat, AT_SYMLINK_NOFOLLOW) == 0 else { return nil }
+        return (dev: UInt64(stat.st_dev), ino: stat.st_ino, blocks: Int64(stat.st_blocks))
+    }
+}
+
+// High-performance bulk metadata using getattrlistbulk(2) system call
+func bulkList(at path: String) throws -> [BulkEntry] {
+    return try path.withCString { pathCStr in
+        let fd = open(pathCStr, O_RDONLY)
+        guard fd >= 0 else {
+            throw POSIXError(.init(rawValue: errno)!)
+        }
+        defer { close(fd) }
+        
+        var attrList = attrlist()
+        attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+        attrList.commonattr = attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_DEVID | ATTR_CMN_FILEID)
+        
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024) // 64KB buffer
+        var result: [BulkEntry] = []
+        result.reserveCapacity(1000)
+        
+        repeat {
+            let count = getattrlistbulk(fd, &attrList, &buffer, buffer.count, UInt64(FSOPT_PACK_INVAL_ATTRS))
+            guard count >= 0 else {
+                if errno == ENOENT { break }
+                throw POSIXError(.init(rawValue: errno)!)
+            }
+            
+            if count == 0 { break }
+            
+            var offset = 0
+            for _ in 0..<count {
+                let entryLength = buffer.withUnsafeBufferPointer { ptr in
+                    ptr.baseAddress!.advanced(by: offset).withMemoryRebound(to: UInt32.self, capacity: 1) { $0.pointee }
+                }
+                
+                guard offset + Int(entryLength) <= buffer.count else { break }
+                
+                let entryData = buffer[offset..<offset + Int(entryLength)]
+                if let entry = parseAttrBuf(Array(entryData), basePath: pathCStr) {
+                    result.append(entry)
+                }
+                
+                offset += Int(entryLength)
+            }
+        } while true
+        
+        return result
+    }
+}
+
+private func parseAttrBuf(_ buffer: [UInt8], basePath: UnsafePointer<CChar>) -> BulkEntry? {
+    guard buffer.count >= 16 else { return nil }
     
-    return result
+    var offset = 4 // Skip length
+    
+    // Read object type
+    let objType = buffer.withUnsafeBytes { bytes in
+        bytes.load(fromByteOffset: offset, as: UInt32.self)
+    }
+    offset += 4
+    
+    // Read device ID
+    let deviceId = buffer.withUnsafeBytes { bytes in
+        bytes.load(fromByteOffset: offset, as: UInt32.self)
+    }
+    offset += 4
+    
+    // Read inode
+    let inode = buffer.withUnsafeBytes { bytes in
+        bytes.load(fromByteOffset: offset, as: UInt64.self)
+    }
+    offset += 8
+    
+    // Read name length and name
+    guard offset + 4 < buffer.count else { return nil }
+    let nameLength = buffer.withUnsafeBytes { bytes in
+        bytes.load(fromByteOffset: offset, as: UInt32.self)
+    }
+    offset += 4
+    
+    guard offset + Int(nameLength) <= buffer.count else { return nil }
+    let nameData = Data(buffer[offset..<offset + Int(nameLength)])
+    guard let name = String(data: nameData, encoding: .utf8) else { return nil }
+    
+    let isDir = (objType & UInt32(DT_DIR)) != 0
+    let isSymlink = (objType & UInt32(DT_LNK)) != 0
+    
+    // Skip symlinks
+    if isSymlink { return nil }
+    
+    // Get allocated size using stat() for better accuracy
+    let fullPath = String(cString: basePath) + "/" + name
+    let allocSize = getAllocatedSize(for: fullPath)
+    
+    return BulkEntry(
+        name: name,
+        isDir: isDir,
+        allocSize: allocSize,
+        inode: inode,
+        deviceId: deviceId
+    )
 }
 
 extension Array {
@@ -260,9 +334,7 @@ func fallbackDirectoryEnumeration(at rootPath: String, seenInodes: Set<DevIno>) 
         let keys: [URLResourceKey] = [
             .isRegularFileKey,
             .isDirectoryKey,
-            .isSymbolicLinkKey,
-            .totalFileAllocatedSizeKey,
-            .fileResourceIdentifierKey
+            .isSymbolicLinkKey
         ]
         
         guard let enumerator = FileManager.default.enumerator(
@@ -284,9 +356,7 @@ func fallbackDirectoryEnumeration(at rootPath: String, seenInodes: Set<DevIno>) 
                     }
                     
                     // Extract device and inode for deduplication
-                    if let resourceID = resourceValues.fileResourceIdentifier {
-                        let devIno = DevIno(dev: 0, ino: UInt64(abs(resourceID.hash)))
-                        
+                    if let devIno = getDevIno(for: url.path) {
                         if localSeenInodes.contains(devIno) {
                             return
                         }
@@ -296,8 +366,8 @@ func fallbackDirectoryEnumeration(at rootPath: String, seenInodes: Set<DevIno>) 
                     usage.addItem()
                     
                     if resourceValues.isRegularFile == true {
-                        let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
-                        usage.addSize(Int64(allocatedSize))
+                        let allocatedSize = getAllocatedSize(for: url.path)
+                        usage.addSize(allocatedSize)
                     }
                     
                 } catch {
@@ -450,17 +520,12 @@ class DiskAnalyzer: ObservableObject {
         // Create immutable copy to avoid capture issues
         let directoriesToScan = rootDirectories
         
-        // Use maximum parallelism with bounded concurrency for optimal performance
-        let maxConcurrency = max(ProcessInfo.processInfo.activeProcessorCount * 2, 8)
+        // Use bounded concurrency = number of cores for optimal performance
+        let maxConcurrency = ProcessInfo.processInfo.activeProcessorCount
         
         return await withTaskGroup(of: FolderItem?.self) { group in
-            var items: [FolderItem] = []
-            var activeTasks = 0
-            var directoryIndex = 0
-            
-            // Start initial batch of tasks
-            while directoryIndex < directoriesToScan.count && activeTasks < maxConcurrency {
-                let dirPath = directoriesToScan[directoryIndex]
+            // Start tasks for all directories
+            for dirPath in directoriesToScan {
                 let url = URL(fileURLWithPath: dirPath)
                 
                 // Check if directory exists and is accessible
@@ -474,36 +539,22 @@ class DiskAnalyzer: ObservableObject {
                     group.addTask { [weak self] in
                         return await self?.buildFolderWithCompleteChildrenFast(url: url)
                     }
-                    activeTasks += 1
                 }
-                directoryIndex += 1
             }
             
-            // Process results and spawn new tasks as they complete
-            while let item = await group.next() {
+            // Collect all results
+            var items: [FolderItem] = []
+            var completedCount = 0
+            
+            for await item in group {
                 if let validItem = item {
                     items.append(validItem)
+                    completedCount += 1
                     
                     // Update progress to show completion
                     await MainActor.run {
-                        self.scanProgress = "Completed \(validItem.name) (\(items.count)/\(directoriesToScan.count) directories)"
+                        self.scanProgress = "Completed \(validItem.name) (\(completedCount)/\(directoriesToScan.count) directories)"
                     }
-                }
-                activeTasks -= 1
-                
-                // Start next task if available
-                if directoryIndex < directoriesToScan.count {
-                    let dirPath = directoriesToScan[directoryIndex]
-                    let url = URL(fileURLWithPath: dirPath)
-                    
-                    var isDirectory: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory) && isDirectory.boolValue {
-                        group.addTask { [weak self] in
-                            return await self?.buildFolderWithCompleteChildrenFast(url: url)
-                        }
-                        activeTasks += 1
-                    }
-                    directoryIndex += 1
                 }
             }
             
@@ -562,7 +613,6 @@ class DiskAnalyzer: ObservableObject {
                     .isDirectoryKey,
                     .isRegularFileKey,
                     .isSymbolicLinkKey,
-                    .totalFileAllocatedSizeKey,
                     .contentModificationDateKey
                 ],
                 options: [.skipsPackageDescendants]
@@ -577,7 +627,6 @@ class DiskAnalyzer: ObservableObject {
                         .isDirectoryKey,
                         .isRegularFileKey,
                         .isSymbolicLinkKey,
-                        .totalFileAllocatedSizeKey,
                         .contentModificationDateKey
                     ])
                     
@@ -597,7 +646,7 @@ class DiskAnalyzer: ObservableObject {
                         childItemCount = usage.itemCount
                     } else {
                         // Regular file
-                        childSize = Int64(childValues.totalFileAllocatedSize ?? 0)
+                        childSize = getAllocatedSize(for: childURL.path)
                         childItemCount = 1
                     }
                     
@@ -723,7 +772,6 @@ class DiskAnalyzer: ObservableObject {
                     .isDirectoryKey,
                     .isRegularFileKey,
                     .isSymbolicLinkKey,
-                    .totalFileAllocatedSizeKey,
                     .contentModificationDateKey,
                     .fileResourceIdentifierKey
                 ],
@@ -739,7 +787,6 @@ class DiskAnalyzer: ObservableObject {
                         .isDirectoryKey,
                         .isRegularFileKey,
                         .isSymbolicLinkKey,
-                        .totalFileAllocatedSizeKey,
                         .contentModificationDateKey,
                         .fileResourceIdentifierKey
                     ])
@@ -749,9 +796,8 @@ class DiskAnalyzer: ObservableObject {
                         continue
                     }
                     
-                    // Convert resourceID to DevIno for deduplication
-                    if let resourceID = resourceValues.fileResourceIdentifier {
-                        let devIno = DevIno(dev: 0, ino: UInt64(abs(resourceID.hash)))
+                    // Get real device and inode for deduplication
+                    if let devIno = getDevIno(for: url.path) {
                         if seenInodes.contains(devIno) {
                             continue
                         }
@@ -767,7 +813,7 @@ class DiskAnalyzer: ObservableObject {
                         size = diskUsage.size
                         itemCount = diskUsage.itemCount
                     } else {
-                        size = Int64(resourceValues.totalFileAllocatedSize ?? 0)
+                        size = getAllocatedSize(for: url.path)
                         itemCount = 1
                     }
                     
@@ -821,7 +867,6 @@ class DiskAnalyzer: ObservableObject {
                     .isDirectoryKey,
                     .isRegularFileKey,
                     .isSymbolicLinkKey,
-                    .totalFileAllocatedSizeKey,
                     .contentModificationDateKey
                 ],
                 options: []
@@ -897,7 +942,6 @@ class DiskAnalyzer: ObservableObject {
                 .isDirectoryKey,
                 .isRegularFileKey,
                 .isSymbolicLinkKey,
-                .totalFileAllocatedSizeKey,
                 .contentModificationDateKey
             ])
             
@@ -917,7 +961,7 @@ class DiskAnalyzer: ObservableObject {
                 childItemCount = usage.itemCount
             } else {
                 // Regular file
-                childSize = Int64(childValues.totalFileAllocatedSize ?? 0)
+                childSize = getAllocatedSize(for: childURL.path)
                 childItemCount = 1
             }
             
@@ -949,15 +993,13 @@ class DiskAnalyzer: ObservableObject {
         return result.usage
     }
     
-    private func enumerateDirectoryRecursive(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
+    private func enumerateDirectoryRecursive(at rootURL: URL, seenInodes: Set<DevIno>) async -> DiskUsage {
         return await Task.detached { [weak self] in
             return autoreleasepool {
                 let keys: [URLResourceKey] = [
                     .isRegularFileKey,
                     .isDirectoryKey,
-                    .isSymbolicLinkKey,
-                    .totalFileAllocatedSizeKey,
-                    .fileResourceIdentifierKey
+                    .isSymbolicLinkKey
                 ]
                 
                 guard let enumerator = FileManager.default.enumerator(
@@ -969,6 +1011,7 @@ class DiskAnalyzer: ObservableObject {
                 }
                 
                 var usage = DiskUsage()
+                var localSeenInodes = seenInodes
                 var localFilesProcessed = 0
                 let updateInterval = 100 // Update progress every 100 files
                 
@@ -982,12 +1025,12 @@ class DiskAnalyzer: ObservableObject {
                                 return
                             }
                             
-                            // Skip if we've seen this resource (hard link deduplication)
-                            if let resourceID = resourceValues.fileResourceIdentifier {
-                                if seenResourceIDs.contains(resourceID) {
+                            // Skip if we've seen this inode (hard link deduplication)
+                            if let devIno = getDevIno(for: url.path) {
+                                if localSeenInodes.contains(devIno) {
                                     return
                                 }
-                                seenResourceIDs.add(resourceID)
+                                localSeenInodes.insert(devIno)
                             }
                             
                             // Count all items (files and directories)
@@ -996,8 +1039,8 @@ class DiskAnalyzer: ObservableObject {
                             
                             // Only count regular files for size (directories are counted by their contents)
                             if resourceValues.isRegularFile == true {
-                                let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
-                                usage.addSize(Int64(allocatedSize))
+                                let allocatedSize = getAllocatedSize(for: url.path)
+                                usage.addSize(allocatedSize)
                             }
                             
                             // Update progress periodically
@@ -1012,7 +1055,7 @@ class DiskAnalyzer: ObservableObject {
                             }
                             
                         } catch {
-                            // Skip files we can't access - return from autoreleasepool
+                            // Skip files we can't access
                             return
                         }
                     }
@@ -1035,15 +1078,13 @@ class DiskAnalyzer: ObservableObject {
         }.value
     }
     
-    private func enumerateDirectoryRecursiveFast(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
+    private func enumerateDirectoryRecursiveFast(at rootURL: URL, seenInodes: Set<DevIno>) async -> DiskUsage {
         return await Task.detached { [weak self] in
             return autoreleasepool {
             let keys: [URLResourceKey] = [
                 .isRegularFileKey,
                 .isDirectoryKey,
-                .isSymbolicLinkKey,
-                .totalFileAllocatedSizeKey,
-                .fileResourceIdentifierKey
+                .isSymbolicLinkKey
             ]
             
             guard let enumerator = FileManager.default.enumerator(
@@ -1055,6 +1096,7 @@ class DiskAnalyzer: ObservableObject {
             }
             
             var usage = DiskUsage()
+            var localSeenInodes = seenInodes
             let updateInterval = 500 // Less frequent updates for speed
             var localFilesProcessed = 0
             
@@ -1068,12 +1110,12 @@ class DiskAnalyzer: ObservableObject {
                             return
                         }
                         
-                        // Skip if we've seen this resource (hard link deduplication)
-                        if let resourceID = resourceValues.fileResourceIdentifier {
-                            if seenResourceIDs.contains(resourceID) {
+                        // Skip if we've seen this inode (hard link deduplication)
+                        if let devIno = getDevIno(for: url.path) {
+                            if localSeenInodes.contains(devIno) {
                                 return
                             }
-                            seenResourceIDs.add(resourceID)
+                            localSeenInodes.insert(devIno)
                         }
                         
                         // Count all items (files and directories)
@@ -1082,8 +1124,8 @@ class DiskAnalyzer: ObservableObject {
                         
                         // Only count regular files for size (directories are counted by their contents)
                         if resourceValues.isRegularFile == true {
-                            let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
-                            usage.addSize(Int64(allocatedSize))
+                            let allocatedSize = getAllocatedSize(for: url.path)
+                            usage.addSize(allocatedSize)
                         }
                         
                         // Update progress less frequently for speed
@@ -1259,12 +1301,12 @@ class DiskAnalyzer: ObservableObject {
                     let resourceValues = try volumeURL.resourceValues(forKeys: [
                         .contentModificationDateKey,
                         .volumeTotalCapacityKey,
-                        .volumeAvailableCapacityKey
+                        .volumeAvailableCapacityForImportantUsageKey
                     ])
                     
-                    let totalCapacity = resourceValues.volumeTotalCapacity ?? 0
-                    let availableCapacity = resourceValues.volumeAvailableCapacity ?? 0
-                    let usedCapacity = Int64(totalCapacity - availableCapacity)
+                    let totalCapacity = Int64(resourceValues.volumeTotalCapacity ?? 0)
+                    let availableCapacity = Int64(resourceValues.volumeAvailableCapacityForImportantUsage ?? 0)
+                    let usedCapacity = totalCapacity - availableCapacity
                     
                     let volumeItem = FolderItem(
                         name: volume,
