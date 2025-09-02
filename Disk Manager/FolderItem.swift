@@ -424,12 +424,15 @@ class DiskAnalyzer: ObservableObject {
     private var folderTree: [String: [FolderItem]] = [:]
     
     // Navigate to a path using pre-calculated data
-    func navigateToPath(_ path: String) {
+    // Returns true if cached data was found and loaded, false otherwise
+    func navigateToPath(_ path: String) -> Bool {
         if let preCalculatedItems = folderTree[path] {
             rootItems = preCalculatedItems
             totalSize = preCalculatedItems.reduce(0) { $0 + $1.size }
             calculatePercentages()
+            return true
         }
+        return false
     }
     
     func scanDirectory(_ path: String) {

@@ -6,6 +6,7 @@ struct DiskAnalysisView: View {
     let rootPath: String
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
+    @State private var hasInitiallyScanned = false
     let onBack: () -> Void
     
     init(rootPath: String = "/", onBack: @escaping () -> Void = {}) {
@@ -188,7 +189,7 @@ struct DiskAnalysisView: View {
                 }
             }
         }
-        .navigationTitle("Computer")
+        .navigationTitle(currentPath == rootPath ? "Computer" : URL(fileURLWithPath: currentPath).lastPathComponent)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh") {
@@ -198,21 +199,40 @@ struct DiskAnalysisView: View {
             }
         }
         .onAppear {
-            // Automatically start scanning when view appears
-            analyzer.scanDirectory(currentPath)
+            // Only scan if we haven't scanned yet or if there's no data for current path
+            if !hasInitiallyScanned {
+                hasInitiallyScanned = true
+                analyzer.scanDirectory(currentPath)
+            } else if analyzer.rootItems.isEmpty {
+                // If we have no data, try to navigate to cached data first
+                if !analyzer.navigateToPath(currentPath) {
+                    // If no cached data, then scan
+                    analyzer.scanDirectory(currentPath)
+                }
+            }
+        }
+        .onChange(of: currentPath) { newPath in
+            // Update the navigation title when path changes
+            // This ensures the UI reflects the current location
         }
     }
     
     private func navigateToFolder(_ item: FolderItem) {
         breadcrumbs.append(currentPath)
         currentPath = item.path
-        analyzer.navigateToPath(currentPath)
+        // Try cached data first, scan if no cached data available
+        if !analyzer.navigateToPath(currentPath) {
+            analyzer.scanDirectory(currentPath)
+        }
     }
     
     private func goBack() {
         if let previousPath = breadcrumbs.popLast() {
             currentPath = previousPath
-            analyzer.navigateToPath(currentPath)
+            // Try cached data first, scan if no cached data
+            if !analyzer.navigateToPath(currentPath) {
+                analyzer.scanDirectory(currentPath)
+            }
         }
     }
     
@@ -222,7 +242,12 @@ struct DiskAnalysisView: View {
             breadcrumbs.append(currentPath)
         }
         currentPath = path
-        analyzer.scanDirectory(path)
+        
+        // Try to use cached data first, only scan if no cached data available
+        if !analyzer.navigateToPath(path) {
+            // No cached data available, need to scan
+            analyzer.scanDirectory(path)
+        }
     }
     
     private func openFullDiskAccessSettings() {
