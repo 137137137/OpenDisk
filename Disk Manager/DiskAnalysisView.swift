@@ -129,16 +129,31 @@ struct DiskAnalysisView: View {
             } else {
                 // Main content with list and chart
                 HStack(spacing: 0) {
-                    // Folder list
-                    List(analyzer.rootItems) { item in
-                        FolderRowView(item: item) {
-                            if item.isDirectory {
-                                navigateToFolder(item)
+                    // Left side - Folder list with navigation
+                    VStack(spacing: 0) {
+                        // Breadcrumb navigation bar
+                        BreadcrumbBar(
+                            currentPath: currentPath,
+                            rootPath: rootPath,
+                            onNavigate: { path in
+                                navigateToPath(path)
+                            },
+                            onBack: {
+                                goBack()
                             }
+                        )
+                        
+                        // Folder list
+                        List(analyzer.rootItems) { item in
+                            FolderRowView(item: item) {
+                                if item.isDirectory {
+                                    navigateToFolder(item)
+                                }
+                            }
+                            .listRowInsets(EdgeInsets())
                         }
-                        .listRowInsets(EdgeInsets())
+                        .listStyle(PlainListStyle())
                     }
-                    .listStyle(PlainListStyle())
                     .frame(maxWidth: .infinity)
                     
                     // Vertical divider
@@ -199,6 +214,15 @@ struct DiskAnalysisView: View {
             currentPath = previousPath
             analyzer.navigateToPath(currentPath)
         }
+    }
+    
+    private func navigateToPath(_ path: String) {
+        // Only add to breadcrumbs if we're going deeper, not back
+        if !breadcrumbs.contains(currentPath) && path != currentPath {
+            breadcrumbs.append(currentPath)
+        }
+        currentPath = path
+        analyzer.scanDirectory(path)
     }
     
     private func openFullDiskAccessSettings() {
@@ -286,6 +310,95 @@ struct FolderRowView: View {
             onTap()
         }
     }
+}
+
+struct BreadcrumbBar: View {
+    let currentPath: String
+    let rootPath: String
+    let onNavigate: (String) -> Void
+    let onBack: () -> Void
+    
+    private var pathComponents: [PathComponent] {
+        let components = currentPath.components(separatedBy: "/").filter { !$0.isEmpty }
+        var result: [PathComponent] = []
+        
+        // Add root
+        result.append(PathComponent(name: "Computer", path: rootPath))
+        
+        // Build path components
+        var buildPath = ""
+        for component in components {
+            if buildPath.isEmpty || buildPath == "/" {
+                buildPath = "/" + component
+            } else {
+                buildPath = buildPath + "/" + component
+            }
+            result.append(PathComponent(name: component, path: buildPath))
+        }
+        
+        return result
+    }
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            // Back button
+            Button {
+                onBack()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(currentPath == rootPath)
+            
+            // Up button
+            Button {
+                let parentPath = URL(fileURLWithPath: currentPath).deletingLastPathComponent().path
+                if parentPath != currentPath {
+                    onNavigate(parentPath)
+                }
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(.plain)
+            .disabled(currentPath == rootPath || currentPath == "/")
+            
+            Divider()
+                .frame(height: 16)
+            
+            // Breadcrumb path
+            HStack(spacing: 4) {
+                ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
+                    Button {
+                        onNavigate(component.path)
+                    } label: {
+                        Text(component.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(index == pathComponents.count - 1 ? .primary : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    if index < pathComponents.count - 1 {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .border(Color(nsColor: .separatorColor), width: 0.5)
+    }
+}
+
+struct PathComponent {
+    let name: String
+    let path: String
 }
 
 #Preview {
