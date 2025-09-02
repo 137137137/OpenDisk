@@ -1,5 +1,13 @@
 import Foundation
 
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}
+
 struct DiskUsage {
     var fileCount = 0
     var totalAllocated = 0
@@ -186,35 +194,60 @@ class DiskAnalyzer: ObservableObject {
         // Create immutable copy to avoid capture issues
         let directoriesToScan = rootDirectories
         
-        // Use actor-isolated approach for thread safety
+        // Use maximum parallelism with bounded concurrency for optimal performance
+        let maxConcurrency = max(ProcessInfo.processInfo.activeProcessorCount * 2, 8)
+        
         return await withTaskGroup(of: FolderItem?.self) { group in
             var items: [FolderItem] = []
+            var activeTasks = 0
+            var directoryIndex = 0
             
-            for dirPath in directoriesToScan {
+            // Start initial batch of tasks
+            while directoryIndex < directoriesToScan.count && activeTasks < maxConcurrency {
+                let dirPath = directoriesToScan[directoryIndex]
                 let url = URL(fileURLWithPath: dirPath)
                 
                 // Check if directory exists and is accessible
                 var isDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory),
-                      isDirectory.boolValue else {
-                    continue
+                if FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory) && isDirectory.boolValue {
+                    group.addTask { [weak self] in
+                        return await self?.buildFolderWithCompleteChildrenFast(url: url)
+                    }
+                    activeTasks += 1
                 }
-                
-                // Build complete recursive tree for this directory
-                group.addTask { [weak self] in
-                    return await self?.buildFolderWithCompleteChildren(url: url, maxDepth: 3)
-                }
+                directoryIndex += 1
             }
             
-            // Collect all results
+            // Process results and spawn new tasks as they complete
             for await item in group {
                 if let validItem = item {
                     items.append(validItem)
+                }
+                activeTasks -= 1
+                
+                // Start next task if available
+                if directoryIndex < directoriesToScan.count {
+                    let dirPath = directoriesToScan[directoryIndex]
+                    let url = URL(fileURLWithPath: dirPath)
+                    
+                    var isDirectory: ObjCBool = false
+                    if FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDirectory) && isDirectory.boolValue {
+                        group.addTask { [weak self] in
+                            return await self?.buildFolderWithCompleteChildrenFast(url: url)
+                        }
+                        activeTasks += 1
+                    }
+                    directoryIndex += 1
                 }
             }
             
             return items.sorted { $0.size > $1.size }
         }
+    }
+    
+    private func buildFolderWithCompleteChildrenFast(url: URL) async -> FolderItem? {
+        // High-performance directory analysis with parallel subdirectory processing
+        return await buildFolderWithParallelChildren(url: url, depth: 0, maxDepth: 2)
     }
     
     private func buildFolderWithCompleteChildren(url: URL, maxDepth: Int) async -> FolderItem? {
@@ -417,10 +450,156 @@ class DiskAnalyzer: ObservableObject {
         }
     }
     
+    private func buildFolderWithParallelChildren(url: URL, depth: Int, maxDepth: Int) async -> FolderItem? {
+        do {
+            let resourceValues = try url.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+                .contentModificationDateKey
+            ])
+            
+            // Skip symlinks
+            if resourceValues.isSymbolicLink == true {
+                return nil
+            }
+            
+            let isDirectory = resourceValues.isDirectory ?? false
+            guard isDirectory else { return nil }
+            
+            // Use fast enumeration for total size calculation
+            let totalUsage = await directoryDiskUsageFast(at: url)
+            
+            // Get immediate children for navigation - parallelize subdirectory processing
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [
+                    .isDirectoryKey,
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                    .totalFileAllocatedSizeKey,
+                    .contentModificationDateKey
+                ],
+                options: []
+            )
+            
+            // Split children into batches for parallel processing
+            let batchSize = max(contents.count / ProcessInfo.processInfo.activeProcessorCount, 50)
+            var children: [FolderItem] = []
+            
+            if depth < maxDepth && contents.count > batchSize {
+                // Use parallel processing for large directories
+                children = await withTaskGroup(of: [FolderItem].self) { group in
+                    var allChildren: [FolderItem] = []
+                    
+                    let batches = contents.chunked(into: batchSize)
+                    for batch in batches {
+                        group.addTask { [weak self] in
+                            var batchChildren: [FolderItem] = []
+                            for childURL in batch {
+                                if let child = await self?.processSingleChild(childURL) {
+                                    batchChildren.append(child)
+                                }
+                            }
+                            return batchChildren
+                        }
+                    }
+                    
+                    for await batchResult in group {
+                        allChildren.append(contentsOf: batchResult)
+                    }
+                    
+                    return allChildren
+                }
+            } else {
+                // Sequential processing for smaller directories or max depth
+                for childURL in contents {
+                    if let child = await processSingleChild(childURL) {
+                        children.append(child)
+                    }
+                }
+            }
+            
+            // Sort children by size
+            children.sort { $0.size > $1.size }
+            
+            // Store children in tree for navigation
+            let sortedChildren = children
+            await MainActor.run {
+                self.folderTree[url.path] = sortedChildren
+            }
+            
+            var item = FolderItem(
+                name: url.lastPathComponent,
+                path: url.path,
+                size: totalUsage.size,
+                itemCount: totalUsage.itemCount,
+                lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
+                isDirectory: true
+            )
+            
+            item.children = children
+            return item
+            
+        } catch {
+            print("Error building folder tree for \(url.path): \(error)")
+            return nil
+        }
+    }
+    
+    private func processSingleChild(_ childURL: URL) async -> FolderItem? {
+        do {
+            let childValues = try childURL.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey,
+                .contentModificationDateKey
+            ])
+            
+            // Skip symlinks
+            if childValues.isSymbolicLink == true {
+                return nil
+            }
+            
+            let childIsDirectory = childValues.isDirectory ?? false
+            let childSize: Int64
+            let childItemCount: Int
+            
+            if childIsDirectory {
+                // For directories, use fast disk usage calculation
+                let usage = await directoryDiskUsageFast(at: childURL)
+                childSize = usage.size
+                childItemCount = usage.itemCount
+            } else {
+                // Regular file
+                childSize = Int64(childValues.totalFileAllocatedSize ?? 0)
+                childItemCount = 1
+            }
+            
+            return FolderItem(
+                name: childURL.lastPathComponent,
+                path: childURL.path,
+                size: childSize,
+                itemCount: childItemCount,
+                lastModified: childValues.contentModificationDate ?? Date.distantPast,
+                isDirectory: childIsDirectory
+            )
+            
+        } catch {
+            return nil
+        }
+    }
+    
     private func directoryDiskUsage(at rootURL: URL) async -> DiskUsage {
         // Direct enumeration without task groups to avoid async issues
         let seenResourceIDs = NSMutableSet()
         return await enumerateDirectoryRecursive(at: rootURL, seenResourceIDs: seenResourceIDs)
+    }
+    
+    private func directoryDiskUsageFast(at rootURL: URL) async -> DiskUsage {
+        // Optimized enumeration with reduced progress updates for speed
+        let seenResourceIDs = NSMutableSet()
+        return await enumerateDirectoryRecursiveFast(at: rootURL, seenResourceIDs: seenResourceIDs)
     }
     
     private func enumerateDirectoryRecursive(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
@@ -486,6 +665,90 @@ class DiskAnalyzer: ObservableObject {
                         
                     } catch {
                         // Skip files we can't access - return from autoreleasepool
+                        return
+                    }
+                }
+            }
+            
+            // Final update for remaining files
+            if localFilesProcessed % updateInterval != 0 {
+                let remainingFiles = localFilesProcessed % updateInterval
+                let finalSize = usage.size
+                let finalPath = rootURL.path
+                Task { @MainActor [weak self] in
+                    self?.totalFilesProcessed += remainingFiles
+                    self?.totalBytesProcessed = finalSize
+                    self?.updateDynamicProgress(currentPath: finalPath)
+                }
+            }
+            
+            return usage
+        }
+    }
+    
+    private func enumerateDirectoryRecursiveFast(at rootURL: URL, seenResourceIDs: NSMutableSet) async -> DiskUsage {
+        return autoreleasepool {
+            let keys: [URLResourceKey] = [
+                .isRegularFileKey,
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey,
+                .fileResourceIdentifierKey
+            ]
+            
+            guard let enumerator = FileManager.default.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: keys,
+                options: [] // Include everything like baobab - no skipping
+            ) else {
+                return DiskUsage()
+            }
+            
+            var usage = DiskUsage()
+            let updateInterval = 500 // Less frequent updates for speed
+            var localFilesProcessed = 0
+            
+            for case let url as URL in enumerator {
+                autoreleasepool {
+                    do {
+                        let resourceValues = try url.resourceValues(forKeys: Set(keys))
+                        
+                        // Skip symlinks entirely to avoid double counting
+                        if resourceValues.isSymbolicLink == true {
+                            return
+                        }
+                        
+                        // Skip if we've seen this resource (hard link deduplication)
+                        if let resourceID = resourceValues.fileResourceIdentifier {
+                            if seenResourceIDs.contains(resourceID) {
+                                return
+                            }
+                            seenResourceIDs.add(resourceID)
+                        }
+                        
+                        // Count all items (files and directories)
+                        usage.addItem()
+                        localFilesProcessed += 1
+                        
+                        // Only count regular files for size (directories are counted by their contents)
+                        if resourceValues.isRegularFile == true {
+                            let allocatedSize = resourceValues.totalFileAllocatedSize ?? 0
+                            usage.addSize(Int64(allocatedSize))
+                        }
+                        
+                        // Update progress less frequently for speed
+                        if localFilesProcessed % updateInterval == 0 {
+                            let currentSize = usage.size
+                            let currentPath = rootURL.path
+                            Task { @MainActor [weak self] in
+                                self?.totalFilesProcessed += updateInterval
+                                self?.totalBytesProcessed = currentSize
+                                self?.updateDynamicProgress(currentPath: currentPath)
+                            }
+                        }
+                        
+                    } catch {
+                        // Skip files we can't access
                         return
                     }
                 }
