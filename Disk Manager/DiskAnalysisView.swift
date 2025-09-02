@@ -17,13 +17,6 @@ struct DiskAnalysisView: View {
     var body: some View {
         VStack(spacing: 0) {
             
-            if !analyzer.isScanning && !analyzer.rootItems.isEmpty {
-                Text("Files may take more space than shown")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.top, 8)
-            }
-            
             // Content
             if analyzer.isScanning {
                 // Scanning progress in center

@@ -372,10 +372,15 @@ class DiskAnalyzer: ObservableObject {
             scanPath = "/"
         }
         
-        scanTask = Task {
+        scanTask = Task { [weak self] in
+            guard let self = self else { return }
+            
+            // Create local copies of captured variables to avoid concurrency issues
+            let pathToScan = scanPath
+            
             // Scan external volumes in parallel
-            async let volumesScan = scanExternalVolumes()
-            async let diskScan = performScanWithProgress(path: scanPath)
+            async let volumesScan: Void = self.scanExternalVolumes()
+            async let diskScan: [FolderItem] = self.performScanWithProgress(path: pathToScan)
             
             let items = await diskScan
             await volumesScan
@@ -475,7 +480,7 @@ class DiskAnalyzer: ObservableObject {
             }
             
             // Process results and spawn new tasks as they complete
-            for await item in group {
+            while let item = await group.next() {
                 if let validItem = item {
                     items.append(validItem)
                     
@@ -508,8 +513,8 @@ class DiskAnalyzer: ObservableObject {
     
     private func buildFolderWithCompleteChildrenFast(url: URL) async -> FolderItem? {
         // High-performance directory analysis with parallel subdirectory processing and timeout
-        return await withTimeout(seconds: 30) {
-            await buildFolderWithParallelChildren(url: url, depth: 0, maxDepth: 2)
+        return await withTimeout(seconds: 30) { [weak self] in
+            await self?.buildFolderWithParallelChildren(url: url, depth: 0, maxDepth: 2)
         }
     }
     
@@ -844,7 +849,7 @@ class DiskAnalyzer: ObservableObject {
                         }
                     }
                     
-                    for await batchResult in group {
+                    while let batchResult = await group.next() {
                         allChildren.append(contentsOf: batchResult)
                     }
                     
