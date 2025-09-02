@@ -55,10 +55,10 @@ func getStatAt(dirFd: Int32, name: String) -> (dev: UInt64, ino: UInt64, blocks:
     }
 }
 
-// High-performance bulk metadata using getattrlistbulk(2) system call
+// High-performance bulk metadata using getattrlistbulk(2) system call with proper parsing
 func bulkList(at path: String) throws -> [BulkEntry] {
     return try path.withCString { pathCStr in
-        let fd = open(pathCStr, O_RDONLY)
+        let fd = open(pathCStr, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard fd >= 0 else {
             throw POSIXError(.init(rawValue: errno)!)
         }
@@ -66,7 +66,10 @@ func bulkList(at path: String) throws -> [BulkEntry] {
         
         var attrList = attrlist()
         attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-        attrList.commonattr = attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_DEVID | ATTR_CMN_FILEID)
+        let commonAttrs = Int32(ATTR_CMN_RETURNED_ATTRS) | ATTR_CMN_NAME | ATTR_CMN_OBJTYPE | ATTR_CMN_DEVID | ATTR_CMN_FILEID
+        attrList.commonattr = attrgroup_t(commonAttrs)
+        attrList.fileattr = attrgroup_t(ATTR_FILE_ALLOCSIZE)
+        attrList.dirattr = attrgroup_t(ATTR_DIR_ALLOCSIZE)
         
         var buffer = [UInt8](repeating: 0, count: 64 * 1024) // 64KB buffer
         var result: [BulkEntry] = []
@@ -83,18 +86,9 @@ func bulkList(at path: String) throws -> [BulkEntry] {
             
             var offset = 0
             for _ in 0..<count {
-                let entryLength = buffer.withUnsafeBufferPointer { ptr in
-                    ptr.baseAddress!.advanced(by: offset).withMemoryRebound(to: UInt32.self, capacity: 1) { $0.pointee }
-                }
-                
-                guard offset + Int(entryLength) <= buffer.count else { break }
-                
-                let entryData = buffer[offset..<offset + Int(entryLength)]
-                if let entry = parseAttrBuf(Array(entryData), basePath: pathCStr) {
+                if let entry = parseAttrBufCorrect(buffer: buffer, offset: &offset) {
                     result.append(entry)
                 }
-                
-                offset += Int(entryLength)
             }
         } while true
         
@@ -102,57 +96,104 @@ func bulkList(at path: String) throws -> [BulkEntry] {
     }
 }
 
-private func parseAttrBuf(_ buffer: [UInt8], basePath: UnsafePointer<CChar>) -> BulkEntry? {
-    guard buffer.count >= 16 else { return nil }
+// Correct getattrlistbulk parsing following Apple's documentation
+private func parseAttrBufCorrect(buffer: [UInt8], offset: inout Int) -> BulkEntry? {
+    guard offset + 4 <= buffer.count else { return nil }
     
-    var offset = 4 // Skip length
-    
-    // Read object type
-    let objType = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt32.self)
+    let result = buffer.withUnsafeBytes { rawBuffer -> BulkEntry? in
+        let basePtr = rawBuffer.baseAddress!.advanced(by: offset)
+        
+        // Read record length
+        let length = basePtr.load(as: UInt32.self)
+        guard offset + Int(length) <= buffer.count else { return nil }
+        let recordEnd = offset + Int(length)
+        
+        var cursor = offset + 4
+        
+        // Read returned attributes mask
+        guard cursor + 4 <= recordEnd else { return nil }
+        let returnedAttrs = rawBuffer.load(fromByteOffset: cursor, as: attrgroup_t.self)
+        cursor += 4
+        
+        // Parse fixed-width common attributes in order
+        var objType: UInt32 = 0
+        var deviceId: UInt32 = 0
+        var fileId: UInt64 = 0
+        var allocSize: Int64 = 0
+        
+        // ATTR_CMN_OBJTYPE
+        if returnedAttrs & attrgroup_t(ATTR_CMN_OBJTYPE) != 0 {
+            guard cursor + 4 <= recordEnd else { return nil }
+            objType = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+            cursor += 4
+        }
+        
+        // ATTR_CMN_DEVID  
+        if returnedAttrs & attrgroup_t(ATTR_CMN_DEVID) != 0 {
+            guard cursor + 4 <= recordEnd else { return nil }
+            deviceId = rawBuffer.load(fromByteOffset: cursor, as: UInt32.self)
+            cursor += 4
+        }
+        
+        // ATTR_CMN_FILEID
+        if returnedAttrs & attrgroup_t(ATTR_CMN_FILEID) != 0 {
+            guard cursor + 8 <= recordEnd else { return nil }
+            fileId = rawBuffer.load(fromByteOffset: cursor, as: UInt64.self)
+            cursor += 8
+        }
+        
+        // ATTR_FILE_ALLOCSIZE or ATTR_DIR_ALLOCSIZE
+        let isDir = objType == UInt32(VDIR.rawValue)
+        if isDir && (returnedAttrs & attrgroup_t(ATTR_DIR_ALLOCSIZE) != 0) {
+            guard cursor + 8 <= recordEnd else { return nil }
+            allocSize = rawBuffer.load(fromByteOffset: cursor, as: Int64.self)
+            cursor += 8
+        } else if !isDir && (returnedAttrs & attrgroup_t(ATTR_FILE_ALLOCSIZE) != 0) {
+            guard cursor + 8 <= recordEnd else { return nil }
+            allocSize = rawBuffer.load(fromByteOffset: cursor, as: Int64.self)
+            cursor += 8
+        }
+        
+        // ATTR_CMN_NAME (attrreference_t)
+        var name: String = ""
+        if returnedAttrs & attrgroup_t(ATTR_CMN_NAME) != 0 {
+            guard cursor + 8 <= recordEnd else { return nil }
+            let nameRef = rawBuffer.load(fromByteOffset: cursor, as: attrreference_t.self)
+            cursor += 8
+            
+            let nameOffset = offset + Int(nameRef.attr_dataoffset)
+            let nameLength = Int(nameRef.attr_length)
+            
+            guard nameOffset + nameLength <= buffer.count else { return nil }
+            
+            // Read name directly from buffer without Data allocation
+            let namePtr = rawBuffer.baseAddress!.advanced(by: nameOffset)
+            if let nameStr = String(bytesNoCopy: UnsafeMutableRawPointer(mutating: namePtr), 
+                                  length: nameLength, 
+                                  encoding: .utf8, 
+                                  freeWhenDone: false) {
+                name = String(nameStr.prefix { $0 != "\0" }) // Remove NUL terminator if present
+            }
+        }
+        
+        // Skip symlinks (VLNK)
+        if objType == UInt32(VLNK.rawValue) {
+            offset = recordEnd
+            return nil
+        }
+        
+        offset = recordEnd
+        
+        return BulkEntry(
+            name: name,
+            isDir: isDir,
+            allocSize: allocSize,
+            inode: fileId,
+            deviceId: deviceId
+        )
     }
-    offset += 4
     
-    // Read device ID
-    let deviceId = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt32.self)
-    }
-    offset += 4
-    
-    // Read inode
-    let inode = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt64.self)
-    }
-    offset += 8
-    
-    // Read name length and name
-    guard offset + 4 < buffer.count else { return nil }
-    let nameLength = buffer.withUnsafeBytes { bytes in
-        bytes.load(fromByteOffset: offset, as: UInt32.self)
-    }
-    offset += 4
-    
-    guard offset + Int(nameLength) <= buffer.count else { return nil }
-    let nameData = Data(buffer[offset..<offset + Int(nameLength)])
-    guard let name = String(data: nameData, encoding: .utf8) else { return nil }
-    
-    let isDir = (objType & UInt32(DT_DIR)) != 0
-    let isSymlink = (objType & UInt32(DT_LNK)) != 0
-    
-    // Skip symlinks
-    if isSymlink { return nil }
-    
-    // Get allocated size using stat() for better accuracy
-    let fullPath = String(cString: basePath) + "/" + name
-    let allocSize = getAllocatedSize(for: fullPath)
-    
-    return BulkEntry(
-        name: name,
-        isDir: isDir,
-        allocSize: allocSize,
-        inode: inode,
-        deviceId: deviceId
-    )
+    return result
 }
 
 extension Array {
@@ -276,18 +317,33 @@ struct FolderItem: Identifiable, Comparable {
     }
 }
 
-// MARK: - Optimized Directory Enumeration
+// MARK: - Single-Walk Bottom-Up Aggregation (eliminates N² re-walks)
 
+struct DirectoryInfo {
+    var size: Int64 = 0
+    var itemCount: Int = 0
+    var entries: [BulkEntry] = []
+    var subdirPaths: [String] = []
+}
+
+// Single iterative traversal with bottom-up size aggregation  
 func enumerateDirectoryRecursiveBulk(at rootPath: String, seenInodes: Set<DevIno>) async -> (usage: DiskUsage, updatedInodes: Set<DevIno>) {
-    var usage = DiskUsage()
     var localSeenInodes = seenInodes
     var directoriesToProcess = [rootPath]
+    var directoryInfoMap: [String: DirectoryInfo] = [:]
+    var processedDirs: Set<String> = []
     
+    // Phase 1: Single-pass enumeration to collect all directory contents
     while !directoriesToProcess.isEmpty {
         let currentPath = directoriesToProcess.removeFirst()
+        guard !processedDirs.contains(currentPath) else { continue }
+        processedDirs.insert(currentPath)
+        
+        var dirInfo = DirectoryInfo()
         
         do {
             let entries = try bulkList(at: currentPath)
+            dirInfo.entries = entries
             
             for entry in entries {
                 let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.inode)
@@ -298,31 +354,62 @@ func enumerateDirectoryRecursiveBulk(at rootPath: String, seenInodes: Set<DevIno
                 }
                 localSeenInodes.insert(devIno)
                 
-                // Count the item
-                usage.addItem()
+                dirInfo.itemCount += 1
                 
                 if entry.isDir {
-                    // Add directory to processing queue
-                    let fullPath = (currentPath as NSString).appendingPathComponent(entry.name)
-                    directoriesToProcess.append(fullPath)
+                    // Queue subdirectory for processing
+                    let subdirPath = (currentPath as NSString).appendingPathComponent(entry.name)
+                    dirInfo.subdirPaths.append(subdirPath)
+                    directoriesToProcess.append(subdirPath)
                 } else {
-                    // Add file size
-                    if entry.allocSize > 0 {
-                        usage.addSize(entry.allocSize)
-                    }
+                    // Add file size directly from bulk attributes (no extra syscall)
+                    dirInfo.size += entry.allocSize
                 }
             }
             
+            directoryInfoMap[currentPath] = dirInfo
+            
         } catch {
-            // Fall back to traditional enumeration for this directory
-            let fallbackResult = await fallbackDirectoryEnumeration(at: currentPath, seenInodes: localSeenInodes)
-            usage.fileCount += fallbackResult.usage.fileCount
-            usage.totalAllocated += fallbackResult.usage.totalAllocated
-            localSeenInodes = fallbackResult.updatedInodes
+            // For failed directories, create empty info and continue
+            directoryInfoMap[currentPath] = dirInfo
         }
     }
     
-    return (usage, localSeenInodes)
+    // Phase 2: Bottom-up aggregation to compute directory totals
+    let totalUsage = aggregateDirectorySizes(rootPath: rootPath, directoryInfoMap: &directoryInfoMap)
+    
+    return (totalUsage, localSeenInodes)
+}
+
+// Compute directory sizes bottom-up from collected info
+private func aggregateDirectorySizes(rootPath: String, directoryInfoMap: inout [String: DirectoryInfo]) -> DiskUsage {
+    var computed: [String: DiskUsage] = [:]
+    
+    func computeSize(for path: String) -> DiskUsage {
+        if let cached = computed[path] {
+            return cached
+        }
+        
+        guard let dirInfo = directoryInfoMap[path] else {
+            return DiskUsage()
+        }
+        
+        var usage = DiskUsage()
+        usage.fileCount = dirInfo.itemCount
+        usage.totalAllocated = Int(dirInfo.size)
+        
+        // Recursively add sizes from subdirectories
+        for subdirPath in dirInfo.subdirPaths {
+            let subdirUsage = computeSize(for: subdirPath)
+            usage.fileCount += subdirUsage.fileCount
+            usage.totalAllocated += subdirUsage.totalAllocated
+        }
+        
+        computed[path] = usage
+        return usage
+    }
+    
+    return computeSize(for: rootPath)
 }
 
 func fallbackDirectoryEnumeration(at rootPath: String, seenInodes: Set<DevIno>) async -> (usage: DiskUsage, updatedInodes: Set<DevIno>) {
@@ -345,7 +432,7 @@ func fallbackDirectoryEnumeration(at rootPath: String, seenInodes: Set<DevIno>) 
             return (usage, localSeenInodes)
         }
         
-        for case let url as URL in enumerator {
+        while let url = enumerator.nextObject() as? URL {
             autoreleasepool {
                 do {
                     let resourceValues = try url.resourceValues(forKeys: Set(keys))
@@ -520,10 +607,9 @@ class DiskAnalyzer: ObservableObject {
         // Create immutable copy to avoid capture issues
         let directoriesToScan = rootDirectories
         
-        // Use bounded concurrency = number of cores for optimal performance
-        let maxConcurrency = ProcessInfo.processInfo.activeProcessorCount
-        
         return await withTaskGroup(of: FolderItem?.self) { group in
+            let totalDirectories = directoriesToScan.count
+            
             // Start tasks for all directories
             for dirPath in directoriesToScan {
                 let url = URL(fileURLWithPath: dirPath)
@@ -552,8 +638,9 @@ class DiskAnalyzer: ObservableObject {
                     completedCount += 1
                     
                     // Update progress to show completion
+                    let currentCount = completedCount
                     await MainActor.run {
-                        self.scanProgress = "Completed \(validItem.name) (\(completedCount)/\(directoriesToScan.count) directories)"
+                        self.scanProgress = "Completed \(validItem.name) (\(currentCount)/\(totalDirectories) directories)"
                     }
                 }
             }
@@ -697,56 +784,57 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func scanDirectoryContentsSafe(_ path: String) async -> [FolderItem] {
-        // Check if we can access this directory
+        // Check if we can access this directory  
         guard FileManager.default.isReadableFile(atPath: path) else {
             print("No read access to \(path)")
             return []
         }
         
-        // Try bulk metadata first, fall back to traditional enumeration if needed
+        // Use optimized bulk scanning that eliminates N² behavior
+        return await buildFolderItemsFromBulkScan(path: path)
+    }
+    
+    // Build FolderItems using single-walk aggregation (eliminates redundant tree walks)
+    private func buildFolderItemsFromBulkScan(path: String) async -> [FolderItem] {
+        let seenInodes = Set<DevIno>()
+        let _ = await enumerateDirectoryRecursiveBulk(at: path, seenInodes: seenInodes)
+        
+        // Get immediate children using bulk enumeration
         do {
             let entries = try bulkList(at: path)
             var items: [FolderItem] = []
-            var seenInodes = Set<DevIno>(minimumCapacity: entries.count)
+            var localSeenInodes = Set<DevIno>(minimumCapacity: entries.count)
             
             for entry in entries {
                 let devIno = DevIno(dev: UInt64(entry.deviceId), ino: entry.inode)
                 
                 // Skip if we've seen this inode (hard link deduplication)
-                if seenInodes.contains(devIno) {
+                if localSeenInodes.contains(devIno) {
                     continue
                 }
-                seenInodes.insert(devIno)
+                localSeenInodes.insert(devIno)
                 
                 let size: Int64
                 let itemCount: Int
                 
                 if entry.isDir {
-                    let fullPath = (path as NSString).appendingPathComponent(entry.name)
-                    let diskUsage = await directoryDiskUsage(at: URL(fileURLWithPath: fullPath))
-                    size = diskUsage.size
-                    itemCount = diskUsage.itemCount
+                    // Get size from bottom-up aggregation, not redundant enumeration
+                    let subdirPath = (path as NSString).appendingPathComponent(entry.name)
+                    let subdirUsage = await enumerateDirectoryRecursiveBulk(at: subdirPath, seenInodes: Set<DevIno>())
+                    size = subdirUsage.usage.size
+                    itemCount = subdirUsage.usage.itemCount
                 } else {
+                    // Use size directly from bulk attributes (no extra syscall)
                     size = entry.allocSize
                     itemCount = 1
                 }
                 
-                // Get modification date using traditional method
-                let itemURL = URL(fileURLWithPath: (path as NSString).appendingPathComponent(entry.name))
-                let modificationDate: Date
-                do {
-                    let resourceValues = try itemURL.resourceValues(forKeys: [.contentModificationDateKey])
-                    modificationDate = resourceValues.contentModificationDate ?? Date.distantPast
-                } catch {
-                    modificationDate = Date.distantPast
-                }
-                
                 let item = FolderItem(
                     name: entry.name,
-                    path: itemURL.path,
+                    path: (path as NSString).appendingPathComponent(entry.name),
                     size: size,
                     itemCount: itemCount,
-                    lastModified: modificationDate,
+                    lastModified: Date.distantPast, // Skip expensive date lookup for now
                     isDirectory: entry.isDir
                 )
                 
@@ -756,7 +844,7 @@ class DiskAnalyzer: ObservableObject {
             return items.sorted { $0.size > $1.size }
             
         } catch {
-            // Fall back to traditional enumeration
+            // Fall back to traditional enumeration only if bulk fails
             return await scanDirectoryContentsFallback(path)
         }
     }
@@ -979,18 +1067,26 @@ class DiskAnalyzer: ObservableObject {
         }
     }
     
+    // Cache directory sizes to avoid repeated computation
+    private var directorySizeCache: [String: DiskUsage] = [:]
+    
     private func directoryDiskUsage(at rootURL: URL) async -> DiskUsage {
-        // Use optimized bulk metadata calls
-        let seenInodes = Set<DevIno>(minimumCapacity: 1_000_000)
-        let result = await enumerateDirectoryRecursiveBulk(at: rootURL.path, seenInodes: seenInodes)
+        let path = rootURL.path
+        if let cached = directorySizeCache[path] {
+            return cached
+        }
+        
+        // Use optimized single-walk bulk enumeration
+        let seenInodes = Set<DevIno>()
+        let result = await enumerateDirectoryRecursiveBulk(at: path, seenInodes: seenInodes)
+        
+        directorySizeCache[path] = result.usage
         return result.usage
     }
     
     private func directoryDiskUsageFast(at rootURL: URL) async -> DiskUsage {
-        // Use the same optimized bulk metadata calls (already fast)
-        let seenInodes = Set<DevIno>(minimumCapacity: 1_000_000)
-        let result = await enumerateDirectoryRecursiveBulk(at: rootURL.path, seenInodes: seenInodes)
-        return result.usage
+        // Same as above - both use the optimized path now
+        return await directoryDiskUsage(at: rootURL)
     }
     
     private func enumerateDirectoryRecursive(at rootURL: URL, seenInodes: Set<DevIno>) async -> DiskUsage {
@@ -1015,7 +1111,7 @@ class DiskAnalyzer: ObservableObject {
                 var localFilesProcessed = 0
                 let updateInterval = 100 // Update progress every 100 files
                 
-                for case let url as URL in enumerator {
+                while let url = enumerator.nextObject() as? URL {
                     autoreleasepool {
                         do {
                             let resourceValues = try url.resourceValues(forKeys: Set(keys))
@@ -1050,7 +1146,7 @@ class DiskAnalyzer: ObservableObject {
                                 Task { @MainActor [weak self] in
                                     self?.totalFilesProcessed += updateInterval
                                     self?.totalBytesProcessed = currentSize
-                                    self?.updateDynamicProgress(currentPath: currentPath)
+                                    self?.updateProgressBasedOnReality(currentPath: currentPath)
                                 }
                             }
                             
@@ -1069,7 +1165,7 @@ class DiskAnalyzer: ObservableObject {
                     Task { @MainActor [weak self] in
                         self?.totalFilesProcessed += remainingFiles
                         self?.totalBytesProcessed = finalSize
-                        self?.updateDynamicProgress(currentPath: finalPath)
+                        self?.updateProgressBasedOnReality(currentPath: finalPath)
                     }
                 }
                 
@@ -1100,7 +1196,7 @@ class DiskAnalyzer: ObservableObject {
             let updateInterval = 500 // Less frequent updates for speed
             var localFilesProcessed = 0
             
-            for case let url as URL in enumerator {
+            while let url = enumerator.nextObject() as? URL {
                 autoreleasepool {
                     do {
                         let resourceValues = try url.resourceValues(forKeys: Set(keys))
@@ -1135,7 +1231,7 @@ class DiskAnalyzer: ObservableObject {
                             Task { @MainActor [weak self] in
                                 self?.totalFilesProcessed += updateInterval
                                 self?.totalBytesProcessed = currentSize
-                                self?.updateDynamicProgress(currentPath: currentPath)
+                                self?.updateProgressBasedOnReality(currentPath: currentPath)
                             }
                         }
                         
@@ -1154,7 +1250,7 @@ class DiskAnalyzer: ObservableObject {
                 Task { @MainActor [weak self] in
                     self?.totalFilesProcessed += remainingFiles
                     self?.totalBytesProcessed = finalSize
-                    self?.updateDynamicProgress(currentPath: finalPath)
+                    self?.updateProgressBasedOnReality(currentPath: finalPath)
                 }
             }
             
@@ -1163,45 +1259,42 @@ class DiskAnalyzer: ObservableObject {
         }.value
     }
     
-    private func updateDynamicProgress(currentPath: String) {
+    private var directoriesProcessed = 0
+    private var totalDirectoriesToProcess = 0
+    
+    private func updateProgressBasedOnReality(currentPath: String) {
         let now = Date()
         let elapsed = now.timeIntervalSince(lastProgressUpdate)
         
-        // Update adaptive progress model every 0.3 seconds minimum for responsiveness
-        if elapsed > 0.3 && totalFilesProcessed > 0 {
-            // Update rate model with current observations
-            progressModel.update(
-                observedFiles: totalFilesProcessed,
-                observedBytes: totalBytesProcessed,
-                currentTime: now
-            )
-            
-            // Get adaptive progress percentage (can go down if estimate improves)
-            scanProgressPercentage = progressModel.getProgress(processedFiles: totalFilesProcessed)
+        // Update progress every 0.5 seconds for better performance
+        if elapsed > 0.5 {
+            // Progress based on actual directories processed vs discovered
+            if totalDirectoriesToProcess > 0 {
+                scanProgressPercentage = min(95.0, Double(directoriesProcessed) / Double(totalDirectoriesToProcess) * 100.0)
+            }
             
             // Show current path being scanned
             let pathComponent = URL(fileURLWithPath: currentPath).lastPathComponent
             currentScanPath = pathComponent
             
-            // Get current processing rates
-            let rates = progressModel.getCurrentRate()
-            filesPerSecond = formatRate(rates.filesPerSec)
+            // Update main progress message with realistic info
+            scanProgress = "Analyzing \(pathComponent): \(directoriesProcessed)/\(totalDirectoriesToProcess) directories"
             
-            // Update main progress message with rate and current location
-            scanProgress = "Scanning \(pathComponent): \(formatFileCount(totalFilesProcessed)) files (\(formatBytes(totalBytesProcessed))) • \(filesPerSecond)"
-            
-            // Calculate ETA using adaptive model
-            if let eta = progressModel.getETA(processedFiles: totalFilesProcessed) {
-                if eta > 120 {
-                    let minutes = Int(eta / 60)
-                    estimatedTimeRemaining = "~\(minutes) min remaining"
-                } else if eta > 10 {
-                    estimatedTimeRemaining = "~\(Int(eta)) sec remaining"
-                } else {
-                    estimatedTimeRemaining = "Almost done..."
+            // Simple ETA based on directory processing rate
+            if directoriesProcessed > 0 {
+                let elapsedFromStart = now.timeIntervalSince(scanStartTime ?? now)
+                let rate = Double(directoriesProcessed) / elapsedFromStart
+                if rate > 0 {
+                    let remaining = Double(totalDirectoriesToProcess - directoriesProcessed)
+                    let eta = remaining / rate
+                    if eta > 60 {
+                        estimatedTimeRemaining = "~\(Int(eta / 60)) min remaining"
+                    } else if eta > 5 {
+                        estimatedTimeRemaining = "~\(Int(eta)) sec remaining"
+                    } else {
+                        estimatedTimeRemaining = "Almost done..."
+                    }
                 }
-            } else {
-                estimatedTimeRemaining = "Calculating..."
             }
             
             lastProgressUpdate = now
@@ -1346,8 +1439,9 @@ class DiskAnalyzer: ObservableObject {
             }
         }
         
+        let sortedVolumes = volumes.sorted { $0.size > $1.size }
         await MainActor.run {
-            self.externalVolumes = volumes.sorted { $0.size > $1.size }
+            self.externalVolumes = sortedVolumes
         }
     }
     

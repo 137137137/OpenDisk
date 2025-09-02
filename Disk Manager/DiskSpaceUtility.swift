@@ -32,25 +32,20 @@ class DiskSpaceUtility: ObservableObject {
                     self.diskAnalyzer.externalVolumes
                 }
                 
-                var updatedDeviceList = deviceList
-                
-                // Add external volumes as separate devices
-                for volume in externalVolumes {
-                    if let volumeInfo = self.getDiskSpace(for: volume.path) {
-                        let externalDevice = DeviceInfo(
-                            name: volume.name,
-                            icon: "externaldrive",
-                            path: volume.path,
-                            totalStorage: volumeInfo.totalSpace,
-                            availableStorage: volumeInfo.availableSpace,
-                            subtitle: self.formatBytes(volumeInfo.totalSpace) + " Total"
-                        )
-                        updatedDeviceList.append(externalDevice)
-                    }
+                let finalDeviceList = deviceList + externalVolumes.compactMap { volume in
+                    guard let volumeInfo = self.getDiskSpace(for: volume.path) else { return nil }
+                    return DeviceInfo(
+                        name: volume.name,
+                        icon: "externaldrive", 
+                        path: volume.path,
+                        totalStorage: volumeInfo.totalSpace,
+                        availableStorage: volumeInfo.availableSpace,
+                        subtitle: self.formatBytes(volumeInfo.totalSpace) + " Total"
+                    )
                 }
                 
                 await MainActor.run {
-                    self.devices = updatedDeviceList
+                    self.devices = finalDeviceList
                 }
             }
         }
