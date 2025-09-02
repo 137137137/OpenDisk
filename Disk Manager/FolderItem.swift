@@ -64,6 +64,42 @@ class DiskAnalyzer: ObservableObject {
     private var totalItemsToScan: Int = 0
     private var itemsScanned: Int = 0
     
+    // Cached directory contents for instant navigation
+    private var directoryCache: [String: [FolderItem]] = [:]
+    
+    // Navigate using cached data instead of rescanning
+    func navigateToPath(_ path: String) {
+        if let cachedItems = directoryCache[path] {
+            // Use cached data
+            rootItems = cachedItems
+            totalSize = cachedItems.reduce(0) { $0 + $1.size }
+            calculatePercentages()
+        } else {
+            // If not cached, do a quick scan just for this directory
+            scanDirectoryQuick(path)
+        }
+    }
+    
+    private func scanDirectoryQuick(_ path: String) {
+        isScanning = true
+        scanProgress = "Loading directory..."
+        
+        Task {
+            let items = await Self.scanDirectoryContentsSafe(path)
+            let sortedItems = items.sorted()
+            
+            await MainActor.run {
+                // Cache the results
+                self.directoryCache[path] = sortedItems
+                self.rootItems = sortedItems
+                self.totalSize = sortedItems.reduce(0) { $0 + $1.size }
+                self.calculatePercentages()
+                self.isScanning = false
+                self.scanProgress = ""
+            }
+        }
+    }
+    
     func scanDirectory(_ path: String) {
         scanTask?.cancel()
         
@@ -92,6 +128,8 @@ class DiskAnalyzer: ObservableObject {
             let sortedItems = items.sorted()
             
             await MainActor.run {
+                // Cache the initial scan results
+                self.directoryCache[scanPath] = sortedItems
                 self.rootItems = sortedItems
                 self.totalSize = sortedItems.reduce(0) { $0 + $1.size }
                 self.calculatePercentages()
@@ -830,10 +868,9 @@ class DiskAnalyzer: ObservableObject {
                         }
                     }
                     
-                    // Process each item with full recursive calculation
+                    // Process each item with full hierarchical tree building
                     group.addTask {
-                        let seenResourceIDs = NSMutableSet()
-                        return await processURLComplete(url, seenResourceIDs: seenResourceIDs)
+                        await buildFolderItemWithChildren(url: url)
                     }
                     activeTasks += 1
                 }
@@ -851,6 +888,57 @@ class DiskAnalyzer: ObservableObject {
         } catch {
             print("Error scanning directory \(rootURL.path): \(error)")
             return []
+        }
+    }
+    
+    private static func buildFolderItemWithChildren(url: URL) async -> FolderItem? {
+        do {
+            // Get metadata for this item
+            let resourceValues = try url.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey,
+                .contentModificationDateKey,
+                .fileResourceIdentifierKey
+            ])
+            
+            // Skip symlinks to prevent cycles
+            if resourceValues.isSymbolicLink == true {
+                return nil
+            }
+            
+            let isDirectory = resourceValues.isDirectory ?? false
+            let size: Int64
+            let itemCount: Int
+            var children: [FolderItem] = []
+            
+            if isDirectory {
+                // Build children recursively for directories
+                children = await buildCompleteDirectoryTreeAsync(at: url)
+                size = children.reduce(0) { $0 + $1.size }
+                itemCount = children.reduce(0) { $0 + $1.itemCount }
+            } else {
+                size = Int64(resourceValues.totalFileAllocatedSize ?? 0)
+                itemCount = 1
+            }
+            
+            var item = FolderItem(
+                name: url.lastPathComponent,
+                path: url.path,
+                size: size,
+                itemCount: itemCount,
+                lastModified: resourceValues.contentModificationDate ?? Date.distantPast,
+                isDirectory: isDirectory
+            )
+            
+            item.children = children
+            
+            return item
+            
+        } catch {
+            print("Error accessing \(url.path): \(error)")
+            return nil
         }
     }
     

@@ -166,13 +166,13 @@ struct DiskAnalysisView: View {
     private func navigateToFolder(_ item: FolderItem) {
         breadcrumbs.append(currentPath)
         currentPath = item.path
-        analyzer.scanDirectory(currentPath)
+        analyzer.navigateToPath(currentPath)
     }
     
     private func goBack() {
         if let previousPath = breadcrumbs.popLast() {
             currentPath = previousPath
-            analyzer.scanDirectory(currentPath)
+            analyzer.navigateToPath(currentPath)
         }
     }
 }
