@@ -426,7 +426,7 @@ class OptimizedScanner: ObservableObject {
     
     // MARK: - Memory-mapped scanning for large directories
     
-    private func scanWithMemoryMapping(path: String) async throws -> [FolderItem]? {
+    private nonisolated func scanWithMemoryMapping(path: String) async throws -> [FolderItem]? {
         let dirfd = Darwin.open(path, O_RDONLY)
         guard dirfd >= 0 else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: nil)
@@ -479,7 +479,7 @@ class OptimizedScanner: ObservableObject {
         )
     }
     
-    private func scanWithMemoryMappedBuffer(
+    private nonisolated func scanWithMemoryMappedBuffer(
         dirfd: Int32,
         buffer: UnsafeMutableRawPointer,
         bufferSize: Int,
@@ -524,7 +524,7 @@ class OptimizedScanner: ObservableObject {
             }
             
             // Process the memory-mapped buffer in larger batches
-            try autoreleasepool {
+            autoreleasepool {
                 var offset = 0
                 var entriesProcessed = 0
                 let batchSize = 1000 // Process up to 1000 entries per autoreleasepool for large directories
@@ -554,7 +554,7 @@ class OptimizedScanner: ObservableObject {
         return items.sorted()
     }
     
-    private func parseMemoryMappedEntry(
+    private nonisolated func parseMemoryMappedEntry(
         buffer: UnsafeMutableRawPointer,
         offset: Int,
         basePath: String,
@@ -619,7 +619,7 @@ class OptimizedScanner: ObservableObject {
         )
     }
     
-    private func scanDirectoryWithSyscalls(path: String) async throws -> [FolderItem] {
+    private nonisolated func scanDirectoryWithSyscalls(path: String) async throws -> [FolderItem] {
         let dirfd = Darwin.open(path, O_RDONLY)
         guard dirfd >= 0 else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: nil)
@@ -670,7 +670,7 @@ class OptimizedScanner: ObservableObject {
             }
             
             // Process the buffer in batches for better memory management
-            try autoreleasepool {
+            autoreleasepool {
                 var offset = 0
                 var entriesProcessed = 0
                 
@@ -696,7 +696,7 @@ class OptimizedScanner: ObservableObject {
         return items.sorted()
     }
     
-    private func parseSyscallEntry(buffer: [UInt8], offset: Int, basePath: String, seenFileIDs: ShardedFileIDSet) -> FolderItem? {
+    private nonisolated func parseSyscallEntry(buffer: [UInt8], offset: Int, basePath: String, seenFileIDs: ShardedFileIDSet) -> FolderItem? {
         let entryLength = buffer.withUnsafeBytes { bytes in
             bytes.load(fromByteOffset: offset, as: UInt32.self)
         }
@@ -768,7 +768,7 @@ class OptimizedScanner: ObservableObject {
     
     // MARK: - FileManager fallback with optimizations
     
-    private func scanWithFileManagerFallback(path: String) async -> [FolderItem] {
+    private nonisolated func scanWithFileManagerFallback(path: String) async -> [FolderItem] {
         // Comprehensive URLResourceKeys for maximum efficiency
         let resourceKeys: [URLResourceKey] = [
             .isDirectoryKey,
