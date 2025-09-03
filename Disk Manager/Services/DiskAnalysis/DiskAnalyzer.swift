@@ -209,14 +209,15 @@ class DiskAnalyzer: ObservableObject {
             }
         }.value
         
-        // Filter directories on MainActor
+        // Filter directories on MainActor - only skip virtual filesystems, not firmlink data
         let filteredDirs = accessibleDirs.filter { fullPath in
-            !shouldSkipSystemPath(fullPath) && !firmlinkResolver.isDataSide(fullPath)
+            !shouldSkipSystemPath(fullPath)
+            // Note: Removed firmlinkResolver.isDataSide check to include actual system data
         }
             
         // Process accessible directories
         var items: [FolderItem] = []
-        let limitedDirs = Array(filteredDirs.prefix(10)) // Limit to avoid overwhelming
+        let limitedDirs = filteredDirs // Scan ALL directories, no artificial limits
             
             // PRE-CALCULATE: Start calculating sizes for all directories in parallel
             scanProgress = "Pre-calculating directory sizes..."
@@ -553,25 +554,35 @@ class DiskAnalyzer: ObservableObject {
     private static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
         return await Task.detached {
             var totalSize: Int64 = 0
+            var fileCount: Int = 0
+            var errorCount: Int = 0
             let keys: Set<URLResourceKey> = [
                 .isRegularFileKey, .isSymbolicLinkKey,
                 .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
                 .fileResourceIdentifierKey
             ]
+            
             guard let enumerator = FileManager.default.enumerator(
                 at: URL(fileURLWithPath: path),
                 includingPropertiesForKeys: Array(keys),
                 options: [.skipsPackageDescendants],
-                errorHandler: { _, _ in true }
+                errorHandler: { url, error in
+                    print("Error accessing \(url.path): \(error)")
+                    errorCount += 1
+                    return true // Continue despite errors
+                }
             ) else {
+                print("Failed to create enumerator for path: \(path)")
                 return 0
             }
+            
             let localSeen = ShardedFileIDSet()
             for case let url as URL in enumerator {
                 do {
                     let rv = try url.resourceValues(forKeys: keys)
                     if rv.isSymbolicLink == true { continue }
                     if rv.isRegularFile == true {
+                        fileCount += 1
                         if let id = rv.fileResourceIdentifier as? Data {
                             if !localSeen.insert(id) { continue }
                         }
@@ -582,9 +593,12 @@ class DiskAnalyzer: ObservableObject {
                         }
                     }
                 } catch {
+                    errorCount += 1
                     continue
                 }
             }
+            
+            print("Finished scanning \(path): \(fileCount) files, \(totalSize) bytes, \(errorCount) errors")
             return totalSize
         }.value
     }
@@ -688,9 +702,26 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func hasFullDiskAccess() -> Bool {
-        // Simple check - try to access a protected directory
-        let testPath = "/Library/Application Support/com.apple.TCC"
-        return FileManager.default.isReadableFile(atPath: testPath)
+        // Test multiple protected locations to ensure we have proper access
+        let testPaths = [
+            "/Library/Application Support/com.apple.TCC",
+            "/System/Library/Frameworks", 
+            "/usr/bin",
+            "/private/var/db"
+        ]
+        
+        var accessCount = 0
+        for testPath in testPaths {
+            if FileManager.default.isReadableFile(atPath: testPath) {
+                accessCount += 1
+            } else {
+                print("No access to: \(testPath)")
+            }
+        }
+        
+        let hasAccess = accessCount >= 3 // Need access to at least 3/4 test paths
+        print("Full Disk Access check: \(accessCount)/\(testPaths.count) accessible, result: \(hasAccess)")
+        return hasAccess
     }
     
     func scanExternalVolumes() async {
