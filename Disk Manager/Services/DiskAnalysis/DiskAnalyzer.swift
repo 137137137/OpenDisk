@@ -11,6 +11,9 @@ class DiskAnalyzer: ObservableObject {
     @Published var filesPerSecond: String = ""
     @Published var scannedBytes: Int64 = 0
     @Published var totalBytes: Int64 = 0
+    @Published var totalDiskBytes: Int64 = 0
+    @Published var totalDiskScannedBytes: Int64 = 0
+    @Published var overallProgressPercentage: Double = 0.0
     @Published var externalVolumes: [FolderItem] = []
     
     private var scanTask: Task<Void, Never>?
@@ -59,6 +62,15 @@ class DiskAnalyzer: ObservableObject {
         filesPerSecond = ""
         scannedBytes = 0
         totalBytes = 0
+        totalDiskScannedBytes = 0
+        overallProgressPercentage = 0.0
+        
+        // Get total disk size for overall progress
+        if path == "/" {
+            totalDiskBytes = getTotalDiskSize(path: path)
+        } else {
+            totalDiskBytes = 0 // For non-root scans, don't show overall progress
+        }
         
         // Initialize fresh progress model with better estimates for disk scanning
         progressModel = RateModel()
@@ -203,10 +215,17 @@ class DiskAnalyzer: ObservableObject {
                     items.append(item)
                     totalScannedBytes += item.size
                     
-                    // Capture value for concurrent access
+                    // Capture values for concurrent access
                     let currentScannedBytes = totalScannedBytes
                     await MainActor.run { [weak self] in
-                        self?.scannedBytes = currentScannedBytes
+                        guard let self = self else { return }
+                        self.scannedBytes = currentScannedBytes
+                        self.totalDiskScannedBytes = currentScannedBytes
+                        
+                        // Calculate overall progress if we have total disk size
+                        if self.totalDiskBytes > 0 {
+                            self.overallProgressPercentage = min(100.0, Double(currentScannedBytes) / Double(self.totalDiskBytes) * 100.0)
+                        }
                     }
                 }
             }
@@ -215,9 +234,16 @@ class DiskAnalyzer: ObservableObject {
             let finalTotalBytes = totalScannedBytes
             let finalScannedBytes = totalScannedBytes
             await MainActor.run { [weak self] in
-                self?.scanProgressPercentage = 100.0
-                self?.totalBytes = finalTotalBytes
-                self?.scannedBytes = finalScannedBytes
+                guard let self = self else { return }
+                self.scanProgressPercentage = 100.0
+                self.totalBytes = finalTotalBytes
+                self.scannedBytes = finalScannedBytes
+                self.totalDiskScannedBytes = finalScannedBytes
+                
+                // Final overall progress calculation
+                if self.totalDiskBytes > 0 {
+                    self.overallProgressPercentage = min(100.0, Double(finalScannedBytes) / Double(self.totalDiskBytes) * 100.0)
+                }
             }
             
             return items.sorted()
@@ -393,6 +419,18 @@ class DiskAnalyzer: ObservableObject {
             "/.Spotlight-V100", "/.fseventsd", "/.Trashes"
         ]
         return skipPaths.contains { path.hasPrefix($0) }
+    }
+    
+    private func getTotalDiskSize(path: String) -> Int64 {
+        do {
+            let attributes = try FileManager.default.attributesOfFileSystem(forPath: path)
+            if let totalSize = attributes[.systemSize] as? Int64 {
+                return totalSize
+            }
+        } catch {
+            print("Error getting disk size: \(error)")
+        }
+        return 0
     }
     
     private func hasFullDiskAccess() -> Bool {

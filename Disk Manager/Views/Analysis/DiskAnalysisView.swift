@@ -64,24 +64,50 @@ struct DiskAnalysisView: View {
                         
                         // Show bytes scanned progress and progress bar
                         if analyzer.totalBytes > 0 {
-                            VStack(spacing: 12) {
-                                HStack(spacing: 8) {
-                                    Text("\(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalBytes, countStyle: .file))")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
+                            VStack(spacing: 16) {
+                                // Current folder/directory progress
+                                VStack(spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        Text("Current: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalBytes, countStyle: .file))")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        
+                                        Spacer()
+                                        
+                                        Text(String(format: "%.1f%%", analyzer.scanProgressPercentage))
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
+                                    }
+                                    .frame(maxWidth: 380)
                                     
-                                    Spacer()
-                                    
-                                    Text(String(format: "%.1f%%", analyzer.scanProgressPercentage))
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundColor(.primary)
+                                    ProgressView(value: analyzer.scanProgressPercentage, total: 100)
+                                        .frame(maxWidth: 380)
+                                        .tint(.blue)
                                 }
-                                .frame(maxWidth: 350)
                                 
-                                ProgressView(value: analyzer.scanProgressPercentage, total: 100)
-                                    .frame(maxWidth: 350)
-                                    .tint(.blue)
+                                // Overall disk progress (only show for full disk scans)
+                                if analyzer.totalDiskBytes > 0 {
+                                    VStack(spacing: 8) {
+                                        HStack(spacing: 8) {
+                                            Text("Total: \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskScannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskBytes, countStyle: .file))")
+                                                .font(.subheadline)
+                                                .foregroundColor(.secondary)
+                                            
+                                            Spacer()
+                                            
+                                            Text(String(format: "%.2f%%", analyzer.overallProgressPercentage))
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.orange)
+                                        }
+                                        .frame(maxWidth: 380)
+                                        
+                                        ProgressView(value: analyzer.overallProgressPercentage, total: 100)
+                                            .frame(maxWidth: 380)
+                                            .tint(.orange)
+                                    }
+                                }
                                 
                                 HStack {
                                     Text(String(format: "%.1f%% complete", analyzer.scanProgressPercentage))
