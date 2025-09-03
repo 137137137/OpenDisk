@@ -137,6 +137,10 @@ class OptimizedScanner: ObservableObject {
             allItems.append(contentsOf: files)
             progressiveItems.append(contentsOf: files)
             
+            // Add subdirectories to allItems first (before scanning their contents)
+            allItems.append(contentsOf: subdirectories)
+            progressiveItems.append(contentsOf: subdirectories)
+            
             let totalItemsToProcess = subdirectories.count
             var processedItems = 0
             
@@ -148,6 +152,7 @@ class OptimizedScanner: ObservableObject {
                 for directory in batch {
                     taskGroup.addTask {
                         let directoryItems = await self.scanSingleDirectoryRecursively(directory.path)
+                        let totalSize = directoryItems.reduce(0) { $0 + $1.size }
                         return ProgressiveScanResult(
                             items: directoryItems,
                             directoryPath: directory.path,
@@ -158,8 +163,24 @@ class OptimizedScanner: ObservableObject {
                 
                 // Collect results from this batch and provide progressive updates
                 for await batchResult in taskGroup {
-                    allItems.append(contentsOf: batchResult.items)
-                    progressiveItems.append(contentsOf: batchResult.items)
+                    // Find the corresponding directory in allItems and update its size
+                    if let dirIndex = allItems.firstIndex(where: { $0.path == batchResult.directoryPath && $0.isDirectory }) {
+                        let childrenTotalSize = batchResult.items.reduce(0) { $0 + $1.size }
+                        let updatedDirectory = FolderItem(
+                            name: allItems[dirIndex].name,
+                            path: allItems[dirIndex].path,
+                            size: childrenTotalSize,
+                            isDirectory: allItems[dirIndex].isDirectory,
+                            itemCount: batchResult.items.count,
+                            lastModified: allItems[dirIndex].lastModified
+                        )
+                        allItems[dirIndex] = updatedDirectory
+                        
+                        // Update in progressiveItems too if it exists there
+                        if let progIndex = progressiveItems.firstIndex(where: { $0.path == batchResult.directoryPath && $0.isDirectory }) {
+                            progressiveItems[progIndex] = updatedDirectory
+                        }
+                    }
                     processedItems += 1
                     
                     let progress = Double(processedItems) / Double(totalItemsToProcess) * 75.0 + 25.0 // 25-100%

@@ -72,18 +72,20 @@ class DiskAnalyzer: ObservableObject {
             let dirCount = preCalculatedItems.filter { $0.isDirectory }.count
             print("DEBUG: Cached data breakdown - Files: \(fileCount), Directories: \(dirCount)")
             
-            // If cached data is empty, it might be due to permissions
-            // Don't use empty cache - let the caller trigger a direct scan instead
-            if preCalculatedItems.isEmpty {
-                print("DEBUG: Cached data is empty for \(path) - returning false to trigger direct scan")
+            // Only use cached data if it's not empty
+            // Empty cache means we haven't properly scanned this directory yet
+            if !preCalculatedItems.isEmpty {
+                rootItems = preCalculatedItems
+                currentRootItemsPath = path
+                totalSize = preCalculatedItems.reduce(0) { $0 + $1.size }
+                calculatePercentages()
+                return true
+            } else {
+                print("DEBUG: Cached data is empty for \(path) - removing from cache and returning false to trigger direct scan")
+                // Remove empty cache entry to avoid using it again
+                folderTree.removeValue(forKey: path)
                 return false
             }
-            
-            rootItems = preCalculatedItems
-            currentRootItemsPath = path
-            totalSize = preCalculatedItems.reduce(0) { $0 + $1.size }
-            calculatePercentages()
-            return true
         }
         
         print("DEBUG: No cached data found for \(path)")
@@ -548,6 +550,7 @@ class DiskAnalyzer: ObservableObject {
                 // Recursively cache deeper levels
                 cacheNestedFolderTree(children: child.children)
             }
+            // Don't cache empty arrays for directories - let navigation trigger fresh scans
         }
     }
     
