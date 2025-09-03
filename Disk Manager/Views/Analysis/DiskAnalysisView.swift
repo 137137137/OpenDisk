@@ -80,18 +80,28 @@ struct DiskAnalysisView: View {
                                                 .font(.subheadline)
                                                 .fontWeight(.medium)
                                                 .foregroundColor(.primary)
-                                        } else {
-                                            // Show current progress without total
-                                            Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file))")
-                                                .font(.subheadline)
-                                                .foregroundColor(.secondary)
-                                            
-                                            Spacer()
-                                            
-                                            Text("Calculating...")
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(.blue)
+                                        } else if analyzer.scannedBytes > 0 {
+                                            // Show current progress while calculating total
+                                            VStack(spacing: 4) {
+                                                HStack {
+                                                    Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file))")
+                                                        .font(.subheadline)
+                                                        .foregroundColor(.secondary)
+                                                    
+                                                    Spacer()
+                                                    
+                                                    Text("Getting total size...")
+                                                        .font(.subheadline)
+                                                        .fontWeight(.medium)
+                                                        .foregroundColor(.blue)
+                                                }
+                                                
+                                                // Show a simple indeterminate progress indicator
+                                                ProgressView()
+                                                    .progressViewStyle(LinearProgressViewStyle())
+                                                    .frame(maxWidth: 380)
+                                                    .tint(.blue)
+                                            }
                                         }
                                     }
                                     .frame(maxWidth: 380)

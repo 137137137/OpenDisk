@@ -56,17 +56,45 @@ class DiskSpaceUtility: ObservableObject {
             let url = URL(fileURLWithPath: path)
             let resourceValues = try url.resourceValues(forKeys: [
                 .volumeTotalCapacityKey,
+                .volumeAvailableCapacityKey,
                 .volumeAvailableCapacityForImportantUsageKey
             ])
             
-            guard let totalCapacity = resourceValues.volumeTotalCapacity,
-                  let availableCapacity = resourceValues.volumeAvailableCapacityForImportantUsage else {
+            guard let totalCapacity = resourceValues.volumeTotalCapacity else {
+                print("Could not get total capacity for \(path)")
                 return nil
             }
             
-            return (totalSpace: Double(totalCapacity), availableSpace: Double(availableCapacity))
+            // Try different available capacity keys in order of preference
+            var availableCapacity: Int? = nil
+            
+            if let importantUsage = resourceValues.volumeAvailableCapacityForImportantUsage {
+                availableCapacity = Int(importantUsage)
+            } else if let generalAvailable = resourceValues.volumeAvailableCapacity {
+                availableCapacity = Int(generalAvailable)
+            }
+            
+            guard let available = availableCapacity else {
+                print("Could not get available capacity for \(path)")
+                return nil
+            }
+            
+            return (totalSpace: Double(totalCapacity), availableSpace: Double(available))
+            
         } catch {
-            print("Error getting disk space: \(error)")
+            print("Error getting disk space for \(path): \(error)")
+            
+            // Fallback: try using FileManager attributes
+            do {
+                let attributes = try FileManager.default.attributesOfFileSystem(forPath: path)
+                if let totalSize = attributes[.systemSize] as? Int64,
+                   let freeSize = attributes[.systemFreeSize] as? Int64 {
+                    return (totalSpace: Double(totalSize), availableSpace: Double(freeSize))
+                }
+            } catch {
+                print("Fallback method also failed for \(path): \(error)")
+            }
+            
             return nil
         }
     }
