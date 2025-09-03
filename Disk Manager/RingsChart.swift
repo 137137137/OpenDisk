@@ -7,7 +7,31 @@ struct RingsChart: View {
     
     // Build hierarchical structure for sunburst visualization
     private var hierarchyData: [RingLevel] {
-        buildHierarchy(from: items, totalSize: totalSize)
+        buildHierarchy()
+    }
+    
+    private func buildHierarchy() -> [RingLevel] {
+        // For now, just create one ring level with proportional segments
+        // This is a simplified version - a full implementation would parse paths to build true hierarchy
+        
+        var currentAngle: Double = 0
+        var segments: [RingSegmentData] = []
+        
+        for item in items.prefix(12) { // Limit for visibility
+            let proportion = Double(item.size) / Double(totalSize)
+            let angleWidth = proportion * 360
+            
+            segments.append(RingSegmentData(
+                item: item,
+                startAngle: currentAngle,
+                endAngle: currentAngle + angleWidth,
+                parentSize: totalSize
+            ))
+            
+            currentAngle += angleWidth
+        }
+        
+        return [RingLevel(segments: segments)]
     }
     
     private let colors: [Color] = [
@@ -97,7 +121,7 @@ struct RingsChart: View {
 
 // Data structures for hierarchical visualization
 struct RingLevel {
-    let segments: [RingSegment]
+    let segments: [RingSegmentData]
 }
 
 struct RingSegmentData {
