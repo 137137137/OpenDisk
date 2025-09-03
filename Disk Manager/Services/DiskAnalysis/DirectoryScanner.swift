@@ -10,7 +10,7 @@ struct DirectoryWorkItem {
     let id: UUID = UUID()
 }
 
-class DirectoryNode {
+class DirectoryNode: @unchecked Sendable {
     let id: UUID
     let path: String
     let name: String
@@ -215,7 +215,7 @@ struct FirmlinkResolver {
 
 // MARK: - Rate Model for Progress Tracking
 
-class RateModel {
+class RateModel: @unchecked Sendable {
     var estTotalFiles: Int = 100_000
     var processedFiles: Int = 0
     var startTime: Date = Date()

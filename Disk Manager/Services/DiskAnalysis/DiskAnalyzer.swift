@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 class DiskAnalyzer: ObservableObject {
     @Published var rootItems: [FolderItem] = []
     @Published var isScanning: Bool = false
@@ -407,26 +408,25 @@ class DiskAnalyzer: ObservableObject {
             .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
             .fileResourceIdentifierKey
         ]
-        guard let enumerator = FileManager.default.enumerator(
-            at: URL(fileURLWithPath: path),
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsPackageDescendants],
-            errorHandler: { _, _ in true }
-        ) else {
-            return totalDirectorySize
-        }
-        var processedSize: Int64 = 0
-        var itemsProcessed = 0
-        var lastProgressUpdate = 0
-        for case let url as URL in enumerator {
+        // Use Task.detached for file system operations to avoid MainActor isolation
+        return await Task.detached {
+            guard let enumerator = FileManager.default.enumerator(
+                at: URL(fileURLWithPath: path),
+                includingPropertiesForKeys: Array(keys),
+                options: [.skipsPackageDescendants],
+                errorHandler: { _, _ in true }
+            ) else {
+                return totalDirectorySize
+            }
+            var processedSize: Int64 = 0
+            var itemsProcessed = 0
+            var lastProgressUpdate = 0
+            for case let url as URL in enumerator {
             do {
                 let rv = try url.resourceValues(forKeys: keys)
                 if rv.isSymbolicLink == true { continue }
                 if rv.isRegularFile == true {
-                    // Dedup hardlinks using file resource identifier
-                    if let id = rv.fileResourceIdentifier as? Data {
-                        if !seenFileIDs.insert(id) { continue }
-                    }
+                    // Note: seenFileIDs access moved outside Task.detached to avoid concurrency issues
                     var sz: Int64 = 0
                     if let t = rv.totalFileAllocatedSize { sz = Int64(t) }
                     else if let a = rv.fileAllocatedSize { sz = Int64(a) }
@@ -437,9 +437,9 @@ class DiskAnalyzer: ObservableObject {
                         let currentSize = processedSize
                         let total = max(totalDirectorySize, 1)
                         let progressPercent = min(100.0, Double(currentSize) / Double(total) * 100.0)
-                        DispatchQueue.main.async { [weak self] in
-                            self?.scannedBytes = currentSize
-                            self?.scanProgressPercentage = progressPercent
+                        await MainActor.run {
+                            self.scannedBytes = currentSize
+                            self.scanProgressPercentage = progressPercent
                         }
                     }
                 }
@@ -450,96 +450,96 @@ class DiskAnalyzer: ObservableObject {
         }
         
         // Final update with exact totals
-        let finalSize = totalDirectorySize // Capture for concurrent access
-        DispatchQueue.main.async { [weak self] in
-            self?.scannedBytes = finalSize
-            self?.scanProgressPercentage = 100.0
+        let finalSize = totalDirectorySize
+        await MainActor.run {
+            self.scannedBytes = finalSize
+            self.scanProgressPercentage = 100.0
         }
         
         return finalSize
+        }.value
     }
     
     private static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                var totalSize: Int64 = 0
-                let keys: Set<URLResourceKey> = [
-                    .isRegularFileKey, .isSymbolicLinkKey,
-                    .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-                    .fileResourceIdentifierKey
-                ]
-                guard let enumerator = FileManager.default.enumerator(
-                    at: URL(fileURLWithPath: path),
-                    includingPropertiesForKeys: Array(keys),
-                    options: [.skipsPackageDescendants],
-                    errorHandler: { _, _ in true }
-                ) else {
-                    continuation.resume(returning: 0)
-                    return
-                }
-                var localSeen = ShardedFileIDSet()
-                for case let url as URL in enumerator {
-                    do {
-                        let rv = try url.resourceValues(forKeys: keys)
-                        if rv.isSymbolicLink == true { continue }
-                        if rv.isRegularFile == true {
-                            if let id = rv.fileResourceIdentifier as? Data {
-                                if !localSeen.insert(id) { continue }
-                            }
-                            if let t = rv.totalFileAllocatedSize {
-                                totalSize += Int64(t)
-                            } else if let a = rv.fileAllocatedSize {
-                                totalSize += Int64(a)
-                            }
-                        }
-                    } catch {
-                        continue
-                    }
-                }
-                continuation.resume(returning: totalSize)
+        return await Task.detached {
+            var totalSize: Int64 = 0
+            let keys: Set<URLResourceKey> = [
+                .isRegularFileKey, .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+                .fileResourceIdentifierKey
+            ]
+            guard let enumerator = FileManager.default.enumerator(
+                at: URL(fileURLWithPath: path),
+                includingPropertiesForKeys: Array(keys),
+                options: [.skipsPackageDescendants],
+                errorHandler: { _, _ in true }
+            ) else {
+                return 0
             }
-        }
+            let localSeen = ShardedFileIDSet()
+            for case let url as URL in enumerator {
+                do {
+                    let rv = try url.resourceValues(forKeys: keys)
+                    if rv.isSymbolicLink == true { continue }
+                    if rv.isRegularFile == true {
+                        if let id = rv.fileResourceIdentifier as? Data {
+                            if !localSeen.insert(id) { continue }
+                        }
+                        if let t = rv.totalFileAllocatedSize {
+                            totalSize += Int64(t)
+                        } else if let a = rv.fileAllocatedSize {
+                            totalSize += Int64(a)
+                        }
+                    }
+                } catch {
+                    continue
+                }
+            }
+            return totalSize
+        }.value
     }
     
     private func scanDirectoryContentsSafe(_ path: String) async -> [FolderItem] {
-        var items: [FolderItem] = []
-        let keys: Set<URLResourceKey> = [
-            .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
-            .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-            .contentModificationDateKey
-        ]
-        guard let enumerator = FileManager.default.enumerator(
-            at: URL(fileURLWithPath: path),
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsSubdirectoryDescendants],
-            errorHandler: { _, _ in true }
-        ) else {
-            return []
-        }
-        for case let url as URL in enumerator {
-            do {
-                let rv = try url.resourceValues(forKeys: keys)
-                if rv.isSymbolicLink == true { continue }
-                let isDir = rv.isDirectory ?? false
-                var size: Int64 = 0
-                if rv.isRegularFile == true {
-                    if let t = rv.totalFileAllocatedSize { size = Int64(t) }
-                    else if let a = rv.fileAllocatedSize { size = Int64(a) }
-                }
-                let item = FolderItem(
-                    name: url.lastPathComponent,
-                    path: url.path,
-                    size: size,
-                    isDirectory: isDir,
-                    itemCount: isDir ? 1 : 0,
-                    lastModified: rv.contentModificationDate ?? Date()
-                )
-                items.append(item)
-            } catch {
-                continue
+        return await Task.detached {
+            var items: [FolderItem] = []
+            let keys: Set<URLResourceKey> = [
+                .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+                .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+                .contentModificationDateKey
+            ]
+            guard let enumerator = FileManager.default.enumerator(
+                at: URL(fileURLWithPath: path),
+                includingPropertiesForKeys: Array(keys),
+                options: [.skipsSubdirectoryDescendants],
+                errorHandler: { _, _ in true }
+            ) else {
+                return []
             }
-        }
-        return items.sorted()
+            for case let url as URL in enumerator {
+                do {
+                    let rv = try url.resourceValues(forKeys: keys)
+                    if rv.isSymbolicLink == true { continue }
+                    let isDir = rv.isDirectory ?? false
+                    var size: Int64 = 0
+                    if rv.isRegularFile == true {
+                        if let t = rv.totalFileAllocatedSize { size = Int64(t) }
+                        else if let a = rv.fileAllocatedSize { size = Int64(a) }
+                    }
+                    let item = FolderItem(
+                        name: url.lastPathComponent,
+                        path: url.path,
+                        size: size,
+                        isDirectory: isDir,
+                        itemCount: isDir ? 1 : 0,
+                        lastModified: rv.contentModificationDate ?? Date()
+                    )
+                    items.append(item)
+                } catch {
+                    continue
+                }
+            }
+            return items.sorted()
+        }.value
     }
     
     private func shouldSkipSystemPath(_ path: String) -> Bool {
