@@ -10,11 +10,20 @@ class DiskAnalyzer: ObservableObject {
     @Published var totalSize: Int64 = 0
     @Published var currentScanPath: String = ""
     @Published var filesPerSecond: String = ""
-    @Published var scannedBytes: Int64 = 0
-    @Published var totalBytes: Int64 = 0
+    
+    // Per-directory progress model
+    @Published var currentDirTotalBytes: Int64 = 0
+    @Published var currentDirScannedBytes: Int64 = 0 
+    @Published var currentDirPercent: Double = 0.0
+    
+    // Whole-disk progress model
     @Published var totalDiskBytes: Int64 = 0
     @Published var totalDiskScannedBytes: Int64 = 0
     @Published var overallProgressPercentage: Double = 0.0
+    
+    // Legacy properties (keeping for backward compatibility)
+    @Published var scannedBytes: Int64 = 0
+    @Published var totalBytes: Int64 = 0
     @Published var externalVolumes: [FolderItem] = []
     
     private var scanTask: Task<Void, Never>?
@@ -217,7 +226,9 @@ class DiskAnalyzer: ObservableObject {
             
         // Process accessible directories
         var items: [FolderItem] = []
-        let limitedDirs = filteredDirs // Scan ALL directories, no artificial limits
+        // Apply prioritization so important directories are scanned first
+        let prioritizedDirs = SystemDirectoryFilter.prioritizedPaths(from: filteredDirs)
+        let limitedDirs = prioritizedDirs // Scan ALL directories, prioritized order
             
             // PRE-CALCULATE: Start calculating sizes for all directories in parallel
             scanProgress = "Pre-calculating directory sizes..."
@@ -254,27 +265,34 @@ class DiskAnalyzer: ObservableObject {
                     items.append(item)
                     totalScannedBytes += item.size
                     
-                    // Update progress
-                    scannedBytes = totalScannedBytes
+                    // Update whole-disk progress model
                     totalDiskScannedBytes = totalScannedBytes
-                    
-                    // Calculate overall progress if we have total disk size
                     if totalDiskBytes > 0 {
                         overallProgressPercentage = min(100.0, Double(totalScannedBytes) / Double(totalDiskBytes) * 100.0)
                     }
+                    
+                    // Update legacy properties
+                    scannedBytes = totalScannedBytes
+                    totalBytes = totalScannedBytes // For compatibility
+                    
+                    print("Completed \(dirPath): \(item.size) bytes, total so far: \(totalScannedBytes) bytes (\(String(format: "%.2f", overallProgressPercentage))%)")
                 }
             }
             
             // Final update
             scanProgressPercentage = 100.0
-            totalBytes = totalScannedBytes
-            scannedBytes = totalScannedBytes
-            totalDiskScannedBytes = totalScannedBytes
             
-            // Final overall progress calculation
+            // Update whole-disk progress model
+            totalDiskScannedBytes = totalScannedBytes
             if totalDiskBytes > 0 {
                 overallProgressPercentage = min(100.0, Double(totalScannedBytes) / Double(totalDiskBytes) * 100.0)
             }
+            
+            // Update legacy properties for backward compatibility
+            totalBytes = totalScannedBytes
+            scannedBytes = totalScannedBytes
+            
+            print("Scan complete! Total directories scanned: \(limitedDirs.count), Total size: \(totalScannedBytes) bytes")
             
         return items.sorted()
     }
@@ -509,45 +527,66 @@ class DiskAnalyzer: ObservableObject {
             ) else {
                 return totalDirectorySize
             }
+            
             var processedSize: Int64 = 0
             var itemsProcessed = 0
             var lastProgressUpdate = 0
+            // Match fast pass deduplication behavior
+            let localSeen = ShardedFileIDSet()
+            
             for case let url as URL in enumerator {
-            do {
-                let rv = try url.resourceValues(forKeys: keys)
-                if rv.isSymbolicLink == true { continue }
-                if rv.isRegularFile == true {
-                    // Note: seenFileIDs access moved outside Task.detached to avoid concurrency issues
-                    var sz: Int64 = 0
-                    if let t = rv.totalFileAllocatedSize { sz = Int64(t) }
-                    else if let a = rv.fileAllocatedSize { sz = Int64(a) }
-                    processedSize += sz
-                    itemsProcessed += 1
-                    if itemsProcessed - lastProgressUpdate >= 500 || (sz > 0 && processedSize % (10 * 1024 * 1024) < sz) {
-                        lastProgressUpdate = itemsProcessed
-                        let currentSize = processedSize
-                        let total = max(totalDirectorySize, 1)
-                        let progressPercent = min(100.0, Double(currentSize) / Double(total) * 100.0)
-                        await MainActor.run {
-                            self.scannedBytes = currentSize
-                            self.scanProgressPercentage = progressPercent
+                do {
+                    let rv = try url.resourceValues(forKeys: keys)
+                    if rv.isSymbolicLink == true { continue }
+                    if rv.isRegularFile == true {
+                        // Deduplicate hard-links to match fast pass behavior
+                        if let id = rv.fileResourceIdentifier as? Data {
+                            if !localSeen.insert(id) { continue }
+                        }
+                        
+                        let sz = Int64(rv.totalFileAllocatedSize ?? rv.fileAllocatedSize ?? 0)
+                        processedSize += sz
+                        itemsProcessed += 1
+                        
+                        if itemsProcessed - lastProgressUpdate >= 500 || (sz > 0 && processedSize % (10 * 1024 * 1024) < sz) {
+                            lastProgressUpdate = itemsProcessed
+                            // Capture values to avoid concurrency issues
+                            let capturedSize = processedSize
+                            let capturedTotal = max(totalDirectorySize, 1)
+                            let capturedPercent = min(100.0, Double(capturedSize) / Double(capturedTotal) * 100.0)
+                            await MainActor.run {
+                                // Update per-directory progress
+                                self.currentDirScannedBytes = capturedSize
+                                self.currentDirTotalBytes = capturedTotal
+                                self.currentDirPercent = capturedPercent
+                                self.scanProgressPercentage = capturedPercent
+                                
+                                // Update legacy properties for backward compatibility
+                                self.scannedBytes = capturedSize
+                            }
                         }
                     }
+                } catch {
+                    continue
                 }
-            } catch {
-                continue
+                if Task.isCancelled { break }
             }
-            if Task.isCancelled { break }
-        }
-        
-        // Final update with exact totals
-        let finalSize = totalDirectorySize
-        await MainActor.run {
-            self.scannedBytes = finalSize
-            self.scanProgressPercentage = 100.0
-        }
-        
-        return finalSize
+            
+            // Final update - use actual processed size, not precalculated estimate
+            // Capture final values to avoid concurrency issues
+            let finalProcessedSize = processedSize
+            let finalTotalSize = max(totalDirectorySize, processedSize)
+            await MainActor.run {
+                self.currentDirScannedBytes = finalProcessedSize
+                self.currentDirTotalBytes = finalTotalSize
+                self.currentDirPercent = 100.0
+                self.scanProgressPercentage = 100.0
+                
+                // Update legacy properties
+                self.scannedBytes = finalProcessedSize
+            }
+            
+            return max(totalDirectorySize, finalProcessedSize) // Return the larger of estimate vs actual
         }.value
     }
     
