@@ -1647,6 +1647,14 @@ class DiskAnalyzer: ObservableObject {
     // Navigate to a path using pre-calculated data
     // Returns true if cached data was found and loaded, false otherwise
     func navigateToPath(_ path: String) -> Bool {
+        // Special case: if navigating back to root path and we have root items, use them
+        if path == "/" && !rootItems.isEmpty && !isScanning {
+            // Already have root data loaded, no need to rescan
+            calculatePercentages()
+            return true
+        }
+        
+        // Check folder tree cache for other paths
         if let preCalculatedItems = folderTree[path] {
             rootItems = preCalculatedItems
             totalSize = preCalculatedItems.reduce(0) { $0 + $1.size }
