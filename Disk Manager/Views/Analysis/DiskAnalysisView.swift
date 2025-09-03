@@ -191,6 +191,13 @@ struct DiskAnalysisView: View {
         }
         .navigationTitle(currentPath == rootPath ? "Computer" : URL(fileURLWithPath: currentPath).lastPathComponent)
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button("← Devices") {
+                    onBack()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh") {
                     analyzer.scanDirectory(currentPath)
