@@ -51,8 +51,12 @@ class DiskAnalyzer: ObservableObject {
     // Navigate to a path using pre-calculated data
     // Returns true if cached data was found and loaded, false otherwise
     func navigateToPath(_ path: String) -> Bool {
+        print("DEBUG: navigateToPath called for: \(path)")
+        print("DEBUG: folderTree has \(folderTree.count) cached paths: \(Array(folderTree.keys))")
+        
         // Special case: if navigating back to root path and we have root items, use them
         if path == "/" && !rootItems.isEmpty && !isScanning {
+            print("DEBUG: Using existing root data for /")
             // Already have root data loaded, no need to rescan
             calculatePercentages()
             return true
@@ -60,11 +64,22 @@ class DiskAnalyzer: ObservableObject {
         
         // Check folder tree cache for other paths
         if let preCalculatedItems = folderTree[path] {
+            print("DEBUG: Found cached data for \(path) with \(preCalculatedItems.count) items")
+            
+            // If cached data is empty, it might be due to permissions
+            // Don't use empty cache - let the caller trigger a direct scan instead
+            if preCalculatedItems.isEmpty {
+                print("DEBUG: Cached data is empty for \(path) - returning false to trigger direct scan")
+                return false
+            }
+            
             rootItems = preCalculatedItems
             totalSize = preCalculatedItems.reduce(0) { $0 + $1.size }
             calculatePercentages()
             return true
         }
+        
+        print("DEBUG: No cached data found for \(path)")
         return false
     }
     
@@ -148,6 +163,12 @@ class DiskAnalyzer: ObservableObject {
                         self.rootItems = optimizedItems.sorted()
                         self.totalSize = optimizedItems.reduce(0) { $0 + $1.size }
                         self.calculatePercentages()
+                        
+                        // Cache the folder tree for navigation - this was missing!
+                        // Don't cache this directory as its own children, that would be wrong
+                        // Instead, pre-scan immediate subdirectories for navigation
+                        self.preloadSubdirectoryCache(items: optimizedItems)
+                        
                         self.isScanning = false
                         self.scanProgress = "Scan complete (optimized)"
                         self.scanProgressPercentage = 100.0
@@ -362,6 +383,8 @@ class DiskAnalyzer: ObservableObject {
                     // Also cache all nested children for deeper navigation
                     self.cacheNestedFolderTree(children: children)
                 }
+                
+                // Directory tree built successfully
             } else {
                 if let t = rv.totalFileAllocatedSize { totalSize = Int64(t) }
                 else if let a = rv.fileAllocatedSize { totalSize = Int64(a) }
@@ -398,123 +421,112 @@ class DiskAnalyzer: ObservableObject {
             }
             currentVisited.insert(path)
             
-            // Try bulk scanning first
+            // Use FileManager approach for reliable directory enumeration
             do {
-                let dirFd = open(path, O_RDONLY)
-                if dirFd >= 0 {
-                    defer { close(dirFd) }
-                    
-                    // Use fast bulk scanning
-                    let scanEntries = try bulkScanDirectoryOptimized(dirFd: dirFd)
-                    let entries = scanEntries.map { entry in
-                        DirectoryEntry(
-                            name: entry.name,
-                            isDir: entry.isDir,
-                            allocSize: entry.allocSize,
-                            deviceId: entry.deviceId,
-                            inode: entry.inode
-                        )
+                let contents = try FileManager.default.contentsOfDirectory(atPath: path)
+                
+                let keys: Set<URLResourceKey> = [
+                    .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+                    .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+                    .contentModificationDateKey
+                ]
+                
+                for name in contents {
+                    if Task.isCancelled {
+                        print("Task cancelled while scanning \(path)")
+                        break
                     }
                     
-                    for entry in entries {
-                        // Check for task cancellation periodically
-                        if Task.isCancelled {
-                            print("Task cancelled while scanning \(path)")
-                            break
-                        }
+                    let fullPath = path.hasSuffix("/") ? path + name : path + "/" + name
+                    let url = URL(fileURLWithPath: fullPath)
+                    
+                    // Process each item with proper memory management
+                    do {
+                        let resourceValues = try url.resourceValues(forKeys: keys)
                         
-                        let fullPath = path.hasSuffix("/") ? path + entry.name : path + "/" + entry.name
-                        var size: Int64 = entry.allocSize
+                        // Skip symbolic links to avoid cycles
+                        if resourceValues.isSymbolicLink == true { continue }
+                        
+                        let isDir = resourceValues.isDirectory ?? false
+                        let isRegular = resourceValues.isRegularFile ?? false
+                        var size: Int64 = 0
                         var childChildren: [FolderItem] = []
                         
-                        if entry.isDir {
-                            // For directories, calculate recursive size if needed
-                            if entry.allocSize == 0 {
-                                size = await getDirectoryTotalSizeFast(path: fullPath)
-                            }
-                            
-                            // Build children recursively - go unlimited depth for full scan
-                            if unlimited {
-                                childChildren = await buildDirectoryChildren(path: fullPath, unlimited: true, visitedPaths: currentVisited)
+                        if isRegular {
+                            // Get file size
+                            size = Int64(resourceValues.totalFileAllocatedSize ?? 
+                                       resourceValues.fileAllocatedSize ?? 0)
+                        } else if isDir {
+                            // For directories, only scan children if we're not too deep
+                            // and not in system directories that are huge
+                            if unlimited && !shouldSkipDeepScan(fullPath) {
+                                childChildren = await buildDirectoryChildren(path: fullPath, unlimited: false, visitedPaths: currentVisited)
+                                size = childChildren.reduce(0) { $0 + $1.size }
+                            } else {
+                                // For deep/system directories, just get the size without enumerating children
+                                size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
                             }
                         }
                         
+                        let modificationDate = resourceValues.contentModificationDate ?? Date()
+                        
                         var child = FolderItem(
-                            name: entry.name,
+                            name: name,
                             path: fullPath,
                             size: size,
-                            isDirectory: entry.isDir,
-                            itemCount: entry.isDir ? (childChildren.isEmpty ? 1 : childChildren.count) : 0,
-                            lastModified: Date() // Bulk scan doesn't provide modification date easily
+                            isDirectory: isDir,
+                            itemCount: isDir ? (childChildren.isEmpty ? 1 : childChildren.count) : 1,
+                            lastModified: modificationDate
                         )
                         child.children = childChildren
                         children.append(child)
+                        
+                    } catch {
+                        // Skip items that can't be accessed due to permissions
+                        continue
                     }
-                    
-                    return children.sorted()
-                } else {
-                    throw NSError(domain: "FileSystem", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Cannot open directory"])
                 }
             } catch {
-                print("Bulk scan failed for \(path), falling back to FileManager: \(error)")
-                
-                // Fallback to FileManager approach
-                do {
-                    let contents = try FileManager.default.contentsOfDirectory(atPath: path)
-                    let keys: Set<URLResourceKey> = [
-                        .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
-                        .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-                        .contentModificationDateKey
-                    ]
-                    
-                    for item in contents {
-                        let fullPath = path.hasSuffix("/") ? path + item : path + "/" + item
-                        let url = URL(fileURLWithPath: fullPath)
-                        
-                        do {
-                            let rv = try url.resourceValues(forKeys: keys)
-                            if rv.isSymbolicLink == true { continue }
-                            
-                            let isDir = rv.isDirectory ?? false
-                            var size: Int64 = 0
-                            var childChildren: [FolderItem] = []
-                            
-                            if isDir {
-                                // For directories, calculate recursive size
-                                size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
-                                
-                                // Build children recursively - go unlimited depth for full scan
-                                if unlimited {
-                                    childChildren = await DiskAnalyzer.buildDirectoryChildren(path: fullPath, unlimited: true, visitedPaths: currentVisited)
-                                }
-                            } else if rv.isRegularFile == true {
-                                if let t = rv.totalFileAllocatedSize { size = Int64(t) }
-                                else if let a = rv.fileAllocatedSize { size = Int64(a) }
-                            }
-                            
-                            var child = FolderItem(
-                                name: item,
-                                path: fullPath,
-                                size: size,
-                                isDirectory: isDir,
-                                itemCount: isDir ? (childChildren.isEmpty ? 1 : childChildren.count) : 0,
-                                lastModified: rv.contentModificationDate ?? Date()
-                            )
-                            child.children = childChildren
-                            children.append(child)
-                        } catch {
-                            // Skip items that can't be accessed
-                            continue
-                        }
-                    }
-                } catch {
-                    // If we can't read the directory, return empty array
-                    return []
-                }
+                // Silently skip directories that can't be read
+                return []
             }
             
             return children.sorted()
         }.value
+    }
+    
+    // Helper method to determine if we should skip deep scanning for performance
+    private static nonisolated func shouldSkipDeepScan(_ path: String) -> Bool {
+        let skipPaths = [
+            "/System/Volumes/",
+            "/System/Library/PrivateFrameworks/",
+            "/System/Library/Frameworks/",
+            "/Library/Developer/",
+            "/usr/lib/",
+            "/usr/share/",
+            "/.DocumentRevisions",
+            "/.Spotlight-V100",
+            "/.fseventsd",
+            "/.Trashes",
+            "/Network/",
+            "/Volumes/.timemachine"
+        ]
+        
+        for skipPath in skipPaths {
+            if path.hasPrefix(skipPath) {
+                print("DEBUG: Skipping deep scan of system directory: \(path)")
+                return true
+            }
+        }
+        
+        // Skip directories that are more than 4 levels deep
+        let components = path.components(separatedBy: "/").filter { !$0.isEmpty }
+        if components.count > 4 {
+            print("DEBUG: Skipping deep scan due to depth (\(components.count)): \(path)")
+            return true
+        }
+        
+        return false
     }
     
     // Helper method to recursively cache all nested folder structures
@@ -526,6 +538,40 @@ class DiskAnalyzer: ObservableObject {
                 // Recursively cache deeper levels
                 cacheNestedFolderTree(children: child.children)
             }
+        }
+    }
+    
+    // Preload immediate subdirectory contents for faster navigation
+    private func preloadSubdirectoryCache(items: [FolderItem]) {
+        print("DEBUG: preloadSubdirectoryCache called with \(items.count) items")
+        let directories = items.filter { $0.isDirectory }
+        print("DEBUG: Found \(directories.count) directories to preload: \(directories.map { $0.path })")
+        
+        Task {
+            for item in items where item.isDirectory {
+                print("DEBUG: Preloading cache for directory: \(item.path)")
+                // Use the optimized scanner to quickly scan immediate subdirectory contents
+                let subItems = await self.optimizedScanner.scanDirectoryOptimized(
+                    item.path,
+                    enableMonitoring: false // Don't enable monitoring for preload scans
+                ) { _, _ in
+                    // Silent progress for background preloading
+                }
+                
+                print("DEBUG: Scanned \(item.path) and found \(subItems.count) subitems")
+                
+                // Always cache the result, even if empty - this prevents re-scanning
+                await MainActor.run {
+                    self.folderTree[item.path] = subItems.sorted()
+                    print("DEBUG: Cached \(subItems.count) items for \(item.path)")
+                }
+                
+                // If we got no items, this might be a permissions issue
+                if subItems.isEmpty {
+                    print("DEBUG: WARNING - No items found in \(item.path). Possible permissions issue.")
+                }
+            }
+            print("DEBUG: Preloading complete. Total cached paths: \(await MainActor.run { self.folderTree.count })")
         }
     }
     

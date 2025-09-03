@@ -126,12 +126,15 @@ private func fsEventCallback(
     guard let info = clientCallBackInfo else { return }
     
     let monitor = Unmanaged<FileSystemMonitor>.fromOpaque(info).takeUnretainedValue()
-    let paths = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as! [String]
+    
+    // Extract paths using proper FSEvents API
+    let pathsPtr = eventPaths.assumingMemoryBound(to: UnsafePointer<CChar>.self)
     
     // Process events on the main actor
     Task { @MainActor in
         for i in 0..<numEvents {
-            let path = paths[i]
+            let pathCString = pathsPtr[i]
+            let path = String(cString: pathCString)
             let flags = eventFlags[i]
             
             let change = FileSystemMonitor.FileSystemChange(path: path, flags: flags)

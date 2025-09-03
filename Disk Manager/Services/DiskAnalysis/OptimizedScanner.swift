@@ -198,7 +198,10 @@ class OptimizedScanner: ObservableObject {
                     includingPropertiesForKeys: resourceKeys,
                     options: [.skipsHiddenFiles, .skipsPackageDescendants],
                     errorHandler: { (url, error) in
-                        print("Enumeration error for \(url): \(error)")
+                        // Only log non-permission errors to reduce noise
+                        if !error.localizedDescription.contains("permission") && !error.localizedDescription.contains("Permission denied") {
+                            print("Enumeration error for \(url): \(error)")
+                        }
                         return true // Continue enumeration
                     }
                 ) else {
@@ -206,8 +209,10 @@ class OptimizedScanner: ObservableObject {
                 }
                 
                 // Process all items with autoreleasepool for memory management
+                var itemCount = 0
                 while let item = enumerator.nextObject() {
                     guard let url = item as? URL else { continue }
+                    itemCount += 1
                     autoreleasepool {
                         do {
                             let resourceValues = try url.resourceValues(forKeys: Set(resourceKeys))
@@ -262,6 +267,8 @@ class OptimizedScanner: ObservableObject {
                         }
                     }
                 }
+                
+                print("DEBUG: OptimizedScanner processed \(itemCount) total items, added \(items.count) valid items for \(path)")
                 
             } catch {
                 print("Error scanning directory \(path): \(error)")
