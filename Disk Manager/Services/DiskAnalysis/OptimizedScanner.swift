@@ -234,6 +234,9 @@ class OptimizedScanner: ObservableObject {
                         } catch {
                             size = 0
                         }
+                    } else {
+                        // For directories, use a fast size estimation for immediate feedback
+                        size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
                     }
                     
                     let item = FolderItem(
@@ -398,11 +401,39 @@ class OptimizedScanner: ObservableObject {
     private nonisolated func scanSingleDirectoryRecursively(_ path: String) async -> [FolderItem] {
         // Try syscall-based scanning first for maximum performance
         if let syscallResults = await trySyscallBasedScanning(path: path) {
-            return syscallResults
+            // Calculate directory sizes for syscall results
+            return await calculateDirectorySizes(for: syscallResults)
         }
         
         // Fallback to FileManager approach
-        return await scanWithFileManagerFallback(path: path)
+        let fallbackResults = await scanWithFileManagerFallback(path: path)
+        // Calculate directory sizes for fallback results too
+        return await calculateDirectorySizes(for: fallbackResults)
+    }
+    
+    private nonisolated func calculateDirectorySizes(for items: [FolderItem]) async -> [FolderItem] {
+        // Create a new array with properly calculated directory sizes
+        var updatedItems: [FolderItem] = []
+        
+        for item in items {
+            if item.isDirectory && item.size == 0 {
+                // Calculate the actual directory size
+                let actualSize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: item.path)
+                let updatedItem = FolderItem(
+                    name: item.name,
+                    path: item.path,
+                    size: actualSize,
+                    isDirectory: item.isDirectory,
+                    itemCount: item.itemCount,
+                    lastModified: item.lastModified
+                )
+                updatedItems.append(updatedItem)
+            } else {
+                updatedItems.append(item)
+            }
+        }
+        
+        return updatedItems
     }
     
     // MARK: - Syscall-based scanning with large buffers
@@ -585,7 +616,7 @@ class OptimizedScanner: ObservableObject {
         
         let modificationDate = Date(timeIntervalSince1970: TimeInterval(modTime.tv_sec))
         
-        // Parse allocated size (for files)
+        // Parse allocated size (for files only, directories will be calculated later)
         var size: Int64 = 0
         if !isDirectory {
             size = buffer.load(fromByteOffset: currentOffset, as: Int64.self)
@@ -608,6 +639,12 @@ class OptimizedScanner: ObservableObject {
         if name.hasPrefix(".") { return nil }
         
         let fullPath = basePath == "/" ? "/\(name)" : "\(basePath)/\(name)"
+        
+        // For directories, we can't calculate size in memory-mapped context
+        // This will need to be done in a separate pass
+        if isDirectory {
+            size = 0
+        }
         
         return FolderItem(
             name: name,
@@ -731,7 +768,7 @@ class OptimizedScanner: ObservableObject {
         
         let modificationDate = Date(timeIntervalSince1970: TimeInterval(modTime.tv_sec))
         
-        // Parse allocated size (for files)
+        // Parse allocated size (for files only, directories will be calculated later)
         var size: Int64 = 0
         if !isDirectory {
             size = buffer.withUnsafeBytes { bytes in
@@ -755,6 +792,12 @@ class OptimizedScanner: ObservableObject {
         if name.hasPrefix(".") { return nil }
         
         let fullPath = basePath == "/" ? "/\(name)" : "\(basePath)/\(name)"
+        
+        // For directories, we can't calculate size in syscall context
+        // This will need to be done in a separate pass
+        if isDirectory {
+            size = 0
+        }
         
         return FolderItem(
             name: name,
@@ -791,7 +834,7 @@ class OptimizedScanner: ObservableObject {
         guard let enumerator = FileManager.default.enumerator(
             at: URL(fileURLWithPath: path),
             includingPropertiesForKeys: resourceKeys,
-            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            options: [.skipsPackageDescendants],
             errorHandler: { (url, error) in
                 // Only log non-permission errors to reduce noise
                 if !error.localizedDescription.contains("permission") && !error.localizedDescription.contains("Permission denied") {
@@ -840,7 +883,7 @@ class OptimizedScanner: ObservableObject {
                         size = Int64(logical)
                     }
                 } else if isDirectory {
-                    // For directories, we'll calculate size recursively if needed
+                    // For directories, we'll calculate size outside this loop
                     size = 0
                 }
                 
@@ -880,7 +923,26 @@ class OptimizedScanner: ObservableObject {
             }
         }
         
-        return items
+        // Calculate directory sizes for any directories that have size 0
+        var finalItems: [FolderItem] = []
+        for item in items {
+            if item.isDirectory && item.size == 0 {
+                let actualSize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: item.path)
+                let updatedItem = FolderItem(
+                    name: item.name,
+                    path: item.path,
+                    size: actualSize,
+                    isDirectory: item.isDirectory,
+                    itemCount: item.itemCount,
+                    lastModified: item.lastModified
+                )
+                finalItems.append(updatedItem)
+            } else {
+                finalItems.append(item)
+            }
+        }
+        
+        return finalItems
     }
     
     private nonisolated func getImmediateDirectoryContents(path: String) async throws -> [FolderItem] {
@@ -897,22 +959,22 @@ class OptimizedScanner: ObservableObject {
         let contents = try FileManager.default.contentsOfDirectory(
             at: URL(fileURLWithPath: path),
             includingPropertiesForKeys: resourceKeys,
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsPackageDescendants]
         )
         
         var items: [FolderItem] = []
         let seenFileIDs = ShardedFileIDSet(shardCount: 16)
         
         for url in contents {
-            autoreleasepool {
-                do {
-                    let resourceValues = try url.resourceValues(forKeys: Set(resourceKeys))
-                    
-                    if resourceValues.isSymbolicLink == true { return }
-                    
-                    let isDirectory = resourceValues.isDirectory ?? false
-                    var size: Int64 = 0
-                    
+            do {
+                let resourceValues = try url.resourceValues(forKeys: Set(resourceKeys))
+                
+                if resourceValues.isSymbolicLink == true { continue }
+                
+                let isDirectory = resourceValues.isDirectory ?? false
+                var size: Int64 = 0
+                
+                autoreleasepool {
                     if !isDirectory {
                         // Handle hard link deduplication
                         if let fileID = resourceValues.fileResourceIdentifier as? Data {
@@ -922,21 +984,26 @@ class OptimizedScanner: ObservableObject {
                         size = Int64(resourceValues.totalFileAllocatedSize ?? 
                                    resourceValues.fileAllocatedSize ?? 0)
                     }
-                    
-                    let item = FolderItem(
-                        name: url.lastPathComponent,
-                        path: url.path,
-                        size: size,
-                        isDirectory: isDirectory,
-                        itemCount: 1,
-                        lastModified: resourceValues.contentModificationDate ?? Date()
-                    )
-                    
-                    items.append(item)
-                    
-                } catch {
-                    return
                 }
+                
+                // For directories, calculate the actual size (outside autoreleasepool for async)
+                if isDirectory {
+                    size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: url.path)
+                }
+                
+                let item = FolderItem(
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: size,
+                    isDirectory: isDirectory,
+                    itemCount: 1,
+                    lastModified: resourceValues.contentModificationDate ?? Date()
+                )
+                
+                items.append(item)
+                
+            } catch {
+                continue
             }
         }
         
@@ -976,7 +1043,7 @@ class OptimizedScanner: ObservableObject {
                 let contents = try FileManager.default.contentsOfDirectory(
                     at: URL(fileURLWithPath: path),
                     includingPropertiesForKeys: resourceKeys,
-                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                    options: [.skipsPackageDescendants]
                 )
                 
                 var items: [FolderItem] = []

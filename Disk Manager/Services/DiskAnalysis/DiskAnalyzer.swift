@@ -470,13 +470,13 @@ class DiskAnalyzer: ObservableObject {
                             size = Int64(resourceValues.totalFileAllocatedSize ?? 
                                        resourceValues.fileAllocatedSize ?? 0)
                         } else if isDir {
-                            // For directories, only scan children if we're not too deep
-                            // and not in system directories that are huge
+                            // For directories, scan children unless they are system directories
+                            // that would negatively impact performance
                             if unlimited && !shouldSkipDeepScan(fullPath) {
                                 childChildren = await buildDirectoryChildren(path: fullPath, unlimited: false, visitedPaths: currentVisited)
                                 size = childChildren.reduce(0) { $0 + $1.size }
                             } else {
-                                // For deep/system directories, just get the size without enumerating children
+                                // For system directories, just get the size without enumerating children
                                 size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
                             }
                         }
@@ -508,7 +508,7 @@ class DiskAnalyzer: ObservableObject {
         }.value
     }
     
-    // Helper method to determine if we should skip deep scanning for performance
+    // Helper method to determine if we should skip system directories for performance
     private static nonisolated func shouldSkipDeepScan(_ path: String) -> Bool {
         let skipPaths = [
             "/System/Volumes/",
@@ -532,13 +532,7 @@ class DiskAnalyzer: ObservableObject {
             }
         }
         
-        // Skip directories that are more than 4 levels deep
-        let components = path.components(separatedBy: "/").filter { !$0.isEmpty }
-        if components.count > 4 {
-            print("DEBUG: Skipping deep scan due to depth (\(components.count)): \(path)")
-            return true
-        }
-        
+        // No depth limit - scan as deep as needed for complete enumeration
         return false
     }
     
@@ -804,7 +798,7 @@ class DiskAnalyzer: ObservableObject {
         }
     }
     
-    private static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
+    public nonisolated static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
         return await Task.detached {
             var totalSize: Int64 = 0
             var fileCount: Int = 0
