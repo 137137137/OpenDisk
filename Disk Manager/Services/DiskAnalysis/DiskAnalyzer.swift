@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 @MainActor
 class DiskAnalyzer: ObservableObject {
@@ -32,8 +33,13 @@ class DiskAnalyzer: ObservableObject {
     private var totalBytesProcessed: Int64 = 0
     private var progressModel = RateModel()
     private var lastProgressUpdate: Date = Date()
-    private var seenFileIDs = ShardedFileIDSet()
+    private var seenFileIDs = ShardedFileIDSet(shardCount: 16)
     private let firmlinkResolver = FirmlinkResolver()
+    
+    // NEW: Optimized scanner and monitoring
+    private let optimizedScanner = OptimizedScanner()
+    private let fileSystemMonitor = FileSystemMonitor()
+    private let smartCache = SmartDirectoryCache()
     
     // Complete folder tree for instant navigation
     private var folderTree: [String: [FolderItem]] = [:]
@@ -64,6 +70,9 @@ class DiskAnalyzer: ObservableObject {
     
     func scanDirectory(_ path: String) {
         scanTask?.cancel()
+        
+        // Stop any existing monitoring
+        fileSystemMonitor.stopMonitoring()
         
         isScanning = true
         scanProgress = "Preparing to scan..."
@@ -114,13 +123,42 @@ class DiskAnalyzer: ObservableObject {
         }
         
         // Reset dedupe set for this scan
-        seenFileIDs = ShardedFileIDSet()
+        seenFileIDs = ShardedFileIDSet(shardCount: 16)
         
         scanTask = Task { [weak self] in
             guard let self = self else { return }
             
             // Create local copies of captured variables to avoid concurrency issues
             let pathToScan = scanPath
+            
+            // Try optimized scanner first for better performance
+            if pathToScan != "/" {
+                let optimizedItems = await self.optimizedScanner.scanDirectoryOptimized(
+                    pathToScan,
+                    enableMonitoring: true
+                ) { progress, message in
+                    Task { @MainActor in
+                        self.scanProgressPercentage = progress
+                        self.scanProgress = message
+                    }
+                }
+                
+                if !optimizedItems.isEmpty {
+                    await MainActor.run {
+                        self.rootItems = optimizedItems.sorted()
+                        self.totalSize = optimizedItems.reduce(0) { $0 + $1.size }
+                        self.calculatePercentages()
+                        self.isScanning = false
+                        self.scanProgress = "Scan complete (optimized)"
+                        self.scanProgressPercentage = 100.0
+                        self.estimatedTimeRemaining = ""
+                    }
+                    
+                    // Start FSEvents monitoring for real-time updates
+                    await self.startFileSystemMonitoring(for: pathToScan)
+                    return
+                }
+            }
             
             // Scan external volumes in parallel
             async let volumesScan: Void = self.scanExternalVolumes()
@@ -186,7 +224,7 @@ class DiskAnalyzer: ObservableObject {
             self.totalFilesProcessed = 0
             self.totalBytesProcessed = 0
             self.lastProgressUpdate = Date()
-            self.seenFileIDs = ShardedFileIDSet()
+            self.seenFileIDs = ShardedFileIDSet(shardCount: 16)
         }
         
         // Enumerate accessible top-level directories with better error handling
@@ -367,7 +405,16 @@ class DiskAnalyzer: ObservableObject {
                     defer { close(dirFd) }
                     
                     // Use fast bulk scanning
-                    let entries = try bulkScanDirectoryOptimized(dirFd: dirFd)
+                    let scanEntries = try bulkScanDirectoryOptimized(dirFd: dirFd)
+                    let entries = scanEntries.map { entry in
+                        DirectoryEntry(
+                            name: entry.name,
+                            isDir: entry.isDir,
+                            allocSize: entry.allocSize,
+                            deviceId: entry.deviceId,
+                            inode: entry.inode
+                        )
+                    }
                     
                     for entry in entries {
                         // Check for task cancellation periodically
@@ -414,52 +461,52 @@ class DiskAnalyzer: ObservableObject {
                 // Fallback to FileManager approach
                 do {
                     let contents = try FileManager.default.contentsOfDirectory(atPath: path)
-                let keys: Set<URLResourceKey> = [
-                    .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
-                    .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-                    .contentModificationDateKey
-                ]
-                
-                for item in contents {
-                    let fullPath = path.hasSuffix("/") ? path + item : path + "/" + item
-                    let url = URL(fileURLWithPath: fullPath)
+                    let keys: Set<URLResourceKey> = [
+                        .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+                        .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+                        .contentModificationDateKey
+                    ]
                     
-                    do {
-                        let rv = try url.resourceValues(forKeys: keys)
-                        if rv.isSymbolicLink == true { continue }
+                    for item in contents {
+                        let fullPath = path.hasSuffix("/") ? path + item : path + "/" + item
+                        let url = URL(fileURLWithPath: fullPath)
                         
-                        let isDir = rv.isDirectory ?? false
-                        var size: Int64 = 0
-                        var childChildren: [FolderItem] = []
-                        
-                        if isDir {
-                            // For directories, calculate recursive size
-                            size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
+                        do {
+                            let rv = try url.resourceValues(forKeys: keys)
+                            if rv.isSymbolicLink == true { continue }
                             
-                            // Build children recursively - go unlimited depth for full scan
-                            if unlimited {
-                                childChildren = await DiskAnalyzer.buildDirectoryChildren(path: fullPath, unlimited: true, visitedPaths: currentVisited)
+                            let isDir = rv.isDirectory ?? false
+                            var size: Int64 = 0
+                            var childChildren: [FolderItem] = []
+                            
+                            if isDir {
+                                // For directories, calculate recursive size
+                                size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
+                                
+                                // Build children recursively - go unlimited depth for full scan
+                                if unlimited {
+                                    childChildren = await DiskAnalyzer.buildDirectoryChildren(path: fullPath, unlimited: true, visitedPaths: currentVisited)
+                                }
+                            } else if rv.isRegularFile == true {
+                                if let t = rv.totalFileAllocatedSize { size = Int64(t) }
+                                else if let a = rv.fileAllocatedSize { size = Int64(a) }
                             }
-                        } else if rv.isRegularFile == true {
-                            if let t = rv.totalFileAllocatedSize { size = Int64(t) }
-                            else if let a = rv.fileAllocatedSize { size = Int64(a) }
+                            
+                            var child = FolderItem(
+                                name: item,
+                                path: fullPath,
+                                size: size,
+                                isDirectory: isDir,
+                                itemCount: isDir ? (childChildren.isEmpty ? 1 : childChildren.count) : 0,
+                                lastModified: rv.contentModificationDate ?? Date()
+                            )
+                            child.children = childChildren
+                            children.append(child)
+                        } catch {
+                            // Skip items that can't be accessed
+                            continue
                         }
-                        
-                        var child = FolderItem(
-                            name: item,
-                            path: fullPath,
-                            size: size,
-                            isDirectory: isDir,
-                            itemCount: isDir ? (childChildren.isEmpty ? 1 : childChildren.count) : 0,
-                            lastModified: rv.contentModificationDate ?? Date()
-                        )
-                        child.children = childChildren
-                        children.append(child)
-                    } catch {
-                        // Skip items that can't be accessed
-                        continue
                     }
-                }
                 } catch {
                     // If we can't read the directory, return empty array
                     return []
@@ -585,9 +632,10 @@ class DiskAnalyzer: ObservableObject {
             var itemsProcessed = 0
             var lastProgressUpdate = 0
             // Match fast pass deduplication behavior
-            let localSeen = ShardedFileIDSet()
+            let localSeen = ShardedFileIDSet(shardCount: 16)
             
-            for case let url as URL in enumerator {
+            while let item = enumerator.nextObject() {
+                guard let url = item as? URL else { continue }
                 do {
                     let rv = try url.resourceValues(forKeys: keys)
                     if rv.isSymbolicLink == true { continue }
@@ -643,12 +691,64 @@ class DiskAnalyzer: ObservableObject {
         }.value
     }
     
+    // MARK: - Enhanced FSEvents Monitoring Integration
+    
+    private func startFileSystemMonitoring(for path: String) async {
+        // Start monitoring with optimized latency
+        fileSystemMonitor.startMonitoring(
+            paths: [path],
+            latency: 0.5 // More responsive updates
+        ) { [weak self] change in
+            Task { @MainActor in
+                self?.handleFileSystemChange(change)
+            }
+        }
+    }
+    
+    private func handleFileSystemChange(_ change: FileSystemMonitor.FileSystemChange) {
+        print("File system change detected: \(change.path)")
+        
+        // Invalidate caches for affected paths
+        let affectedPath = change.path
+        let parentPath = URL(fileURLWithPath: affectedPath).deletingLastPathComponent().path
+        
+        // Remove from various caches
+        sizeCache.removeValue(forKey: affectedPath)
+        sizeCache.removeValue(forKey: parentPath)
+        folderTree.removeValue(forKey: affectedPath)
+        folderTree.removeValue(forKey: parentPath)
+        
+        // For significant changes, trigger a partial rescan
+        if change.isCreated || change.isRemoved {
+            // Could implement incremental updates here
+            print("Significant change detected, consider partial rescan for: \(parentPath)")
+        }
+    }
+    
+    // MARK: - Enhanced Memory Management
+    
+    /// Enhanced scanning with better memory management
+    private func performOptimizedScan(path: String) async -> [FolderItem] {
+        return await asyncAutoreleasePool {
+            // Use the optimized scanner for better performance
+            await self.optimizedScanner.scanDirectoryOptimized(
+                path,
+                enableMonitoring: false // We handle monitoring separately
+            ) { [weak self] progress, message in
+                Task { @MainActor in
+                    self?.scanProgressPercentage = progress
+                    self?.scanProgress = message
+                }
+            }
+        }
+    }
+    
     private static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
         return await Task.detached {
             var totalSize: Int64 = 0
             var fileCount: Int = 0
             var errorCount: Int = 0
-            let localSeen = ShardedFileIDSet()
+            let localSeen = ShardedFileIDSet(shardCount: 16)
             
             // Try to use optimized bulk scanning first
             do {
@@ -657,14 +757,22 @@ class DiskAnalyzer: ObservableObject {
                     defer { close(dirFd) }
                     
                     // Use the fast getattrlistbulk syscall for immediate children
-                    let entries = try bulkScanDirectoryOptimized(dirFd: dirFd)
-                    print("Bulk scan found \(entries.count) entries in \(path)")
+                    let scanEntries = try bulkScanDirectoryOptimized(dirFd: dirFd)
+                    let entries = scanEntries.map { entry in
+                        DirectoryEntry(
+                            name: entry.name,
+                            isDir: entry.isDir,
+                            allocSize: entry.allocSize,
+                            deviceId: entry.deviceId,
+                            inode: entry.inode
+                        )
+                    }
                     
                     for entry in entries {
                         if !entry.isDir {
                             fileCount += 1
                             // Use device+inode for deduplication - convert to Data
-                            var devIno = DevIno(dev: entry.deviceId, ino: entry.inode)
+                            var devIno = FileDeviceInode(dev: entry.deviceId, ino: entry.inode)
                             let devInoData = withUnsafeBytes(of: &devIno) { Data($0) }
                             if localSeen.insert(devInoData) {
                                 totalSize += entry.allocSize
@@ -677,59 +785,55 @@ class DiskAnalyzer: ObservableObject {
                         }
                     }
                     
-                    print("Finished bulk scanning \(path): \(fileCount) files, \(totalSize) bytes")
                     return totalSize
                 } else {
                     throw NSError(domain: "FileSystem", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Cannot open directory"])
                 }
             } catch {
-                print("Bulk scan failed for \(path), falling back to FileManager: \(error)")
-                errorCount += 1
-                
-                // Fallback to original FileManager approach
-                let keys: Set<URLResourceKey> = [
-                    .isRegularFileKey, .isSymbolicLinkKey,
-                    .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-                    .fileResourceIdentifierKey
-                ]
-                
-                guard let enumerator = FileManager.default.enumerator(
-                    at: URL(fileURLWithPath: path),
-                    includingPropertiesForKeys: Array(keys),
-                    options: [.skipsPackageDescendants],
-                    errorHandler: { url, error in
-                        print("Error accessing \(url.path): \(error)")
-                        errorCount += 1
-                        return true
+                // Fallback to FileManager if bulk scan fails
+                do {
+                    let keys: Set<URLResourceKey> = [
+                        .isRegularFileKey, .isSymbolicLinkKey, .isDirectoryKey,
+                        .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+                        .fileResourceIdentifierKey
+                    ]
+                    
+                    let contentsData = try FileManager.default.contentsOfDirectory(
+                        at: URL(fileURLWithPath: path),
+                        includingPropertiesForKeys: Array(keys),
+                        options: [.skipsPackageDescendants]
+                    )
+                    
+                    for url in contentsData {
+                        do {
+                            let rv = try url.resourceValues(forKeys: keys)
+                            
+                            if rv.isSymbolicLink == true { continue }
+                            
+                            if rv.isDirectory == true {
+                                let subSize = await getDirectoryTotalSizeFast(path: url.path)
+                                totalSize += subSize
+                            } else if rv.isRegularFile == true {
+                                fileCount += 1
+                                
+                                // Deduplicate hard-links
+                                if let id = rv.fileResourceIdentifier as? Data {
+                                    if !localSeen.insert(id) { continue }
+                                }
+                                
+                                let sz = Int64(rv.totalFileAllocatedSize ?? rv.fileAllocatedSize ?? 0)
+                                totalSize += sz
+                            }
+                        } catch {
+                            errorCount += 1
+                            continue
+                        }
                     }
-                ) else {
-                    print("Failed to create enumerator for path: \(path)")
+                    
+                    return totalSize
+                } catch {
                     return 0
                 }
-                
-                for case let url as URL in enumerator {
-                    do {
-                        let rv = try url.resourceValues(forKeys: keys)
-                        if rv.isSymbolicLink == true { continue }
-                        if rv.isRegularFile == true {
-                            fileCount += 1
-                            if let id = rv.fileResourceIdentifier as? Data {
-                                if !localSeen.insert(id) { continue }
-                            }
-                            if let t = rv.totalFileAllocatedSize {
-                                totalSize += Int64(t)
-                            } else if let a = rv.fileAllocatedSize {
-                                totalSize += Int64(a)
-                            }
-                        }
-                    } catch {
-                        errorCount += 1
-                        continue
-                    }
-                }
-                
-                print("Finished fallback scanning \(path): \(fileCount) files, \(totalSize) bytes, \(errorCount) errors")
-                return totalSize
             }
         }.value
     }
@@ -739,54 +843,53 @@ class DiskAnalyzer: ObservableObject {
             var items: [FolderItem] = []
             
             do {
-                let contents = try FileManager.default.contentsOfDirectory(atPath: path)
                 let keys: Set<URLResourceKey> = [
                     .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
                     .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-                    .contentModificationDateKey
+                    .contentModificationDateKey, .fileResourceIdentifierKey
                 ]
                 
-                for item in contents {
-                    let fullPath = path.hasSuffix("/") ? path + item : path + "/" + item
-                    let url = URL(fileURLWithPath: fullPath)
-                    
+                let contents = try FileManager.default.contentsOfDirectory(
+                    at: URL(fileURLWithPath: path),
+                    includingPropertiesForKeys: Array(keys),
+                    options: [.skipsPackageDescendants]
+                )
+                
+                for url in contents {
                     do {
                         let rv = try url.resourceValues(forKeys: keys)
                         if rv.isSymbolicLink == true { continue }
                         
                         let isDir = rv.isDirectory ?? false
                         var size: Int64 = 0
+                        let modificationDate = rv.contentModificationDate ?? Date()
                         
                         if isDir {
-                            // For directories, calculate recursive size
-                            size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
+                            size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: url.path)
                         } else if rv.isRegularFile == true {
                             if let t = rv.totalFileAllocatedSize { size = Int64(t) }
                             else if let a = rv.fileAllocatedSize { size = Int64(a) }
                         }
                         
-                        var folderItem = FolderItem(
-                            name: item,
-                            path: fullPath,
+                        let item = FolderItem(
+                            name: url.lastPathComponent,
+                            path: url.path,
                             size: size,
                             isDirectory: isDir,
-                            itemCount: isDir ? 1 : 0,
-                            lastModified: rv.contentModificationDate ?? Date()
+                            itemCount: 1,
+                            lastModified: modificationDate
                         )
                         
-                        // For directories, get all children - unlimited depth
-                        if isDir {
-                            folderItem.children = await DiskAnalyzer.buildDirectoryChildren(path: fullPath, unlimited: true, visitedPaths: [])
-                        }
+                        items.append(item)
                         
-                        items.append(folderItem)
                     } catch {
                         // Skip items that can't be accessed
                         continue
                     }
                 }
+                
             } catch {
-                // If we can't read the directory, return empty array
+                print("Error scanning directory \(path): \(error)")
                 return []
             }
             
@@ -794,125 +897,136 @@ class DiskAnalyzer: ObservableObject {
         }.value
     }
     
-    private func shouldSkipSystemPath(_ path: String) -> Bool {
-        let skipPaths = [
-            "/dev", "/proc", "/sys", "/tmp", "/var/folders",
-            "/.Spotlight-V100", "/.fseventsd", "/.Trashes"
-        ]
-        return skipPaths.contains { path.hasPrefix($0) }
+    // MARK: - External Volumes
+    
+    func scanExternalVolumes() async {
+        let volumes = await Task.detached {
+            var externalVolumes: [FolderItem] = []
+            
+            // Scan /Volumes for external drives and networks
+            let volumesPath = "/Volumes"
+            do {
+                let volumeList = try FileManager.default.contentsOfDirectory(atPath: volumesPath)
+                
+                for volumeName in volumeList {
+                    let volumePath = volumesPath + "/" + volumeName
+                    
+                    // Skip system volumes and hidden volumes
+                    if volumeName.hasPrefix(".") ||
+                       volumeName == "Macintosh HD" ||
+                       volumeName.contains("com.apple.TimeMachine") {
+                        continue
+                    }
+                    
+                    // Check if it's accessible
+                    guard FileManager.default.isReadableFile(atPath: volumePath) else {
+                        continue
+                    }
+                    
+                    let volumeURL = URL(fileURLWithPath: volumePath)
+                    do {
+                        let resourceValues = try volumeURL.resourceValues(forKeys: [
+                            .volumeNameKey,
+                            .volumeTotalCapacityKey,
+                            .volumeAvailableCapacityKey
+                        ])
+                        
+                        let size = Int64(resourceValues.volumeTotalCapacity ?? 0)
+                        
+                        let volume = FolderItem(
+                            name: volumeName,
+                            path: volumePath,
+                            size: size,
+                            isDirectory: true,
+                            itemCount: 1,
+                            lastModified: Date()
+                        )
+                        
+                        externalVolumes.append(volume)
+                        
+                    } catch {
+                        // If we can't get volume info, create a basic item
+                        let volume = FolderItem(
+                            name: volumeName,
+                            path: volumePath,
+                            size: 0,
+                            isDirectory: true,
+                            itemCount: 1,
+                            lastModified: Date()
+                        )
+                        
+                        externalVolumes.append(volume)
+                    }
+                }
+                
+            } catch {
+                print("Error scanning /Volumes: \(error)")
+            }
+            
+            return externalVolumes.sorted()
+        }.value
+        
+        await MainActor.run {
+            self.externalVolumes = volumes
+        }
     }
     
-    private func getTotalDiskSize(path: String) -> Int64 {
-        // Try URL resource values first
-        do {
-            let url = URL(fileURLWithPath: path)
-            let resourceValues = try url.resourceValues(forKeys: [.volumeTotalCapacityKey])
-            if let totalCapacity = resourceValues.volumeTotalCapacity, totalCapacity > 0 {
-                print("Got total disk size via URL method: \(totalCapacity) bytes")
-                return Int64(totalCapacity)
-            }
-        } catch {
-            print("Error getting disk size with URL method: \(error)")
-        }
-        
-        // Fallback to FileManager method
-        do {
-            let attributes = try FileManager.default.attributesOfFileSystem(forPath: path)
-            if let totalSize = attributes[.systemSize] as? Int64, totalSize > 0 {
-                print("Got total disk size via FileManager method: \(totalSize) bytes")
-                return totalSize
-            }
-        } catch {
-            print("Error getting disk size with FileManager method: \(error)")
-        }
-        
-        // If both methods fail, return a reasonable default based on common disk sizes
-        // This prevents showing "Zero KB" 
-        print("Warning: Could not determine disk size, using fallback estimate")
-        return 1_000_000_000_000 // 1TB fallback estimate
-    }
+    // MARK: - Helper Functions
     
     private func hasFullDiskAccess() -> Bool {
-        // Test multiple protected locations to ensure we have proper access
         let testPaths = [
-            "/Library/Application Support/com.apple.TCC",
-            "/System/Library/Frameworks", 
-            "/usr/bin",
+            "/Library/Application Support",
+            "/Library/Preferences",
             "/private/var/db"
         ]
         
-        var accessCount = 0
-        for testPath in testPaths {
-            if FileManager.default.isReadableFile(atPath: testPath) {
-                accessCount += 1
-            } else {
-                print("No access to: \(testPath)")
-            }
-        }
-        
-        let hasAccess = accessCount >= 3 // Need access to at least 3/4 test paths
-        print("Full Disk Access check: \(accessCount)/\(testPaths.count) accessible, result: \(hasAccess)")
-        return hasAccess
-    }
-    
-    func scanExternalVolumes() async {
-        // Get mounted volumes using Task.detached
-        let volumes = await Task.detached {
-            let volumeURLs = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: [
-                .volumeNameKey,
-                .volumeTotalCapacityKey,
-                .volumeAvailableCapacityKey,
-                .volumeAvailableCapacityForImportantUsageKey
-            ], options: [.skipHiddenVolumes]) ?? []
-            
-            var volumes: [FolderItem] = []
-            
-            for volumeURL in volumeURLs {
-            // Skip the main system volume and system-only volumes
-            if volumeURL.path == "/" || volumeURL.path.hasPrefix("/System") { 
-                continue 
+        for path in testPaths {
+            if !FileManager.default.isReadableFile(atPath: path) {
+                return false
             }
             
             do {
-                let resourceValues = try volumeURL.resourceValues(forKeys: [
-                    .volumeNameKey,
-                    .volumeTotalCapacityKey,
-                    .volumeAvailableCapacityKey,
-                    .volumeAvailableCapacityForImportantUsageKey
-                ])
-                
-                let volumeName = resourceValues.volumeName ?? volumeURL.lastPathComponent
-                let totalCapacity = Int64(resourceValues.volumeTotalCapacity ?? 0)
-                
-                // Skip volumes with 0 capacity or very small capacities (likely system volumes)
-                guard totalCapacity > 1024 * 1024 else { continue }
-                
-                // Check if it's an external volume by checking the path
-                let isExternal = volumeURL.path.hasPrefix("/Volumes/")
-                
-                let volumeItem = FolderItem(
-                    name: volumeName,
-                    path: volumeURL.path,
-                    size: totalCapacity,
-                    isDirectory: true,
-                    itemCount: 1,
-                    lastModified: Date()
-                )
-                
-                volumes.append(volumeItem)
-                print("Found volume: \(volumeName) at \(volumeURL.path) - \(totalCapacity) bytes, external: \(isExternal)")
-                
+                _ = try FileManager.default.contentsOfDirectory(atPath: path)
+                return true
             } catch {
-                print("Error getting volume info for \(volumeURL.path): \(error)")
-                continue
+                return false
             }
-            }
-            
-            print("Total external volumes found: \(volumes.count)")
-            return volumes
-        }.value
+        }
+        return true
+    }
+    
+    private func getTotalDiskSize(path: String) -> Int64 {
+        do {
+            let url = URL(fileURLWithPath: path)
+            let resourceValues = try url.resourceValues(forKeys: [.volumeTotalCapacityKey])
+            return Int64(resourceValues.volumeTotalCapacity ?? 0)
+        } catch {
+            return 0
+        }
+    }
+    
+    private func shouldSkipSystemPath(_ path: String) -> Bool {
+        let pathsToSkip = [
+            "/dev",
+            "/proc",
+            "/tmp",
+            "/var/run",
+            "/var/tmp",
+            "/System/Volumes/Data/.Trashes"
+        ]
         
-        // Update on MainActor
-        externalVolumes = volumes
+        for skipPath in pathsToSkip {
+            if path == skipPath || path.hasPrefix(skipPath + "/") {
+                return true
+            }
+        }
+        
+        return false
     }
 }
+
+// MARK: - Supporting Types moved to SharedTypes.swift
+
+// Bulk scanning functionality moved to BulkScanningService.swift
+
+// MARK: - Autoreleasepool moved to SharedTypes.swift

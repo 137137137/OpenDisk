@@ -3,14 +3,7 @@ import Darwin
 
 // MARK: - macOS getattrlistbulk Syscall Implementation
 
-struct BulkAttrBuf {
-    var length: UInt32
-    var objType: UInt32
-    var deviceId: UInt32
-    var fileId: UInt64
-    var allocSize: Int64
-    var nameRef: attrreference_t
-}
+// Bulk scanning types moved to SharedTypes.swift
 
 private func createOptimizedAttrList() -> attrlist {
     var attrList = attrlist()
@@ -25,12 +18,12 @@ private func createOptimizedAttrList() -> attrlist {
     return attrList
 }
 
-func bulkScanDirectoryOptimized(dirFd: Int32) throws -> [BulkEntry] {
+func bulkScanDirectoryOptimized(dirFd: Int32) throws -> [BulkScanEntry] {
     // Use the existing proven optimizedBulkList instead of our custom implementation
     let optimizedEntries = try optimizedBulkList(dirFd: dirFd)
     
     return optimizedEntries.map { entry in
-        BulkEntry(
+        BulkScanEntry(
             name: entry.actualName,
             isDir: entry.isDir,
             allocSize: entry.allocSize,
@@ -40,8 +33,8 @@ func bulkScanDirectoryOptimized(dirFd: Int32) throws -> [BulkEntry] {
     }
 }
 
-func optimizedBulkList(dirFd: Int32) throws -> [OptimizedBulkEntry] {
-    var entries: [OptimizedBulkEntry] = []
+func optimizedBulkList(dirFd: Int32) throws -> [OptimizedScanEntry] {
+    var entries: [OptimizedScanEntry] = []
     var attrList = createOptimizedAttrList()
     let bufferSize = 64 * 1024 // 64KB buffer
     var buffer = Data(count: bufferSize)
@@ -64,9 +57,9 @@ func optimizedBulkList(dirFd: Int32) throws -> [OptimizedBulkEntry] {
                 let nameLength = Int(attrBuf.nameRef.attr_length) - 1 // Exclude null terminator
                 let name = String(bytes: UnsafeBufferPointer(start: namePtr.assumingMemoryBound(to: UInt8.self), count: nameLength), encoding: .utf8) ?? "unknown"
                 
-                let isDir = attrBuf.objType == 4 // VDIR constant value
+                let isDir = attrBuf.objType == 2 // VDIR constant value (2)
                 
-                entries.append(OptimizedBulkEntry(
+                entries.append(OptimizedScanEntry(
                     actualName: name,
                     isDir: isDir,
                     allocSize: attrBuf.allocSize,
