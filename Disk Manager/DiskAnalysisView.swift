@@ -65,7 +65,7 @@ struct DiskAnalysisView: View {
                         if analyzer.scanProgressPercentage > 0 {
                             VStack(spacing: 8) {
                                 ProgressView(value: analyzer.scanProgressPercentage, total: 100)
-                                    .frame(width: 300)
+                                    .frame(maxWidth: 300)
                                 
                                 HStack {
                                     Text(String(format: "%.1f%% complete", analyzer.scanProgressPercentage))
@@ -80,7 +80,7 @@ struct DiskAnalysisView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 }
-                                .frame(width: 300)
+                                .frame(maxWidth: 300)
                             }
                         } else {
                             ProgressView()
