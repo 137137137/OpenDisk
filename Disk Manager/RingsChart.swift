@@ -14,12 +14,21 @@ struct RingsChart: View {
         // For now, just create one ring level with proportional segments
         // This is a simplified version - a full implementation would parse paths to build true hierarchy
         
+        guard totalSize > 0 else {
+            return [] // Return empty hierarchy if totalSize is 0 to avoid NaN
+        }
+        
         var currentAngle: Double = 0
         var segments: [RingSegmentData] = []
         
         for item in items.prefix(12) { // Limit for visibility
+            guard item.size > 0 else { continue } // Skip zero-size items
+            
             let proportion = Double(item.size) / Double(totalSize)
             let angleWidth = proportion * 360
+            
+            // Ensure angleWidth is valid
+            guard angleWidth.isFinite && angleWidth > 0 else { continue }
             
             segments.append(RingSegmentData(
                 item: item,
@@ -131,30 +140,6 @@ struct RingSegmentData {
     let parentSize: Int64
 }
 
-// Build hierarchy from flat list of items
-private func buildHierarchy(from items: [FolderItem], totalSize: Int64) -> [RingLevel] {
-    // For now, just create one ring level with proportional segments
-    // This is a simplified version - a full implementation would parse paths to build true hierarchy
-    
-    var currentAngle: Double = 0
-    var segments: [RingSegmentData] = []
-    
-    for item in items.prefix(12) { // Limit for visibility
-        let proportion = Double(item.size) / Double(totalSize)
-        let angleWidth = proportion * 360
-        
-        segments.append(RingSegmentData(
-            item: item,
-            startAngle: currentAngle,
-            endAngle: currentAngle + angleWidth,
-            parentSize: totalSize
-        ))
-        
-        currentAngle += angleWidth
-    }
-    
-    return [RingLevel(segments: segments)]
-}
 
 struct RingSegment: View {
     let segment: RingSegmentData
