@@ -473,7 +473,12 @@ struct BreadcrumbBar: View {
             HStack(spacing: 4) {
                 ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
                     Button {
-                        onNavigate(component.path)
+                        // Special case: "Computer" should go back to device selection
+                        if component.name == "Computer" {
+                            onBack()
+                        } else {
+                            onNavigate(component.path)
+                        }
                     } label: {
                         Text(component.name)
                             .font(.system(size: 13, weight: .medium))
