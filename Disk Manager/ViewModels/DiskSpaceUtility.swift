@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 class DiskSpaceUtility: ObservableObject {
     @Published var devices: [DeviceInfo] = []
     private let diskAnalyzer = DiskAnalyzer()
@@ -9,61 +10,71 @@ class DiskSpaceUtility: ObservableObject {
     }
     
     func fetchDeviceInfo() {
-        DispatchQueue.global(qos: .background).async {
+        Task {
             var deviceList: [DeviceInfo] = []
             
             // Get main disk info - show Computer option for full disk analysis
-            if let mainDiskInfo = self.getDiskSpace(for: "/") {
+            if let mainDiskInfo = await getDiskSpace(for: "/") {
                 let computerDevice = DeviceInfo(
                     name: "Computer",
                     icon: "desktopcomputer",
                     path: "/",
                     totalStorage: mainDiskInfo.totalSpace,
                     availableStorage: mainDiskInfo.availableSpace,
-                    subtitle: self.formatBytes(mainDiskInfo.totalSpace) + " Total"
+                    subtitle: formatBytes(mainDiskInfo.totalSpace) + " Total"
                 )
                 deviceList.append(computerDevice)
             }
             
-            // Scan for external volumes asynchronously
-            Task {
-                await self.diskAnalyzer.scanExternalVolumes()
-                let externalVolumes = await MainActor.run {
-                    self.diskAnalyzer.externalVolumes
+            // Scan for external volumes
+            await diskAnalyzer.scanExternalVolumes()
+            let externalVolumes = diskAnalyzer.externalVolumes
+            
+            let externalDevices = await withTaskGroup(of: DeviceInfo?.self) { group in
+                var devices: [DeviceInfo] = []
+                
+                for volume in externalVolumes {
+                    group.addTask {
+                        guard let volumeInfo = await self.getDiskSpace(for: volume.path) else { return nil }
+                        let subtitle = await MainActor.run {
+                            self.formatBytes(volumeInfo.totalSpace) + " Total"
+                        }
+                        return DeviceInfo(
+                            name: volume.name,
+                            icon: "externaldrive", 
+                            path: volume.path,
+                            totalStorage: volumeInfo.totalSpace,
+                            availableStorage: volumeInfo.availableSpace,
+                            subtitle: subtitle
+                        )
+                    }
                 }
                 
-                let finalDeviceList = deviceList + externalVolumes.compactMap { volume in
-                    guard let volumeInfo = self.getDiskSpace(for: volume.path) else { return nil }
-                    return DeviceInfo(
-                        name: volume.name,
-                        icon: "externaldrive", 
-                        path: volume.path,
-                        totalStorage: volumeInfo.totalSpace,
-                        availableStorage: volumeInfo.availableSpace,
-                        subtitle: self.formatBytes(volumeInfo.totalSpace) + " Total"
-                    )
+                for await device in group {
+                    if let device = device {
+                        devices.append(device)
+                    }
                 }
-                
-                await MainActor.run {
-                    self.devices = finalDeviceList
-                }
+                return devices
             }
+            
+            devices = deviceList + externalDevices
         }
     }
     
-    private func getDiskSpace(for path: String) -> (totalSpace: Double, availableSpace: Double)? {
+    private func getDiskSpace(for path: String) async -> (totalSpace: Double, availableSpace: Double)? {
         let isExternalVolume = path.hasPrefix("/Volumes/")
         
         // For external volumes, use a simpler approach that avoids problematic APIs
         if isExternalVolume {
-            return getDiskSpaceForExternalVolume(path: path)
+            return await getDiskSpaceForExternalVolume(path: path)
         }
         
         // For internal volumes, use the standard approach
-        return getDiskSpaceStandard(path: path)
+        return await getDiskSpaceStandard(path: path)
     }
     
-    private func getDiskSpaceForExternalVolume(path: String) -> (totalSpace: Double, availableSpace: Double)? {
+    private func getDiskSpaceForExternalVolume(path: String) async -> (totalSpace: Double, availableSpace: Double)? {
         // Use FileManager attributes directly for external volumes to avoid cache deletion API errors
         do {
             let attributes = try FileManager.default.attributesOfFileSystem(forPath: path)
@@ -99,7 +110,7 @@ class DiskSpaceUtility: ObservableObject {
         }
     }
     
-    private func getDiskSpaceStandard(path: String) -> (totalSpace: Double, availableSpace: Double)? {
+    private func getDiskSpaceStandard(path: String) async -> (totalSpace: Double, availableSpace: Double)? {
         do {
             let url = URL(fileURLWithPath: path)
             let resourceValues = try url.resourceValues(forKeys: [
