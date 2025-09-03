@@ -286,46 +286,42 @@ class DiskAnalyzer: ObservableObject {
     private func calculateDirectorySize(path: String) async -> Int64 {
         let folderName = URL(fileURLWithPath: path).lastPathComponent
         
-        // Step 1: Get total directory size first (fast du-like calculation)
         await MainActor.run { [weak self] in
-            self?.scanProgress = "Getting size of \(folderName)..."
-            self?.currentScanPath = path
-        }
-        
-        let totalDirectorySize = await getDirectoryTotalSize(path: path)
-        
-        // Step 2: Set the total and start detailed scanning with progress
-        await MainActor.run { [weak self] in
-            self?.totalBytes = totalDirectorySize
-            self?.scannedBytes = 0
             self?.scanProgress = "Analyzing \(folderName)"
+            self?.currentScanPath = path
+            self?.scannedBytes = 0
+            self?.totalBytes = 0 // Will be set when complete
+            self?.scanProgressPercentage = 0.0
         }
         
         guard let enumerator = FileManager.default.enumerator(atPath: path) else {
             return 0
         }
         
-        var scannedSize: Int64 = 0
+        var totalSize: Int64 = 0
         var itemsProcessed = 0
+        var lastProgressUpdate = 0
         
+        // Single pass: calculate actual total size with live updates (no fake progress bar)
         while let item = enumerator.nextObject() as? String {
             let itemPath = path.hasSuffix("/") ? "\(path)\(item)" : "\(path)/\(item)"
             
             do {
                 let attributes = try FileManager.default.attributesOfItem(atPath: itemPath)
                 if let size = attributes[.size] as? Int64 {
-                    scannedSize += size
+                    totalSize += size
                     itemsProcessed += 1
                     
-                    // Update progress every 10MB or 1000 items
-                    if scannedSize % (10 * 1024 * 1024) < size || itemsProcessed % 1000 == 0 {
-                        let currentScanned = scannedSize
-                        let total = totalDirectorySize
-                        let progressPercentage = total > 0 ? min(100.0, Double(currentScanned) / Double(total) * 100.0) : 0.0
+                    // Update progress every 1000 items or 50MB
+                    if itemsProcessed - lastProgressUpdate >= 1000 || totalSize % (50 * 1024 * 1024) < size {
+                        lastProgressUpdate = itemsProcessed
+                        let currentSize = totalSize
+                        let currentItemCount = itemsProcessed // Capture for concurrent access
                         
                         await MainActor.run { [weak self] in
-                            self?.scannedBytes = currentScanned
-                            self?.scanProgressPercentage = progressPercentage
+                            self?.scannedBytes = currentSize
+                            // Don't set totalBytes until we're done - just show current progress
+                            self?.scanProgress = "Analyzing \(folderName) (\(currentItemCount.formatted()) items)"
                         }
                         await Task.yield()
                     }
@@ -339,41 +335,16 @@ class DiskAnalyzer: ObservableObject {
             }
         }
         
-        // Final update
+        // Final update with exact totals - NOW we can show the progress bar
+        let finalSize = totalSize
         await MainActor.run { [weak self] in
-            self?.scannedBytes = totalDirectorySize
+            self?.scannedBytes = finalSize
+            self?.totalBytes = finalSize
             self?.scanProgressPercentage = 100.0
+            self?.scanProgress = "Analyzing \(folderName)"
         }
         
-        return totalDirectorySize
-    }
-    
-    private func getDirectoryTotalSize(path: String) async -> Int64 {
-        // Fast initial size calculation using du-like approach
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                var totalSize: Int64 = 0
-                
-                if let enumerator = FileManager.default.enumerator(
-                    at: URL(fileURLWithPath: path),
-                    includingPropertiesForKeys: [.fileSizeKey],
-                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
-                ) {
-                    for case let fileURL as URL in enumerator {
-                        do {
-                            let resourceValues = try fileURL.resourceValues(forKeys: [.fileSizeKey])
-                            if let fileSize = resourceValues.fileSize {
-                                totalSize += Int64(fileSize)
-                            }
-                        } catch {
-                            continue
-                        }
-                    }
-                }
-                
-                continuation.resume(returning: totalSize)
-            }
-        }
+        return totalSize
     }
     
     private func scanDirectoryContentsSafe(_ path: String) async -> [FolderItem] {
@@ -423,13 +394,25 @@ class DiskAnalyzer: ObservableObject {
     
     private func getTotalDiskSize(path: String) -> Int64 {
         do {
+            let url = URL(fileURLWithPath: path)
+            let resourceValues = try url.resourceValues(forKeys: [.volumeTotalCapacityKey])
+            if let totalCapacity = resourceValues.volumeTotalCapacity {
+                return Int64(totalCapacity)
+            }
+        } catch {
+            print("Error getting disk size with URL method: \(error)")
+        }
+        
+        // Fallback to FileManager method
+        do {
             let attributes = try FileManager.default.attributesOfFileSystem(forPath: path)
             if let totalSize = attributes[.systemSize] as? Int64 {
                 return totalSize
             }
         } catch {
-            print("Error getting disk size: \(error)")
+            print("Error getting disk size with FileManager method: \(error)")
         }
+        
         return 0
     }
     

@@ -62,28 +62,46 @@ struct DiskAnalysisView: View {
                             .frame(width: 300)
                         }
                         
-                        // Show bytes scanned progress and progress bar
-                        if analyzer.totalBytes > 0 {
+                        // Show current scanning progress (even without total)
+                        if analyzer.scannedBytes > 0 || analyzer.totalBytes > 0 {
                             VStack(spacing: 16) {
                                 // Current folder/directory progress
                                 VStack(spacing: 8) {
                                     HStack(spacing: 8) {
-                                        Text("Current: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalBytes, countStyle: .file))")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                        
-                                        Spacer()
-                                        
-                                        Text(String(format: "%.1f%%", analyzer.scanProgressPercentage))
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                            .foregroundColor(.primary)
+                                        if analyzer.totalBytes > 0 {
+                                            // Show progress with known total
+                                            Text("Current: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalBytes, countStyle: .file))")
+                                                .font(.subheadline)
+                                                .foregroundColor(.secondary)
+                                            
+                                            Spacer()
+                                            
+                                            Text(String(format: "%.1f%%", analyzer.scanProgressPercentage))
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.primary)
+                                        } else {
+                                            // Show current progress without total
+                                            Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file))")
+                                                .font(.subheadline)
+                                                .foregroundColor(.secondary)
+                                            
+                                            Spacer()
+                                            
+                                            Text("Calculating...")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.blue)
+                                        }
                                     }
                                     .frame(maxWidth: 380)
                                     
-                                    ProgressView(value: analyzer.scanProgressPercentage, total: 100)
-                                        .frame(maxWidth: 380)
-                                        .tint(.blue)
+                                    // Only show progress bar if we have a total
+                                    if analyzer.totalBytes > 0 {
+                                        ProgressView(value: analyzer.scanProgressPercentage, total: 100)
+                                            .frame(maxWidth: 380)
+                                            .tint(.blue)
+                                    }
                                 }
                                 
                                 // Overall disk progress (only show for full disk scans)
