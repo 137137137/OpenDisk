@@ -1,8 +1,5 @@
 import Foundation
 import Darwin
-import MachO
-import System
-import os
 
 /// Result structure for progressive scanning updates
 private struct ProgressiveScanResult {
@@ -33,10 +30,6 @@ class OptimizedScanner: ObservableObject {
     private let smartCache = SmartDirectoryCache()
     private var isMonitoringEnabled = false
     
-    // MARK: - Memory Management
-    
-    private let memoryPressureThreshold: Int64 = 500 * 1024 * 1024 // 500MB
-    private var currentMemoryUsage: Int64 = 0
     
     // MARK: - Initialization
     
@@ -236,7 +229,7 @@ class OptimizedScanner: ObservableObject {
                         }
                     } else {
                         // For directories, use a fast size estimation for immediate feedback
-                        size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
+                        size = await getDirectoryTotalSizeFast(path: fullPath)
                     }
                     
                     let item = FolderItem(
@@ -332,18 +325,16 @@ class OptimizedScanner: ObservableObject {
         progressHandler: @escaping (Double, String) -> Void
     ) async -> [FolderItem] {
         
-        return await asyncAutoreleasePool { () -> [FolderItem] in
-            // Memory management - use autoreleasepool for each item as recommended
-            return await Task.detached { [item] in
-                if item.isDirectory {
-                    // For directories, use the optimized bulk scanning if available
-                    return await self.scanDirectoryWithBulkOptimization(path: item.path)
-                } else {
-                    // Return single file item
-                    return [item]
-                }
-            }.value
-        }
+        // Simplified approach - use Task.detached directly without double-wrapping
+        return await Task.detached { [item] in
+            if item.isDirectory {
+                // For directories, use the optimized bulk scanning if available
+                return await self.scanDirectoryWithBulkOptimization(path: item.path)
+            } else {
+                // Return single file item
+                return [item]
+            }
+        }.value
     }
     
     // MARK: - Parallel Bulk Optimization with URLResourceKeys
@@ -418,7 +409,7 @@ class OptimizedScanner: ObservableObject {
         for item in items {
             if item.isDirectory && item.size == 0 {
                 // Calculate the actual directory size
-                let actualSize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: item.path)
+                let actualSize = await getDirectoryTotalSizeFast(path: item.path)
                 let updatedItem = FolderItem(
                     name: item.name,
                     path: item.path,
@@ -592,6 +583,10 @@ class OptimizedScanner: ObservableObject {
         seenFileIDs: ShardedFileIDSet
     ) -> FolderItem? {
         let entryLength = buffer.load(fromByteOffset: offset, as: UInt32.self)
+        
+        // Validate entry length
+        guard entryLength > 8 else { return nil }
+        
         var currentOffset = offset + 4 // Skip entry length
         
         // Parse object type
@@ -635,8 +630,8 @@ class OptimizedScanner: ObservableObject {
             return nil
         }
         
-        // Skip hidden files and system files
-        if name.hasPrefix(".") { return nil }
+        // Include all files (including hidden files starting with ".")
+        // No filtering based on filename
         
         let fullPath = basePath == "/" ? "/\(name)" : "\(basePath)/\(name)"
         
@@ -738,6 +733,9 @@ class OptimizedScanner: ObservableObject {
             bytes.load(fromByteOffset: offset, as: UInt32.self)
         }
         
+        // Validate entry length
+        guard entryLength > 8 else { return nil }
+        
         var currentOffset = offset + 4 // Skip entry length
         
         // Parse object type
@@ -788,8 +786,8 @@ class OptimizedScanner: ObservableObject {
         let nameBytes = Array(buffer[currentOffset..<currentOffset + Int(nameLength)])
         guard let name = String(bytes: nameBytes, encoding: .utf8) else { return nil }
         
-        // Skip hidden files and system files
-        if name.hasPrefix(".") { return nil }
+        // Include all files (including hidden files starting with ".")
+        // No filtering based on filename
         
         let fullPath = basePath == "/" ? "/\(name)" : "\(basePath)/\(name)"
         
@@ -927,7 +925,7 @@ class OptimizedScanner: ObservableObject {
         var finalItems: [FolderItem] = []
         for item in items {
             if item.isDirectory && item.size == 0 {
-                let actualSize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: item.path)
+                let actualSize = await getDirectoryTotalSizeFast(path: item.path)
                 let updatedItem = FolderItem(
                     name: item.name,
                     path: item.path,
@@ -988,7 +986,7 @@ class OptimizedScanner: ObservableObject {
                 
                 // For directories, calculate the actual size (outside autoreleasepool for async)
                 if isDirectory {
-                    size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: url.path)
+                    size = await getDirectoryTotalSizeFast(path: url.path)
                 }
                 
                 let item = FolderItem(
@@ -1107,32 +1105,6 @@ class OptimizedScanner: ObservableObject {
         }
     }
     
-    // MARK: - Memory Management
-    
-    private func checkMemoryPressure() -> Bool {
-        let usage = getMemoryUsage()
-        return usage > memoryPressureThreshold
-    }
-    
-    private func getMemoryUsage() -> Int64 {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
-        
-        let result: kern_return_t = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_,
-                         task_flavor_t(MACH_TASK_BASIC_INFO),
-                         $0,
-                         &count)
-            }
-        }
-        
-        if result == KERN_SUCCESS {
-            return Int64(info.resident_size)
-        } else {
-            return 0
-        }
-    }
     
     // MARK: - Cleanup
     

@@ -68,6 +68,9 @@ class DiskAnalyzer: ObservableObject {
         // Check folder tree cache for other paths
         if let preCalculatedItems = folderTree[path] {
             print("DEBUG: Found cached data for \(path) with \(preCalculatedItems.count) items")
+            let fileCount = preCalculatedItems.filter { !$0.isDirectory }.count
+            let dirCount = preCalculatedItems.filter { $0.isDirectory }.count
+            print("DEBUG: Cached data breakdown - Files: \(fileCount), Directories: \(dirCount)")
             
             // If cached data is empty, it might be due to permissions
             // Don't use empty cache - let the caller trigger a direct scan instead
@@ -557,15 +560,13 @@ class DiskAnalyzer: ObservableObject {
         Task {
             for item in items where item.isDirectory {
                 print("DEBUG: Preloading cache for directory: \(item.path)")
-                // Use the optimized scanner to quickly scan immediate subdirectory contents
-                let subItems = await self.optimizedScanner.scanDirectoryOptimized(
-                    item.path,
-                    enableMonitoring: false // Don't enable monitoring for preload scans
-                ) { _, _ in
-                    // Silent progress for background preloading
-                }
                 
-                print("DEBUG: Scanned \(item.path) and found \(subItems.count) subitems")
+                // Use a simple, reliable method to get ALL contents (files + directories)
+                let subItems = await self.getSimpleDirectoryContents(path: item.path)
+                
+                let fileCount = subItems.filter { !$0.isDirectory }.count
+                let dirCount = subItems.filter { $0.isDirectory }.count
+                print("DEBUG: Scanned \(item.path) and found \(subItems.count) subitems - Files: \(fileCount), Directories: \(dirCount)")
                 
                 // Always cache the result, even if empty - this prevents re-scanning
                 await MainActor.run {
@@ -581,6 +582,79 @@ class DiskAnalyzer: ObservableObject {
             await MainActor.run {
                 print("DEBUG: Preloading complete. Total cached paths: \(self.folderTree.count)")
             }
+        }
+    }
+    
+    // Simple, reliable method to get directory contents (files + directories)
+    private func getSimpleDirectoryContents(path: String) async -> [FolderItem] {
+        do {
+            let url = URL(fileURLWithPath: path)
+            let resourceKeys: [URLResourceKey] = [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileAllocatedSizeKey,
+                .totalFileAllocatedSizeKey,
+                .contentModificationDateKey,
+                .fileResourceIdentifierKey
+            ]
+            
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: resourceKeys,
+                options: [.skipsPackageDescendants]
+            )
+            
+            var items: [FolderItem] = []
+            let seenFileIDs = ShardedFileIDSet(shardCount: 16)
+            
+            for itemUrl in contents {
+                do {
+                    let resourceValues = try itemUrl.resourceValues(forKeys: Set(resourceKeys))
+                    
+                    // Skip symbolic links
+                    if resourceValues.isSymbolicLink == true { continue }
+                    
+                    let isDirectory = resourceValues.isDirectory ?? false
+                    var size: Int64 = 0
+                    
+                    if !isDirectory {
+                        // Handle hard link deduplication for files
+                        if let fileID = resourceValues.fileResourceIdentifier as? Data {
+                            if !seenFileIDs.insert(fileID) { continue }
+                        }
+                        
+                        // Get file size
+                        if let totalAllocated = resourceValues.totalFileAllocatedSize {
+                            size = Int64(totalAllocated)
+                        } else if let allocated = resourceValues.fileAllocatedSize {
+                            size = Int64(allocated)
+                        }
+                    } else {
+                        // For directories, calculate size using fast method
+                        size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: itemUrl.path)
+                    }
+                    
+                    let folderItem = FolderItem(
+                        name: itemUrl.lastPathComponent,
+                        path: itemUrl.path,
+                        size: size,
+                        isDirectory: isDirectory,
+                        itemCount: 1,
+                        lastModified: resourceValues.contentModificationDate ?? Date()
+                    )
+                    
+                    items.append(folderItem)
+                } catch {
+                    // Skip items we can't read
+                    continue
+                }
+            }
+            
+            return items.sorted()
+        } catch {
+            print("Error reading directory contents for \(path): \(error)")
+            return []
         }
     }
     
