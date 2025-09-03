@@ -1391,13 +1391,8 @@ func optimizedSinglePassScan(rootPath: String) async throws -> (items: [FolderIt
             let traverser = BreadthFirstTraverser()
             return try await traverser.scanBreadthFirst(rootPath: rootPath)
         } catch {
-            // Fall back to FileManager.enumerator - fastest on local APFS/HFS+ 
-            do {
-                return try await fileManagerEnumeratorScan(path: rootPath)
-            } catch {
-                // Fall back to FTS for local volumes if enumerator fails
-                return try await ftsDirectoryScan(path: rootPath)
-            }
+            // Fall back to FTS for local volumes if breadth-first fails
+            return try await ftsDirectoryScan(path: rootPath)
         }
     } else {
         // For network volumes, use getattrlistbulk which performs better on AFP/SMB
