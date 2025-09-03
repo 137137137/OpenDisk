@@ -51,6 +51,7 @@ class DiskAnalyzer: ObservableObject {
     private var sizeCache: [String: Int64] = [:]
     private var sizePrecalculationTasks: [String: Task<Int64, Never>] = [:]
     
+    
     // Navigate to a path using pre-calculated data
     // Returns true if cached data was found and loaded, false otherwise
     func navigateToPath(_ path: String) -> Bool {
@@ -393,7 +394,7 @@ class DiskAnalyzer: ObservableObject {
                 totalSize = await calculateDirectorySize(path: path, nextPath: nextPath)
                 
                 // Build the complete directory tree - all levels deep
-                children = await DiskAnalyzer.buildDirectoryChildren(path: path, unlimited: true, visitedPaths: [])
+                children = await buildDirectoryChildren(path: path, unlimited: true, visitedPaths: [])
                 
                 // Populate the folder tree cache for navigation
                 await MainActor.run {
@@ -427,8 +428,8 @@ class DiskAnalyzer: ObservableObject {
         }
     }
     
-    private static func buildDirectoryChildren(path: String, unlimited: Bool = true, visitedPaths: Set<String> = []) async -> [FolderItem] {
-        return await Task.detached {
+    private func buildDirectoryChildren(path: String, unlimited: Bool = true, visitedPaths: Set<String> = []) async -> [FolderItem] {
+        return await Task.detached { [weak self] in
             var children: [FolderItem] = []
             var currentVisited = visitedPaths
             
@@ -475,10 +476,11 @@ class DiskAnalyzer: ObservableObject {
                             size = Int64(resourceValues.totalFileAllocatedSize ?? 
                                        resourceValues.fileAllocatedSize ?? 0)
                         } else if isDir {
-                            // For directories, scan children unless they are system directories
-                            // that would negatively impact performance
-                            if unlimited && !shouldSkipDeepScan(fullPath) {
-                                childChildren = await buildDirectoryChildren(path: fullPath, unlimited: false, visitedPaths: currentVisited)
+                            // For directories, check if we should skip deep scanning
+                            let shouldSkip = await MainActor.run { self?.shouldSkipDeepScan(fullPath) ?? false }
+                            
+                            if unlimited && !shouldSkip {
+                                childChildren = await self?.buildDirectoryChildren(path: fullPath, unlimited: false, visitedPaths: currentVisited) ?? []
                                 size = childChildren.reduce(0) { $0 + $1.size }
                             } else {
                                 // For system directories, just get the size without enumerating children
@@ -513,31 +515,8 @@ class DiskAnalyzer: ObservableObject {
         }.value
     }
     
-    // Helper method to determine if we should skip system directories for performance
-    private static nonisolated func shouldSkipDeepScan(_ path: String) -> Bool {
-        let skipPaths = [
-            "/System/Volumes/",
-            "/System/Library/PrivateFrameworks/",
-            "/System/Library/Frameworks/",
-            "/Library/Developer/",
-            "/usr/lib/",
-            "/usr/share/",
-            "/.DocumentRevisions",
-            "/.Spotlight-V100",
-            "/.fseventsd",
-            "/.Trashes",
-            "/Network/",
-            "/Volumes/.timemachine"
-        ]
-        
-        for skipPath in skipPaths {
-            if path.hasPrefix(skipPath) {
-                print("DEBUG: Skipping deep scan of system directory: \(path)")
-                return true
-            }
-        }
-        
-        // No depth limit - scan as deep as needed for complete enumeration
+    // Always perform deep scanning - no directories are skipped
+    private func shouldSkipDeepScan(_ path: String) -> Bool {
         return false
     }
     
@@ -1154,6 +1133,18 @@ class DiskAnalyzer: ObservableObject {
         }
         
         return false
+    }
+    
+    func clearAllCaches() {
+        optimizedScanner.clearAllCaches()
+        smartCache.clearAllCaches()
+        folderTree.removeAll()
+        sizeCache.removeAll()
+        // Cancel any pending size precalculation tasks
+        for (_, task) in sizePrecalculationTasks {
+            task.cancel()
+        }
+        sizePrecalculationTasks.removeAll()
     }
 }
 
