@@ -214,10 +214,15 @@ struct DiskAnalysisView: View {
                                 goBack()
                             },
                             onComputerClick: {
-                                // Handle Computer breadcrumb click in the parent view
-                                print("DEBUG: Computer breadcrumb clicked - calling onBack()")
-                                self.isNavigatingBack = true
-                                onBack()
+                                // Handle Computer breadcrumb click - go back to device selection only when at root
+                                if currentPath == rootPath {
+                                    print("DEBUG: Computer breadcrumb clicked at root - going to device selection")
+                                    self.isNavigatingBack = true
+                                    onBack()
+                                } else {
+                                    print("DEBUG: Computer breadcrumb clicked - navigating to root: \(rootPath)")
+                                    navigateToPath(rootPath)
+                                }
                             }
                         )
                         
@@ -486,8 +491,12 @@ struct BreadcrumbBar: View {
             HStack(spacing: 4) {
                 ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
                     Button {
-                        // Special case: "Computer" should go back to device selection
-                        if component.name == "Computer" {
+                        // Special case: "Computer" should navigate to root path only if we're not already there
+                        if component.name == "Computer" && currentPath != rootPath {
+                            print("DEBUG: Computer breadcrumb clicked - navigating to root: \(component.path)")
+                            onNavigate(component.path)
+                        } else if component.name == "Computer" && currentPath == rootPath {
+                            // If we're already at root, then go back to device selection
                             onComputerClick()
                         } else {
                             print("DEBUG: Breadcrumb clicked - navigating to: \(component.path)")

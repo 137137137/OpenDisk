@@ -12,6 +12,9 @@ class DiskAnalyzer: ObservableObject {
     @Published var currentScanPath: String = ""
     @Published var filesPerSecond: String = ""
     
+    // Track what path the current rootItems represent
+    private var currentRootItemsPath: String = ""
+    
     // Per-directory progress model
     @Published var currentDirTotalBytes: Int64 = 0
     @Published var currentDirScannedBytes: Int64 = 0 
@@ -54,10 +57,10 @@ class DiskAnalyzer: ObservableObject {
         print("DEBUG: navigateToPath called for: \(path)")
         print("DEBUG: folderTree has \(folderTree.count) cached paths: \(Array(folderTree.keys))")
         
-        // Special case: if navigating back to root path and we have root items, use them
-        if path == "/" && !rootItems.isEmpty && !isScanning {
-            print("DEBUG: Using existing root data for /")
-            // Already have root data loaded, no need to rescan
+        // Check if we already have data for this exact path
+        if path == currentRootItemsPath && !rootItems.isEmpty && !isScanning {
+            print("DEBUG: Using existing data for \(path)")
+            // Already have data for this path loaded, no need to rescan
             calculatePercentages()
             return true
         }
@@ -74,6 +77,7 @@ class DiskAnalyzer: ObservableObject {
             }
             
             rootItems = preCalculatedItems
+            currentRootItemsPath = path
             totalSize = preCalculatedItems.reduce(0) { $0 + $1.size }
             calculatePercentages()
             return true
@@ -92,6 +96,7 @@ class DiskAnalyzer: ObservableObject {
         isScanning = true
         scanProgress = "Preparing to scan..."
         rootItems = []
+        currentRootItemsPath = ""
         scanProgressPercentage = 0.0
         estimatedTimeRemaining = ""
         totalFilesProcessed = 0
@@ -161,6 +166,9 @@ class DiskAnalyzer: ObservableObject {
                 if !optimizedItems.isEmpty {
                     await MainActor.run {
                         self.rootItems = optimizedItems.sorted()
+                        self.currentRootItemsPath = path
+                        // Cache the optimized scan results for navigation
+                        self.folderTree[path] = optimizedItems.sorted()
                         self.totalSize = optimizedItems.reduce(0) { $0 + $1.size }
                         self.calculatePercentages()
                         
@@ -173,6 +181,7 @@ class DiskAnalyzer: ObservableObject {
                         self.scanProgress = "Scan complete (optimized)"
                         self.scanProgressPercentage = 100.0
                         self.estimatedTimeRemaining = ""
+                        print("DEBUG: Cached optimized scan results with \(optimizedItems.count) items for \(path)")
                     }
                     
                     // Start FSEvents monitoring for real-time updates
@@ -192,12 +201,16 @@ class DiskAnalyzer: ObservableObject {
             
             await MainActor.run {
                 self.rootItems = sortedItems
+                self.currentRootItemsPath = path
+                // Cache the root scan results for navigation
+                self.folderTree[path] = sortedItems
                 self.totalSize = sortedItems.reduce(0) { $0 + $1.size }
                 self.calculatePercentages()
                 self.isScanning = false
                 self.scanProgress = "Scan complete"
                 self.scanProgressPercentage = 100.0
                 self.estimatedTimeRemaining = ""
+                print("DEBUG: Cached root scan results with \(sortedItems.count) items for \(path)")
             }
         }
     }
