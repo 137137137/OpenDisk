@@ -331,8 +331,11 @@ func isLocalVolume(path: String) async -> Bool {
     }.value
 }
 
-// FileManager.enumerator-based scanning - fastest on local APFS/HFS+ volumes
-func fileManagerEnumeratorScan(path: String) async throws -> (items: [FolderItem], totalUsage: DiskUsage) {
+// FileManager.enumerator-based scanning with live progress updates
+func fileManagerEnumeratorScanWithProgress(
+    path: String, 
+    progressCallback: @escaping (Int, Int64, String) async -> Void
+) async throws -> (items: [FolderItem], totalUsage: DiskUsage) {
     return try await Task.detached(priority: .userInitiated) {
         var usage = DiskUsage()
         var items: [FolderItem] = []
@@ -340,6 +343,10 @@ func fileManagerEnumeratorScan(path: String) async throws -> (items: [FolderItem
         
         let seenInodes = ShardedInodeSet()
         let rootURL = URL(fileURLWithPath: path)
+        
+        // Progress tracking variables
+        var localFilesProcessed = 0
+        let updateInterval = 100 // Update progress every 100 files
         
         // Use optimized FileManager.enumerator with minimal resource keys
         let resourceKeys: [URLResourceKey] = [
@@ -381,6 +388,16 @@ func fileManagerEnumeratorScan(path: String) async throws -> (items: [FolderItem
                     
                     usage.addSize(size)
                     usage.addItem()
+                    localFilesProcessed += 1
+                    
+                    // Update progress periodically for live ETA and percentage
+                    if localFilesProcessed % updateInterval == 0 {
+                        let currentSize = usage.size
+                        let currentPath = fileURL.path
+                        Task {
+                            await progressCallback(localFilesProcessed, currentSize, currentPath)
+                        }
+                    }
                     
                     // Track all files and their containing directories
                     let parentURL = fileURL.deletingLastPathComponent()
@@ -426,6 +443,15 @@ func fileManagerEnumeratorScan(path: String) async throws -> (items: [FolderItem
                     // Skip files with errors
                     return
                 }
+            }
+        }
+        
+        // Final progress update
+        if localFilesProcessed % updateInterval != 0 {
+            let finalSize = usage.size
+            let finalPath = path
+            Task {
+                await progressCallback(localFilesProcessed, finalSize, finalPath)
             }
         }
         
@@ -1679,8 +1705,17 @@ class DiskAnalyzer: ObservableObject {
         currentScanPath = ""
         filesPerSecond = ""
         
-        // Initialize fresh progress model
+        // Initialize fresh progress model with better estimates for disk scanning
         progressModel = RateModel()
+        
+        // Improve initial estimate based on scan type
+        if path == "/" {
+            // Full disk scan - typically 500K to 2M files on macOS systems
+            progressModel.estTotalFiles = 750_000
+        } else {
+            // Directory scan - start with smaller estimate
+            progressModel.estTotalFiles = 50_000
+        }
         
         // For root directory scan, request full disk access
         var scanPath = path
@@ -2010,12 +2045,19 @@ class DiskAnalyzer: ObservableObject {
         return await buildFolderItemsFromOptimizedScan(path: path)
     }
     
-    // Use optimized single-pass scanner - eliminates N² behavior
+    // Use optimized single-pass scanner with live progress updates
     private func buildFolderItemsFromOptimizedScan(path: String) async -> [FolderItem] {
         do {
-            let result = try await optimizedSinglePassScan(rootPath: path)
+            let result = try await fileManagerEnumeratorScanWithProgress(path: path) { [weak self] filesProcessed, bytesProcessed, currentPath in
+                // Live progress callback
+                await MainActor.run { [weak self] in
+                    self?.totalFilesProcessed = filesProcessed
+                    self?.totalBytesProcessed = bytesProcessed
+                    self?.updateLiveProgress(currentPath: currentPath)
+                }
+            }
             
-            // Update total size from the scan results
+            // Update final totals
             await MainActor.run {
                 self.totalSize = result.totalUsage.size
                 self.totalFilesProcessed = result.totalUsage.fileCount
@@ -2024,11 +2066,24 @@ class DiskAnalyzer: ObservableObject {
             
             return result.items
         } catch {
-            // Fall back to traditional enumeration if optimized scan fails
-            await MainActor.run {
-                self.scanProgress = "Using traditional scan method..."
+            // Fall back to optimized single pass scan if progress version fails
+            do {
+                let result = try await optimizedSinglePassScan(rootPath: path)
+                
+                await MainActor.run {
+                    self.totalSize = result.totalUsage.size
+                    self.totalFilesProcessed = result.totalUsage.fileCount
+                    self.totalBytesProcessed = result.totalUsage.size
+                }
+                
+                return result.items
+            } catch {
+                // Final fallback to traditional enumeration
+                await MainActor.run {
+                    self.scanProgress = "Using traditional scan method..."
+                }
+                return await scanDirectoryContentsFallback(path)
             }
-            return await scanDirectoryContentsFallback(path)
         }
     }
     
@@ -2350,7 +2405,7 @@ class DiskAnalyzer: ObservableObject {
                                 Task { @MainActor [weak self] in
                                     self?.totalFilesProcessed += updateInterval
                                     self?.totalBytesProcessed = currentSize
-                                    self?.updateProgressBasedOnReality(currentPath: currentPath)
+                                    self?.updateLiveProgress(currentPath: currentPath)
                                 }
                             }
                             
@@ -2369,7 +2424,7 @@ class DiskAnalyzer: ObservableObject {
                     Task { @MainActor [weak self] in
                         self?.totalFilesProcessed += remainingFiles
                         self?.totalBytesProcessed = finalSize
-                        self?.updateProgressBasedOnReality(currentPath: finalPath)
+                        self?.updateLiveProgress(currentPath: finalPath)
                     }
                 }
                 
@@ -2435,7 +2490,7 @@ class DiskAnalyzer: ObservableObject {
                             Task { @MainActor [weak self] in
                                 self?.totalFilesProcessed += updateInterval
                                 self?.totalBytesProcessed = currentSize
-                                self?.updateProgressBasedOnReality(currentPath: currentPath)
+                                self?.updateLiveProgress(currentPath: currentPath)
                             }
                         }
                         
@@ -2454,7 +2509,7 @@ class DiskAnalyzer: ObservableObject {
                 Task { @MainActor [weak self] in
                     self?.totalFilesProcessed += remainingFiles
                     self?.totalBytesProcessed = finalSize
-                    self?.updateProgressBasedOnReality(currentPath: finalPath)
+                    self?.updateLiveProgress(currentPath: finalPath)
                 }
             }
             
@@ -2466,6 +2521,54 @@ class DiskAnalyzer: ObservableObject {
     private var directoriesProcessed = 0
     private var totalDirectoriesToProcess = 0
     
+    // New live progress method using RateModel for accurate progress and ETA
+    private func updateLiveProgress(currentPath: String) {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastProgressUpdate)
+        
+        // Throttle UI updates every 0.5 seconds for performance
+        if elapsed > 0.5 {
+            // Update the RateModel with current progress
+            progressModel.update(
+                observedFiles: totalFilesProcessed, 
+                observedBytes: totalBytesProcessed,
+                currentTime: now
+            )
+            
+            // Get live progress percentage from RateModel (up to 99%)
+            let livePercent = progressModel.getProgress(processedFiles: totalFilesProcessed)
+            scanProgressPercentage = livePercent
+            
+            // Get live ETA from RateModel
+            if let etaSeconds = progressModel.getETA(processedFiles: totalFilesProcessed) {
+                if etaSeconds > 60 {
+                    estimatedTimeRemaining = "~\(Int(etaSeconds / 60)) min remaining"
+                } else if etaSeconds > 5 {
+                    estimatedTimeRemaining = "~\(Int(etaSeconds)) sec remaining" 
+                } else {
+                    estimatedTimeRemaining = "Almost done..."
+                }
+            } else {
+                estimatedTimeRemaining = "Calculating..."
+            }
+            
+            // Update current path being scanned
+            let pathComponent = URL(fileURLWithPath: currentPath).lastPathComponent
+            currentScanPath = pathComponent
+            
+            // Get current scanning rates for display
+            let rates = progressModel.getCurrentRate()
+            filesPerSecond = formatRate(rates.filesPerSec)
+            
+            // Update main progress message
+            let formattedFileCount = formatFileCount(totalFilesProcessed)
+            scanProgress = "Scanning \(pathComponent)... (\(formattedFileCount) items, \(filesPerSecond))"
+            
+            lastProgressUpdate = now
+        }
+    }
+    
+    // Legacy method for backward compatibility where RateModel isn't used
     private func updateProgressBasedOnReality(currentPath: String) {
         let now = Date()
         let elapsed = now.timeIntervalSince(lastProgressUpdate)
