@@ -12,21 +12,44 @@ struct ContentView: View {
     @State private var selectedDevice: DeviceInfo?
     
     var body: some View {
-        NavigationSplitView {
-            // Sidebar
-            List(diskUtility.devices, selection: $selectedDevice) { device in
-                DeviceRow(device: device) {
-                    selectedDevice = device
+        HStack(spacing: 0) {
+            // Fixed non-resizable sidebar
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
+                HStack {
+                    Text("Devices & Locations")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Spacer()
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color(NSColor.controlBackgroundColor))
+                
+                Divider()
+                
+                // Device list
+                List(diskUtility.devices, selection: $selectedDevice) { device in
+                    DeviceRow(device: device) {
+                        selectedDevice = device
+                    }
+                }
+                .listStyle(SidebarListStyle())
             }
-            .navigationTitle("Devices & Locations")
-            .frame(minWidth: 280, idealWidth: 320, maxWidth: 400)
-        } detail: {
+            .frame(width: 350) // Fixed width - cannot be resized
+            .background(Color(NSColor.controlBackgroundColor))
+            
+            // Separator line (non-draggable)
+            Rectangle()
+                .fill(Color(NSColor.separatorColor))
+                .frame(width: 1)
+            
             // Detail view
             if let selectedDevice = selectedDevice {
                 DiskAnalysisView(rootPath: selectedDevice.path) {
                     self.selectedDevice = nil
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 16) {
                     Image(systemName: "externaldrive")
@@ -38,6 +61,7 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(NSColor.controlBackgroundColor))
             }
         }
         .onAppear {
