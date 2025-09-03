@@ -360,8 +360,60 @@ class DiskAnalyzer: ObservableObject {
             }
             currentVisited.insert(path)
             
+            // Try bulk scanning first
             do {
-                let contents = try FileManager.default.contentsOfDirectory(atPath: path)
+                let dirFd = open(path, O_RDONLY)
+                if dirFd >= 0 {
+                    defer { close(dirFd) }
+                    
+                    // Use fast bulk scanning
+                    let entries = try bulkScanDirectoryOptimized(dirFd: dirFd)
+                    
+                    for entry in entries {
+                        // Check for task cancellation periodically
+                        if Task.isCancelled {
+                            print("Task cancelled while scanning \(path)")
+                            break
+                        }
+                        
+                        let fullPath = path.hasSuffix("/") ? path + entry.name : path + "/" + entry.name
+                        var size: Int64 = entry.allocSize
+                        var childChildren: [FolderItem] = []
+                        
+                        if entry.isDir {
+                            // For directories, calculate recursive size if needed
+                            if entry.allocSize == 0 {
+                                size = await getDirectoryTotalSizeFast(path: fullPath)
+                            }
+                            
+                            // Build children recursively - go unlimited depth for full scan
+                            if unlimited {
+                                childChildren = await buildDirectoryChildren(path: fullPath, unlimited: true, visitedPaths: currentVisited)
+                            }
+                        }
+                        
+                        var child = FolderItem(
+                            name: entry.name,
+                            path: fullPath,
+                            size: size,
+                            isDirectory: entry.isDir,
+                            itemCount: entry.isDir ? (childChildren.isEmpty ? 1 : childChildren.count) : 0,
+                            lastModified: Date() // Bulk scan doesn't provide modification date easily
+                        )
+                        child.children = childChildren
+                        children.append(child)
+                    }
+                    
+                    return children.sorted()
+                } else {
+                    throw NSError(domain: "FileSystem", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Cannot open directory"])
+                }
+            } catch {
+                print("Bulk scan failed for \(path), falling back to FileManager: \(error)")
+                
+                // Fallback to FileManager approach
+                do {
+                    let contents = try FileManager.default.contentsOfDirectory(atPath: path)
                 let keys: Set<URLResourceKey> = [
                     .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
                     .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
@@ -408,9 +460,10 @@ class DiskAnalyzer: ObservableObject {
                         continue
                     }
                 }
-            } catch {
-                // If we can't read the directory, return empty array
-                return []
+                } catch {
+                    // If we can't read the directory, return empty array
+                    return []
+                }
             }
             
             return children.sorted()
@@ -595,50 +648,89 @@ class DiskAnalyzer: ObservableObject {
             var totalSize: Int64 = 0
             var fileCount: Int = 0
             var errorCount: Int = 0
-            let keys: Set<URLResourceKey> = [
-                .isRegularFileKey, .isSymbolicLinkKey,
-                .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-                .fileResourceIdentifierKey
-            ]
-            
-            guard let enumerator = FileManager.default.enumerator(
-                at: URL(fileURLWithPath: path),
-                includingPropertiesForKeys: Array(keys),
-                options: [.skipsPackageDescendants],
-                errorHandler: { url, error in
-                    print("Error accessing \(url.path): \(error)")
-                    errorCount += 1
-                    return true // Continue despite errors
-                }
-            ) else {
-                print("Failed to create enumerator for path: \(path)")
-                return 0
-            }
-            
             let localSeen = ShardedFileIDSet()
-            for case let url as URL in enumerator {
-                do {
-                    let rv = try url.resourceValues(forKeys: keys)
-                    if rv.isSymbolicLink == true { continue }
-                    if rv.isRegularFile == true {
-                        fileCount += 1
-                        if let id = rv.fileResourceIdentifier as? Data {
-                            if !localSeen.insert(id) { continue }
-                        }
-                        if let t = rv.totalFileAllocatedSize {
-                            totalSize += Int64(t)
-                        } else if let a = rv.fileAllocatedSize {
-                            totalSize += Int64(a)
+            
+            // Try to use optimized bulk scanning first
+            do {
+                let dirFd = open(path, O_RDONLY)
+                if dirFd >= 0 {
+                    defer { close(dirFd) }
+                    
+                    // Use the fast getattrlistbulk syscall for immediate children
+                    let entries = try bulkScanDirectoryOptimized(dirFd: dirFd)
+                    print("Bulk scan found \(entries.count) entries in \(path)")
+                    
+                    for entry in entries {
+                        if !entry.isDir {
+                            fileCount += 1
+                            // Use device+inode for deduplication - convert to Data
+                            var devIno = DevIno(dev: entry.deviceId, ino: entry.inode)
+                            let devInoData = withUnsafeBytes(of: &devIno) { Data($0) }
+                            if localSeen.insert(devInoData) {
+                                totalSize += entry.allocSize
+                            }
+                        } else {
+                            // Recursively scan subdirectories
+                            let subPath = path.hasSuffix("/") ? path + entry.name : path + "/" + entry.name
+                            let subSize = await getDirectoryTotalSizeFast(path: subPath)
+                            totalSize += subSize
                         }
                     }
-                } catch {
-                    errorCount += 1
-                    continue
+                    
+                    print("Finished bulk scanning \(path): \(fileCount) files, \(totalSize) bytes")
+                    return totalSize
+                } else {
+                    throw NSError(domain: "FileSystem", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Cannot open directory"])
                 }
+            } catch {
+                print("Bulk scan failed for \(path), falling back to FileManager: \(error)")
+                errorCount += 1
+                
+                // Fallback to original FileManager approach
+                let keys: Set<URLResourceKey> = [
+                    .isRegularFileKey, .isSymbolicLinkKey,
+                    .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+                    .fileResourceIdentifierKey
+                ]
+                
+                guard let enumerator = FileManager.default.enumerator(
+                    at: URL(fileURLWithPath: path),
+                    includingPropertiesForKeys: Array(keys),
+                    options: [.skipsPackageDescendants],
+                    errorHandler: { url, error in
+                        print("Error accessing \(url.path): \(error)")
+                        errorCount += 1
+                        return true
+                    }
+                ) else {
+                    print("Failed to create enumerator for path: \(path)")
+                    return 0
+                }
+                
+                for case let url as URL in enumerator {
+                    do {
+                        let rv = try url.resourceValues(forKeys: keys)
+                        if rv.isSymbolicLink == true { continue }
+                        if rv.isRegularFile == true {
+                            fileCount += 1
+                            if let id = rv.fileResourceIdentifier as? Data {
+                                if !localSeen.insert(id) { continue }
+                            }
+                            if let t = rv.totalFileAllocatedSize {
+                                totalSize += Int64(t)
+                            } else if let a = rv.fileAllocatedSize {
+                                totalSize += Int64(a)
+                            }
+                        }
+                    } catch {
+                        errorCount += 1
+                        continue
+                    }
+                }
+                
+                print("Finished fallback scanning \(path): \(fileCount) files, \(totalSize) bytes, \(errorCount) errors")
+                return totalSize
             }
-            
-            print("Finished scanning \(path): \(fileCount) files, \(totalSize) bytes, \(errorCount) errors")
-            return totalSize
         }.value
     }
     
