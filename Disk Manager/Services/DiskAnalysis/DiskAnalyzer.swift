@@ -571,7 +571,9 @@ class DiskAnalyzer: ObservableObject {
                     print("DEBUG: WARNING - No items found in \(item.path). Possible permissions issue.")
                 }
             }
-            print("DEBUG: Preloading complete. Total cached paths: \(await MainActor.run { self.folderTree.count })")
+            await MainActor.run {
+                print("DEBUG: Preloading complete. Total cached paths: \(self.folderTree.count)")
+            }
         }
     }
     

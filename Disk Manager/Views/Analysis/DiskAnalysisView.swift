@@ -7,6 +7,7 @@ struct DiskAnalysisView: View {
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
+    @State private var isNavigatingBack = false
     let onBack: () -> Void
     
     init(rootPath: String = "/", onBack: @escaping () -> Void = {}) {
@@ -211,6 +212,12 @@ struct DiskAnalysisView: View {
                             },
                             onBack: {
                                 goBack()
+                            },
+                            onComputerClick: {
+                                // Handle Computer breadcrumb click in the parent view
+                                print("DEBUG: Computer breadcrumb clicked - calling onBack()")
+                                self.isNavigatingBack = true
+                                onBack()
                             }
                         )
                         
@@ -276,6 +283,11 @@ struct DiskAnalysisView: View {
             }
         }
         .onAppear {
+            // Don't do anything if we're navigating back to device selection
+            if self.isNavigatingBack {
+                return
+            }
+            
             // Only scan if we haven't scanned yet or if there's no data for current path
             if !hasInitiallyScanned {
                 hasInitiallyScanned = true
@@ -419,6 +431,7 @@ struct BreadcrumbBar: View {
     let rootPath: String
     let onNavigate: (String) -> Void
     let onBack: () -> Void
+    let onComputerClick: () -> Void
     
     private var pathComponents: [PathComponent] {
         let components = currentPath.components(separatedBy: "/").filter { !$0.isEmpty }
@@ -475,8 +488,9 @@ struct BreadcrumbBar: View {
                     Button {
                         // Special case: "Computer" should go back to device selection
                         if component.name == "Computer" {
-                            onBack()
+                            onComputerClick()
                         } else {
+                            print("DEBUG: Breadcrumb clicked - navigating to: \(component.path)")
                             onNavigate(component.path)
                         }
                     } label: {
@@ -509,5 +523,5 @@ struct PathComponent {
 }
 
 #Preview {
-    DiskAnalysisView()
+    DiskAnalysisView() { }
 }

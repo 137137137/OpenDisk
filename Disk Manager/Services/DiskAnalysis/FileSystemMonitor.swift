@@ -3,7 +3,7 @@ import CoreServices
 
 /// Real-time file system monitoring using Apple's FSEvents API
 /// Provides efficient change notifications to avoid expensive full rescans
-class FileSystemMonitor: ObservableObject {
+class FileSystemMonitor {
     private var eventStream: FSEventStreamRef?
     private var monitoredPaths: [String] = []
     private var isMonitoring = false
@@ -145,8 +145,8 @@ private func fsEventCallback(
 
 // MARK: - Directory Cache Manager
 
-/// Manages cached directory information and updates based on file system events
-class DirectoryCacheManager: ObservableObject {
+/// Manages cached directory information and updates based on file system events  
+class DirectoryCacheManager {
     private var sizeCache: [String: Int64] = [:]
     private var itemCountCache: [String: Int] = [:]
     private var lastModifiedCache: [String: Date] = [:]
@@ -243,7 +243,8 @@ class DirectoryCacheManager: ObservableObject {
 // MARK: - Smart Cache with FSEvents Integration
 
 /// Enhanced caching system that integrates with FSEvents for automatic invalidation
-class SmartDirectoryCache: ObservableObject {
+@MainActor
+class SmartDirectoryCache {
     private let cacheManager = DirectoryCacheManager()
     private var folderTreeCache: [String: [FolderItem]] = [:]
     private var activeScans: Set<String> = []
