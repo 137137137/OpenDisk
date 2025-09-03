@@ -132,6 +132,87 @@ class ShardedInodeSet: @unchecked Sendable {
     }
 }
 
+// MARK: - FileID Tracking (URLResource fileResourceIdentifier)
+
+// Used to deduplicate hard links when using URL-based enumeration
+// The identifier comes from URLResourceKey.fileResourceIdentifierKey
+class ShardedFileIDSet: @unchecked Sendable {
+    private let shardCount = 32
+    private var shards: [Set<Data>]
+    private let locks: [NSLock]
+    
+    init() {
+        self.shards = Array(repeating: Set<Data>(), count: shardCount)
+        self.locks = (0..<shardCount).map { _ in NSLock() }
+    }
+    
+    func insert(_ id: Data) -> Bool {
+        let shardIndex = abs(id.hashValue) % shardCount
+        locks[shardIndex].lock()
+        defer { locks[shardIndex].unlock() }
+        let (inserted, _) = shards[shardIndex].insert(id)
+        return inserted
+    }
+    
+    func contains(_ id: Data) -> Bool {
+        let shardIndex = abs(id.hashValue) % shardCount
+        locks[shardIndex].lock()
+        defer { locks[shardIndex].unlock() }
+        return shards[shardIndex].contains(id)
+    }
+}
+
+// MARK: - Firmlink Resolver
+
+// APFS firmlinks expose the same data tree via multiple mount points.
+// Parse /usr/share/firmlinks and provide canonicalization helpers so we
+// don't traverse the same tree twice when scanning arbitrary paths.
+struct FirmlinkResolver {
+    private let mappings: [(rootPath: String, dataPath: String)]
+    
+    init() {
+        var pairs: [(String, String)] = []
+        let mappingPath = "/usr/share/firmlinks"
+        if let contents = try? String(contentsOfFile: mappingPath, encoding: .utf8) {
+            for line in contents.split(separator: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+                let parts = trimmed.split(whereSeparator: { $0 == "\t" || $0 == " " })
+                if parts.count >= 2 {
+                    let rootRel = String(parts[0]).trimmingCharacters(in: .whitespaces)
+                    let dataRel = String(parts[1]).trimmingCharacters(in: .whitespaces)
+                    let rootAbs = "/" + rootRel.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    let dataAbs = "/" + dataRel.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    pairs.append((rootAbs, dataAbs))
+                }
+            }
+        }
+        self.mappings = pairs
+    }
+    
+    // Returns a canonical path for a given input, preferring the root-side path.
+    func canonicalize(_ path: String) -> String {
+        let normalized = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
+        for (root, data) in mappings {
+            if normalized == data || normalized.hasPrefix(data + "/") {
+                // Map Data side back to root side
+                let suffix = String(normalized.dropFirst(data.count))
+                let mapped = root + suffix
+                return mapped
+            }
+        }
+        return normalized
+    }
+    
+    // Determines whether a path is the data-side of a known firmlink mapping
+    func isDataSide(_ path: String) -> Bool {
+        let normalized = path.hasSuffix("/") && path.count > 1 ? String(path.dropLast()) : path
+        return mappings.contains { _, data in
+            normalized == data || normalized.hasPrefix(data + "/")
+        }
+    }
+}
+
 // MARK: - Rate Model for Progress Tracking
 
 class RateModel {

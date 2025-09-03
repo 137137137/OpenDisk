@@ -22,6 +22,8 @@ class DiskAnalyzer: ObservableObject {
     private var totalBytesProcessed: Int64 = 0
     private var progressModel = RateModel()
     private var lastProgressUpdate: Date = Date()
+    private var seenFileIDs = ShardedFileIDSet()
+    private let firmlinkResolver = FirmlinkResolver()
     
     // Complete folder tree for instant navigation
     private var folderTree: [String: [FolderItem]] = [:]
@@ -89,7 +91,7 @@ class DiskAnalyzer: ObservableObject {
         }
         
         // For root directory scan, request full disk access
-        var scanPath = path
+        var scanPath = firmlinkResolver.canonicalize(path)
         
         if path == "/" {
             if !hasFullDiskAccess() {
@@ -100,6 +102,9 @@ class DiskAnalyzer: ObservableObject {
             }
             scanPath = "/"
         }
+        
+        // Reset dedupe set for this scan
+        seenFileIDs = ShardedFileIDSet()
         
         scanTask = Task { [weak self] in
             guard let self = self else { return }
@@ -171,6 +176,7 @@ class DiskAnalyzer: ObservableObject {
             self.totalFilesProcessed = 0
             self.totalBytesProcessed = 0
             self.lastProgressUpdate = Date()
+            self.seenFileIDs = ShardedFileIDSet()
         }
         
         // Enumerate accessible top-level directories with better error handling
@@ -192,8 +198,10 @@ class DiskAnalyzer: ObservableObject {
                    isDirectory.boolValue &&
                    FileManager.default.isReadableFile(atPath: fullPath) &&
                    !shouldSkipSystemPath(fullPath) {
-                    
-                    accessibleDirs.append(fullPath)
+                    // Avoid scanning data-side of firmlinks
+                    if !firmlinkResolver.isDataSide(fullPath) {
+                        accessibleDirs.append(fullPath)
+                    }
                 }
             }
             
@@ -210,12 +218,11 @@ class DiskAnalyzer: ObservableObject {
             // Start parallel size calculations for all directories
             await withTaskGroup(of: Void.self) { group in
                 for dirPath in limitedDirs {
-                    group.addTask { [weak self] in
-                        if self?.sizeCache[dirPath] == nil {
-                            let size = await self?.getDirectoryTotalSizeFast(path: dirPath) ?? 0
-                            await MainActor.run {
-                                self?.sizeCache[dirPath] = size
-                            }
+                    group.addTask {
+                        let size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: dirPath)
+                        await MainActor.run {
+                            // Always set; cache overwrite is fine
+                            self.sizeCache[dirPath] = size
                         }
                     }
                 }
@@ -280,26 +287,30 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func buildFolderItemSafelyWithCache(path: String, nextPath: String?) async -> FolderItem? {
+        let url = URL(fileURLWithPath: path)
         do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: path)
-            let size = (attributes[.size] as? Int64) ?? 0
-            let modificationDate = (attributes[.modificationDate] as? Date) ?? Date()
-            
-            // For directories, use cached size or calculate with next path for parallel pre-calc
-            var totalSize = size
-            let itemCount = 1
-            
-            if let type = attributes[.type] as? FileAttributeType, type == .typeDirectory {
+            let rv = try url.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .contentModificationDateKey,
+                .totalFileAllocatedSizeKey,
+                .fileAllocatedSizeKey
+            ])
+            let isDir = rv.isDirectory ?? false
+            let modificationDate = rv.contentModificationDate ?? Date()
+            var totalSize: Int64 = 0
+            if isDir {
                 // Use cache-aware calculation with next path for parallel processing
                 totalSize = await calculateDirectorySize(path: path, nextPath: nextPath)
+            } else {
+                if let t = rv.totalFileAllocatedSize { totalSize = Int64(t) }
+                else if let a = rv.fileAllocatedSize { totalSize = Int64(a) }
             }
-            
             return FolderItem(
-                name: URL(fileURLWithPath: path).lastPathComponent,
+                name: url.lastPathComponent,
                 path: path,
                 size: totalSize,
                 isDirectory: true,
-                itemCount: itemCount,
+                itemCount: 1,
                 lastModified: modificationDate
             )
         } catch {
@@ -309,26 +320,29 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func buildFolderItemSafely(path: String) async -> FolderItem? {
+        let url = URL(fileURLWithPath: path)
         do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: path)
-            let size = (attributes[.size] as? Int64) ?? 0
-            let modificationDate = (attributes[.modificationDate] as? Date) ?? Date()
-            
-            // For directories, calculate total size recursively (simplified)
-            var totalSize = size
-            let itemCount = 1
-            
-            if let type = attributes[.type] as? FileAttributeType, type == .typeDirectory {
-                // Simple directory size calculation
+            let rv = try url.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .contentModificationDateKey,
+                .totalFileAllocatedSizeKey,
+                .fileAllocatedSizeKey
+            ])
+            let isDir = rv.isDirectory ?? false
+            let modificationDate = rv.contentModificationDate ?? Date()
+            var totalSize: Int64 = 0
+            if isDir {
                 totalSize = await calculateDirectorySize(path: path)
+            } else {
+                if let t = rv.totalFileAllocatedSize { totalSize = Int64(t) }
+                else if let a = rv.fileAllocatedSize { totalSize = Int64(a) }
             }
-            
             return FolderItem(
-                name: URL(fileURLWithPath: path).lastPathComponent,
+                name: url.lastPathComponent,
                 path: path,
                 size: totalSize,
                 isDirectory: true,
-                itemCount: itemCount,
+                itemCount: 1,
                 lastModified: modificationDate
             )
         } catch {
@@ -364,7 +378,7 @@ class DiskAnalyzer: ObservableObject {
                 self?.scanProgressPercentage = 0.0
             }
             
-            totalDirectorySize = await getDirectoryTotalSizeFast(path: path)
+            totalDirectorySize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: path)
             sizeCache[path] = totalDirectorySize
             
             let capturedSize = totalDirectorySize
@@ -378,7 +392,7 @@ class DiskAnalyzer: ObservableObject {
         if let nextPath = nextPath, sizeCache[nextPath] == nil, sizePrecalculationTasks[nextPath] == nil {
             let capturedNextPath = nextPath // Capture for concurrent access
             sizePrecalculationTasks[nextPath] = Task { [weak self] in
-                let size = await self?.getDirectoryTotalSizeFast(path: capturedNextPath) ?? 0
+                let size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: capturedNextPath)
                 await MainActor.run { [weak self] in
                     self?.sizeCache[capturedNextPath] = size
                     self?.sizePrecalculationTasks[capturedNextPath] = nil
@@ -387,50 +401,57 @@ class DiskAnalyzer: ObservableObject {
             }
         }
         
-        guard let enumerator = FileManager.default.enumerator(atPath: path) else {
+        // STEP 3: Detailed analysis with accurate progress bar using allocated size and URL prefetch
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey, .isSymbolicLinkKey,
+            .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+            .fileResourceIdentifierKey
+        ]
+        guard let enumerator = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: path),
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsPackageDescendants],
+            errorHandler: { _, _ in true }
+        ) else {
             return totalDirectorySize
         }
-        
         var processedSize: Int64 = 0
         var itemsProcessed = 0
         var lastProgressUpdate = 0
-        
-        // STEP 3: Detailed analysis with accurate progress bar
-        while let item = enumerator.nextObject() as? String {
-            let itemPath = path.hasSuffix("/") ? "\(path)\(item)" : "\(path)/\(item)"
-            
+        for case let url as URL in enumerator {
             do {
-                let attributes = try FileManager.default.attributesOfItem(atPath: itemPath)
-                if let size = attributes[.size] as? Int64 {
-                    processedSize += size
+                let rv = try url.resourceValues(forKeys: keys)
+                if rv.isSymbolicLink == true { continue }
+                if rv.isRegularFile == true {
+                    // Dedup hardlinks using file resource identifier
+                    if let id = rv.fileResourceIdentifier as? Data {
+                        if !seenFileIDs.insert(id) { continue }
+                    }
+                    var sz: Int64 = 0
+                    if let t = rv.totalFileAllocatedSize { sz = Int64(t) }
+                    else if let a = rv.fileAllocatedSize { sz = Int64(a) }
+                    processedSize += sz
                     itemsProcessed += 1
-                    
-                    // Update progress every 500 items or 10MB for more frequent updates
-                    if itemsProcessed - lastProgressUpdate >= 500 || processedSize % (10 * 1024 * 1024) < size {
+                    if itemsProcessed - lastProgressUpdate >= 500 || (sz > 0 && processedSize % (10 * 1024 * 1024) < sz) {
                         lastProgressUpdate = itemsProcessed
                         let currentSize = processedSize
-                        let total = totalDirectorySize // Capture for concurrent access
-                        let progressPercent = total > 0 ? min(100.0, Double(currentSize) / Double(total) * 100.0) : 0.0
-                        
-                        await MainActor.run { [weak self, currentSize, progressPercent] in
+                        let total = max(totalDirectorySize, 1)
+                        let progressPercent = min(100.0, Double(currentSize) / Double(total) * 100.0)
+                        DispatchQueue.main.async { [weak self] in
                             self?.scannedBytes = currentSize
                             self?.scanProgressPercentage = progressPercent
                         }
-                        await Task.yield()
                     }
                 }
             } catch {
                 continue
             }
-            
-            if Task.isCancelled {
-                break
-            }
+            if Task.isCancelled { break }
         }
         
         // Final update with exact totals
         let finalSize = totalDirectorySize // Capture for concurrent access
-        await MainActor.run { [weak self, finalSize] in
+        DispatchQueue.main.async { [weak self] in
             self?.scannedBytes = finalSize
             self?.scanProgressPercentage = 100.0
         }
@@ -438,73 +459,87 @@ class DiskAnalyzer: ObservableObject {
         return finalSize
     }
     
-    private func getDirectoryTotalSizeFast(path: String) async -> Int64 {
+    private static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 var totalSize: Int64 = 0
-                
-                // Use URL-based enumeration which is faster for size calculation
+                let keys: Set<URLResourceKey> = [
+                    .isRegularFileKey, .isSymbolicLinkKey,
+                    .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+                    .fileResourceIdentifierKey
+                ]
                 guard let enumerator = FileManager.default.enumerator(
                     at: URL(fileURLWithPath: path),
-                    includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+                    includingPropertiesForKeys: Array(keys),
                     options: [.skipsPackageDescendants],
-                    errorHandler: { _, _ in return true }
+                    errorHandler: { _, _ in true }
                 ) else {
                     continuation.resume(returning: 0)
                     return
                 }
-                
+                var localSeen = ShardedFileIDSet()
                 for case let url as URL in enumerator {
                     do {
-                        let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-                        if resourceValues.isRegularFile == true, let fileSize = resourceValues.fileSize {
-                            totalSize += Int64(fileSize)
+                        let rv = try url.resourceValues(forKeys: keys)
+                        if rv.isSymbolicLink == true { continue }
+                        if rv.isRegularFile == true {
+                            if let id = rv.fileResourceIdentifier as? Data {
+                                if !localSeen.insert(id) { continue }
+                            }
+                            if let t = rv.totalFileAllocatedSize {
+                                totalSize += Int64(t)
+                            } else if let a = rv.fileAllocatedSize {
+                                totalSize += Int64(a)
+                            }
                         }
                     } catch {
                         continue
                     }
                 }
-                
                 continuation.resume(returning: totalSize)
             }
         }
     }
     
     private func scanDirectoryContentsSafe(_ path: String) async -> [FolderItem] {
-        do {
-            let contents = try FileManager.default.contentsOfDirectory(atPath: path)
-            var items: [FolderItem] = []
-            
-            for item in contents {
-                let itemPath = path.hasSuffix("/") ? "\(path)\(item)" : "\(path)/\(item)"
-                
-                do {
-                    let attributes = try FileManager.default.attributesOfItem(atPath: itemPath)
-                    let size = (attributes[.size] as? Int64) ?? 0
-                    let isDirectory = (attributes[.type] as? FileAttributeType) == .typeDirectory
-                    let modificationDate = (attributes[.modificationDate] as? Date) ?? Date()
-                    
-                    let folderItem = FolderItem(
-                        name: item,
-                        path: itemPath,
-                        size: size,
-                        isDirectory: isDirectory,
-                        itemCount: isDirectory ? 1 : 0,
-                        lastModified: modificationDate
-                    )
-                    
-                    items.append(folderItem)
-                } catch {
-                    // Skip files we can't access
-                    continue
-                }
-            }
-            
-            return items.sorted()
-        } catch {
-            print("Error scanning directory \(path): \(error)")
+        var items: [FolderItem] = []
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
+            .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
+            .contentModificationDateKey
+        ]
+        guard let enumerator = FileManager.default.enumerator(
+            at: URL(fileURLWithPath: path),
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsSubdirectoryDescendants],
+            errorHandler: { _, _ in true }
+        ) else {
             return []
         }
+        for case let url as URL in enumerator {
+            do {
+                let rv = try url.resourceValues(forKeys: keys)
+                if rv.isSymbolicLink == true { continue }
+                let isDir = rv.isDirectory ?? false
+                var size: Int64 = 0
+                if rv.isRegularFile == true {
+                    if let t = rv.totalFileAllocatedSize { size = Int64(t) }
+                    else if let a = rv.fileAllocatedSize { size = Int64(a) }
+                }
+                let item = FolderItem(
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: size,
+                    isDirectory: isDir,
+                    itemCount: isDir ? 1 : 0,
+                    lastModified: rv.contentModificationDate ?? Date()
+                )
+                items.append(item)
+            } catch {
+                continue
+            }
+        }
+        return items.sorted()
     }
     
     private func shouldSkipSystemPath(_ path: String) -> Bool {
