@@ -298,11 +298,8 @@ struct DiskAnalysisView: View {
                 hasInitiallyScanned = true
                 analyzer.scanDirectory(currentPath)
             } else if analyzer.rootItems.isEmpty {
-                // If we have no data, try to navigate to cached data first
-                if !analyzer.navigateToPath(currentPath) {
-                    // If no cached data, then scan
-                    analyzer.scanDirectory(currentPath)
-                }
+                // If we have no data, navigate to path (will use cache or scan as needed)
+                analyzer.navigateToPath(currentPath)
             }
         }
         .onChange(of: currentPath) {
@@ -314,19 +311,15 @@ struct DiskAnalysisView: View {
     private func navigateToFolder(_ item: FolderItem) {
         breadcrumbs.append(currentPath)
         currentPath = item.path
-        // Try cached data first, scan if no cached data available
-        if !analyzer.navigateToPath(currentPath) {
-            analyzer.scanDirectory(currentPath)
-        }
+        // Navigate to path (will use cache or scan as needed)
+        analyzer.navigateToPath(currentPath)
     }
     
     private func goBack() {
         if let previousPath = breadcrumbs.popLast() {
             currentPath = previousPath
-            // Try cached data first, scan if no cached data
-            if !analyzer.navigateToPath(currentPath) {
-                analyzer.scanDirectory(currentPath)
-            }
+            // Navigate to path (will use cache or scan as needed)
+            analyzer.navigateToPath(currentPath)
         }
     }
     
@@ -337,11 +330,8 @@ struct DiskAnalysisView: View {
         }
         currentPath = path
         
-        // Try to use cached data first, only scan if no cached data available
-        if !analyzer.navigateToPath(path) {
-            // No cached data available, need to scan
-            analyzer.scanDirectory(path)
-        }
+        // Navigate to path (will use cache or scan as needed)
+        analyzer.navigateToPath(path)
     }
     
     private func openFullDiskAccessSettings() {
