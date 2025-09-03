@@ -9,6 +9,8 @@ class DiskAnalyzer: ObservableObject {
     @Published var totalSize: Int64 = 0
     @Published var currentScanPath: String = ""
     @Published var filesPerSecond: String = ""
+    @Published var scannedBytes: Int64 = 0
+    @Published var totalBytes: Int64 = 0
     @Published var externalVolumes: [FolderItem] = []
     
     private var scanTask: Task<Void, Never>?
@@ -55,6 +57,8 @@ class DiskAnalyzer: ObservableObject {
         lastProgressUpdate = Date()
         currentScanPath = ""
         filesPerSecond = ""
+        scannedBytes = 0
+        totalBytes = 0
         
         // Initialize fresh progress model with better estimates for disk scanning
         progressModel = RateModel()
@@ -179,15 +183,41 @@ class DiskAnalyzer: ObservableObject {
             
             // Process accessible directories
             var items: [FolderItem] = []
+            let limitedDirs = Array(accessibleDirs.prefix(10)) // Limit to avoid overwhelming
             
-            for dirPath in accessibleDirs.prefix(10) { // Limit to avoid overwhelming
+            // Set initial progress for directory counting
+            await MainActor.run { [weak self] in
+                self?.scanProgress = "Scanning directories..."
+                self?.scanProgressPercentage = 0.0
+            }
+            
+            var totalScannedBytes: Int64 = 0
+            
+            for (index, dirPath) in limitedDirs.enumerated() {
                 await MainActor.run { [weak self] in
                     self?.scanProgress = "Analyzing \(URL(fileURLWithPath: dirPath).lastPathComponent)..."
+                    self?.scanProgressPercentage = Double(index) / Double(limitedDirs.count) * 100.0
                 }
                 
                 if let item = await buildFolderItemSafely(path: dirPath) {
                     items.append(item)
+                    totalScannedBytes += item.size
+                    
+                    // Capture value for concurrent access
+                    let currentScannedBytes = totalScannedBytes
+                    await MainActor.run { [weak self] in
+                        self?.scannedBytes = currentScannedBytes
+                    }
                 }
+            }
+            
+            // Final update - capture values for concurrent access
+            let finalTotalBytes = totalScannedBytes
+            let finalScannedBytes = totalScannedBytes
+            await MainActor.run { [weak self] in
+                self?.scanProgressPercentage = 100.0
+                self?.totalBytes = finalTotalBytes
+                self?.scannedBytes = finalScannedBytes
             }
             
             return items.sorted()
@@ -228,45 +258,96 @@ class DiskAnalyzer: ObservableObject {
     }
     
     private func calculateDirectorySize(path: String) async -> Int64 {
-        var totalSize: Int64 = 0
+        let folderName = URL(fileURLWithPath: path).lastPathComponent
+        
+        // Step 1: Get total directory size first (fast du-like calculation)
+        await MainActor.run { [weak self] in
+            self?.scanProgress = "Getting size of \(folderName)..."
+            self?.currentScanPath = path
+        }
+        
+        let totalDirectorySize = await getDirectoryTotalSize(path: path)
+        
+        // Step 2: Set the total and start detailed scanning with progress
+        await MainActor.run { [weak self] in
+            self?.totalBytes = totalDirectorySize
+            self?.scannedBytes = 0
+            self?.scanProgress = "Analyzing \(folderName)"
+        }
         
         guard let enumerator = FileManager.default.enumerator(atPath: path) else {
             return 0
         }
         
-        var processedItems = 0
+        var scannedSize: Int64 = 0
+        var itemsProcessed = 0
+        
         while let item = enumerator.nextObject() as? String {
             let itemPath = path.hasSuffix("/") ? "\(path)\(item)" : "\(path)/\(item)"
             
             do {
                 let attributes = try FileManager.default.attributesOfItem(atPath: itemPath)
                 if let size = attributes[.size] as? Int64 {
-                    totalSize += size
+                    scannedSize += size
+                    itemsProcessed += 1
+                    
+                    // Update progress every 10MB or 1000 items
+                    if scannedSize % (10 * 1024 * 1024) < size || itemsProcessed % 1000 == 0 {
+                        let currentScanned = scannedSize
+                        let total = totalDirectorySize
+                        let progressPercentage = total > 0 ? min(100.0, Double(currentScanned) / Double(total) * 100.0) : 0.0
+                        
+                        await MainActor.run { [weak self] in
+                            self?.scannedBytes = currentScanned
+                            self?.scanProgressPercentage = progressPercentage
+                        }
+                        await Task.yield()
+                    }
                 }
             } catch {
-                // Skip files we can't access
                 continue
             }
             
-            processedItems += 1
-            
-            // Update progress periodically and yield control
-            if processedItems % 1000 == 0 {
-                let currentCount = processedItems // Capture for concurrent access
-                let folderName = URL(fileURLWithPath: path).lastPathComponent
-                await MainActor.run { [weak self] in
-                    self?.scanProgress = "Analyzing \(folderName)... (\(currentCount) items)"
-                }
-                await Task.yield() // Allow other tasks to run
-            }
-            
-            // Limit processing time to avoid blocking
-            if processedItems > 50000 {
+            if Task.isCancelled {
                 break
             }
         }
         
-        return totalSize
+        // Final update
+        await MainActor.run { [weak self] in
+            self?.scannedBytes = totalDirectorySize
+            self?.scanProgressPercentage = 100.0
+        }
+        
+        return totalDirectorySize
+    }
+    
+    private func getDirectoryTotalSize(path: String) async -> Int64 {
+        // Fast initial size calculation using du-like approach
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var totalSize: Int64 = 0
+                
+                if let enumerator = FileManager.default.enumerator(
+                    at: URL(fileURLWithPath: path),
+                    includingPropertiesForKeys: [.fileSizeKey],
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                ) {
+                    for case let fileURL as URL in enumerator {
+                        do {
+                            let resourceValues = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+                            if let fileSize = resourceValues.fileSize {
+                                totalSize += Int64(fileSize)
+                            }
+                        } catch {
+                            continue
+                        }
+                    }
+                }
+                
+                continuation.resume(returning: totalSize)
+            }
+        }
     }
     
     private func scanDirectoryContentsSafe(_ path: String) async -> [FolderItem] {

@@ -62,14 +62,30 @@ struct DiskAnalysisView: View {
                             .frame(width: 300)
                         }
                         
-                        if analyzer.scanProgressPercentage > 0 {
-                            VStack(spacing: 8) {
+                        // Show bytes scanned progress and progress bar
+                        if analyzer.totalBytes > 0 {
+                            VStack(spacing: 12) {
+                                HStack(spacing: 8) {
+                                    Text("\(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalBytes, countStyle: .file))")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Spacer()
+                                    
+                                    Text(String(format: "%.1f%%", analyzer.scanProgressPercentage))
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.primary)
+                                }
+                                .frame(maxWidth: 350)
+                                
                                 ProgressView(value: analyzer.scanProgressPercentage, total: 100)
-                                    .frame(maxWidth: 300)
+                                    .frame(maxWidth: 350)
+                                    .tint(.blue)
                                 
                                 HStack {
                                     Text(String(format: "%.1f%% complete", analyzer.scanProgressPercentage))
-                                        .font(.subheadline)
+                                        .font(.caption)
                                         .foregroundColor(.secondary)
                                     
                                     Spacer()
