@@ -9,22 +9,14 @@ import Foundation
 import SwiftUI
 
 struct CleanupOptions {
-    var dsStoreFiles = true
-    var fseventsdFolders = false  // Default off for safety
-    var spotlightFolders = true
-    var trashesFolders = true
-    var temporaryItems = true
+    var dsStoreFiles = true  // Only option we need
 }
 
 struct ScanResults {
     var dsStoreCount = 0
-    var fseventsdCount = 0
-    var spotlightCount = 0
-    var trashesCount = 0
-    var temporaryItemsCount = 0
     
     var totalCount: Int {
-        dsStoreCount + fseventsdCount + spotlightCount + trashesCount + temporaryItemsCount
+        dsStoreCount
     }
 }
 
@@ -45,27 +37,15 @@ class DirectoryCleanupManager: ObservableObject {
     private var scanTask: Task<Void, Never>?
     private var cleanupTask: Task<Void, Never>?
     
-    // Files and folders to look for
-    private let targetFiles: [String: [String]] = [
-        "dsStore": [".DS_Store"],
-        "fseventsd": [".fseventsd"],
-        "spotlight": [".Spotlight-V100"],
-        "trashes": [".Trashes"],
-        "temporary": [".TemporaryItems", ".DocumentRevisions-V100"]
-    ]
+    // Only look for .DS_Store files
+    private let dsStoreFileName = ".DS_Store"
     
     var totalFoundItems: Int {
         scanResults.totalCount
     }
     
     var totalSelectedItems: Int {
-        var count = 0
-        if cleanupOptions.dsStoreFiles { count += scanResults.dsStoreCount }
-        if cleanupOptions.fseventsdFolders { count += scanResults.fseventsdCount }
-        if cleanupOptions.spotlightFolders { count += scanResults.spotlightCount }
-        if cleanupOptions.trashesFolders { count += scanResults.trashesCount }
-        if cleanupOptions.temporaryItems { count += scanResults.temporaryItemsCount }
-        return count
+        cleanupOptions.dsStoreFiles ? scanResults.dsStoreCount : 0
     }
     
     var formattedScannedBytes: String {
@@ -156,19 +136,9 @@ class DirectoryCleanupManager: ObservableObject {
                     processedSize += sz
                     itemsProcessed += 1
                     
-                    // Check if it's one of our target files/folders
-                    if self.targetFiles["dsStore"]?.contains(fileName) == true {
+                    // Check if it's a .DS_Store file
+                    if fileName == self.dsStoreFileName {
                         results.dsStoreCount += 1
-                    } else if self.targetFiles["fseventsd"]?.contains(fileName) == true && rv.isDirectory == true {
-                        if await !self.isSystemVolume(url.deletingLastPathComponent().path) {
-                            results.fseventsdCount += 1
-                        }
-                    } else if self.targetFiles["spotlight"]?.contains(fileName) == true && rv.isDirectory == true {
-                        results.spotlightCount += 1
-                    } else if self.targetFiles["trashes"]?.contains(fileName) == true && rv.isDirectory == true {
-                        results.trashesCount += 1
-                    } else if self.targetFiles["temporary"]?.contains(fileName) == true {
-                        results.temporaryItemsCount += 1
                     }
                     
                     // Update progress like DiskAnalyzer - every 500 items or every 10MB
@@ -330,7 +300,7 @@ class DirectoryCleanupManager: ObservableObject {
                !path.contains("/Users/")
     }
     
-    func performCleanup(_ path: String) async {
+    func performCleanup(_ path: String, totalUsedSpace: Int64) async {
         cleanupTask?.cancel()
         
         isCleaning = true
@@ -349,7 +319,7 @@ class DirectoryCleanupManager: ObservableObject {
                 self.progressMessage = ""
                 // Rescan to update counts
                 Task {
-                    await self.scanDirectory(path)
+                    await self.scanDirectory(path, totalUsedSpace: totalUsedSpace)
                 }
             }
         }
@@ -373,25 +343,7 @@ class DirectoryCleanupManager: ObservableObject {
                 let fullPath = path.hasSuffix("/") ? path + item : path + "/" + item
                 var shouldDelete = false
                 
-                if cleanupOptions.dsStoreFiles && targetFiles["dsStore"]?.contains(item) == true {
-                    shouldDelete = true
-                } else if cleanupOptions.fseventsdFolders && targetFiles["fseventsd"]?.contains(item) == true {
-                    var isDirectory: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory) && 
-                       isDirectory.boolValue && !isSystemVolume(path) {
-                        shouldDelete = true
-                    }
-                } else if cleanupOptions.spotlightFolders && targetFiles["spotlight"]?.contains(item) == true {
-                    var isDirectory: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory) && isDirectory.boolValue {
-                        shouldDelete = true
-                    }
-                } else if cleanupOptions.trashesFolders && targetFiles["trashes"]?.contains(item) == true {
-                    var isDirectory: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDirectory) && isDirectory.boolValue {
-                        shouldDelete = true
-                    }
-                } else if cleanupOptions.temporaryItems && targetFiles["temporary"]?.contains(item) == true {
+                if cleanupOptions.dsStoreFiles && item == dsStoreFileName {
                     shouldDelete = true
                 }
                 

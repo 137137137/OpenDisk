@@ -14,12 +14,12 @@ struct ContentView: View {
     
     enum Tab: String, CaseIterable {
         case analysis = "Analysis"
-        case cleanup = "Cleanup"
+        case cleanup = "Reset Views"
         
         var icon: String {
             switch self {
             case .analysis: return "chart.pie"
-            case .cleanup: return "trash.circle"
+            case .cleanup: return "folder.badge.gearshape"
             }
         }
     }

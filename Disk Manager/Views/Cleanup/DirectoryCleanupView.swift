@@ -55,63 +55,54 @@ struct DirectoryCleanupView: View {
             
             Divider()
             
-            // Cleanup options
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    CleanupOptionCard(
-                        title: ".DS_Store Files",
-                        description: "Desktop Services Store files that contain folder view preferences, icon positions, and sorting options",
-                        icon: "folder.badge.gearshape",
-                        isEnabled: cleanupManager.cleanupOptions.dsStoreFiles,
-                        foundCount: cleanupManager.scanResults.dsStoreCount
-                    ) {
-                        cleanupManager.cleanupOptions.dsStoreFiles.toggle()
+            // DS_Store info and count
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "folder.badge.gearshape")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                            .frame(width: 32)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(".DS_Store Files")
+                                .font(.headline)
+                                .fontWeight(.medium)
+                            
+                            Text("Desktop Services Store files contain folder view preferences like icon positions, sorting options, column widths, and background images. Removing them will reset all folders to default Finder view settings.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        
+                        Spacer()
                     }
                     
-                    CleanupOptionCard(
-                        title: ".fseventsd Folders",
-                        description: "File system event logs that can accumulate on external drives and network volumes",
-                        icon: "doc.text.magnifyingglass",
-                        isEnabled: cleanupManager.cleanupOptions.fseventsdFolders,
-                        foundCount: cleanupManager.scanResults.fseventsdCount,
-                        isWarning: true,
-                        warningText: "Caution: Only remove from external drives, not system volumes"
-                    ) {
-                        cleanupManager.cleanupOptions.fseventsdFolders.toggle()
-                    }
-                    
-                    CleanupOptionCard(
-                        title: ".Spotlight-V100 Folders",
-                        description: "Spotlight index files that can be rebuilt automatically",
-                        icon: "magnifyingglass.circle",
-                        isEnabled: cleanupManager.cleanupOptions.spotlightFolders,
-                        foundCount: cleanupManager.scanResults.spotlightCount
-                    ) {
-                        cleanupManager.cleanupOptions.spotlightFolders.toggle()
-                    }
-                    
-                    CleanupOptionCard(
-                        title: ".Trashes Folders",
-                        description: "Trash folders on external drives and network volumes",
-                        icon: "trash.circle",
-                        isEnabled: cleanupManager.cleanupOptions.trashesFolders,
-                        foundCount: cleanupManager.scanResults.trashesCount
-                    ) {
-                        cleanupManager.cleanupOptions.trashesFolders.toggle()
-                    }
-                    
-                    CleanupOptionCard(
-                        title: ".TemporaryItems",
-                        description: "Temporary files and folders left behind by various applications",
-                        icon: "clock.arrow.circlepath",
-                        isEnabled: cleanupManager.cleanupOptions.temporaryItems,
-                        foundCount: cleanupManager.scanResults.temporaryItemsCount
-                    ) {
-                        cleanupManager.cleanupOptions.temporaryItems.toggle()
+                    if cleanupManager.hasScanned {
+                        HStack {
+                            Text("Found:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Text("\(cleanupManager.scanResults.dsStoreCount) files")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(cleanupManager.scanResults.dsStoreCount > 0 ? .primary : .secondary)
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal, 32)
                     }
                 }
                 .padding()
+                .background(Color(NSColor.controlBackgroundColor))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(NSColor.separatorColor), lineWidth: 1)
+                )
             }
+            .padding()
             
             Divider()
             
@@ -156,15 +147,11 @@ struct DirectoryCleanupView: View {
                     
                     Spacer()
                     
-                    if cleanupManager.hasScanned {
-                        Text("\(cleanupManager.totalFoundItems) items found")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Button("Clean Selected") {
-                        Task {
-                            await cleanupManager.performCleanup("/")
+                    Button("Reset View Settings") {
+                        if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
+                            Task {
+                                await cleanupManager.performCleanup("/", totalUsedSpace: Int64(computerDevice.usedStorage))
+                            }
                         }
                     }
                     .buttonStyle(.borderedProminent)
