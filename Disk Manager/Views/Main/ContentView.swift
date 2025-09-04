@@ -10,6 +10,19 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var diskUtility = DiskSpaceUtility()
     @State private var selectedDevice: DeviceInfo?
+    @State private var selectedTab: Tab = .analysis
+    
+    enum Tab: String, CaseIterable {
+        case analysis = "Analysis"
+        case cleanup = "Cleanup"
+        
+        var icon: String {
+            switch self {
+            case .analysis: return "chart.pie"
+            case .cleanup: return "trash.circle"
+            }
+        }
+    }
     
     var body: some View {
         HStack(spacing: 0) {
@@ -35,6 +48,31 @@ struct ContentView: View {
                     }
                 }
                 .listStyle(SidebarListStyle())
+                
+                Divider()
+                
+                // Tab selector
+                VStack(spacing: 8) {
+                    ForEach(Tab.allCases, id: \.self) { tab in
+                        Button(action: {
+                            selectedTab = tab
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: tab.icon)
+                                Text(tab.rawValue)
+                                Spacer()
+                            }
+                            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(selectedTab == tab ? Color.accentColor.opacity(0.1) : Color.clear)
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding()
+                .background(Color(NSColor.controlBackgroundColor))
             }
             .frame(width: 350) // Fixed width - cannot be resized
             .background(Color(NSColor.controlBackgroundColor))
@@ -44,25 +82,33 @@ struct ContentView: View {
                 .fill(Color(NSColor.separatorColor))
                 .frame(width: 1)
             
-            // Detail view
-            if let selectedDevice = selectedDevice {
-                DiskAnalysisView(rootPath: selectedDevice.path) {
-                    self.selectedDevice = nil
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                VStack(spacing: 16) {
-                    Image(systemName: "externaldrive")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
+            // Detail view based on selected tab
+            Group {
+                switch selectedTab {
+                case .analysis:
+                    if let selectedDevice = selectedDevice {
+                        DiskAnalysisView(rootPath: selectedDevice.path, totalUsedSpace: Int64(selectedDevice.usedStorage)) {
+                            self.selectedDevice = nil
+                        }
+                    } else {
+                        VStack(spacing: 16) {
+                            Image(systemName: "externaldrive")
+                                .font(.system(size: 48))
+                                .foregroundColor(.secondary)
+                            
+                            Text("Select a device to analyze")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(NSColor.controlBackgroundColor))
+                    }
                     
-                    Text("Select a device to analyze")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
+                case .cleanup:
+                    DirectoryCleanupView()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(NSColor.controlBackgroundColor))
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
             // Auto-select Computer device

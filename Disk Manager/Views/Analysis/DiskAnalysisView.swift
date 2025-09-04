@@ -8,11 +8,13 @@ struct DiskAnalysisView: View {
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
     @State private var isNavigatingBack = false
+    @State private var totalUsedDiskSpace: Int64 = 0
     let onBack: () -> Void
     
-    init(rootPath: String = "/", onBack: @escaping () -> Void = {}) {
+    init(rootPath: String = "/", totalUsedSpace: Int64 = 0, onBack: @escaping () -> Void = {}) {
         self.rootPath = rootPath
         self._currentPath = State(initialValue: rootPath)
+        self._totalUsedDiskSpace = State(initialValue: totalUsedSpace)
         self.onBack = onBack
     }
     
@@ -63,83 +65,31 @@ struct DiskAnalysisView: View {
                             .frame(width: 300)
                         }
                         
-                        // Show current scanning progress (even without total)
-                        if analyzer.scannedBytes > 0 || analyzer.totalBytes > 0 {
-                            VStack(spacing: 16) {
-                                // Current folder/directory progress
-                                VStack(spacing: 8) {
-                                    HStack(spacing: 8) {
-                                        if analyzer.totalBytes > 0 {
-                                            // Show progress with known total
-                                            Text("Current: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalBytes, countStyle: .file))")
-                                                .font(.subheadline)
-                                                .foregroundColor(.secondary)
-                                            
-                                            Spacer()
-                                            
-                                            Text(String(format: "%.1f%%", analyzer.scanProgressPercentage))
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(.primary)
-                                        } else if analyzer.scannedBytes > 0 {
-                                            // Show current progress while calculating total
-                                            VStack(spacing: 4) {
-                                                HStack {
-                                                    Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.scannedBytes, countStyle: .file))")
-                                                        .font(.subheadline)
-                                                        .foregroundColor(.secondary)
-                                                    
-                                                    Spacer()
-                                                    
-                                                    Text("Getting total size...")
-                                                        .font(.subheadline)
-                                                        .fontWeight(.medium)
-                                                        .foregroundColor(.blue)
-                                                }
-                                                
-                                                // Show a simple indeterminate progress indicator
-                                                ProgressView()
-                                                    .progressViewStyle(LinearProgressViewStyle())
-                                                    .frame(maxWidth: 380)
-                                                    .tint(.blue)
-                                            }
-                                        }
-                                    }
-                                    .frame(maxWidth: 380)
+                        // Show simple cumulative scanning progress as percentage of used disk space
+                        if analyzer.totalDiskScannedBytes > 0 && totalUsedDiskSpace > 0 {
+                            let scannedPercentage = Double(analyzer.totalDiskScannedBytes) / Double(totalUsedDiskSpace) * 100
+                            
+                            VStack(spacing: 12) {
+                                HStack(spacing: 8) {
+                                    Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskScannedBytes, countStyle: .file))")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
                                     
-                                    // Only show progress bar if we have a total
-                                    if analyzer.totalBytes > 0 {
-                                        ProgressView(value: analyzer.scanProgressPercentage, total: 100)
-                                            .frame(maxWidth: 380)
-                                            .tint(.blue)
-                                    }
+                                    Spacer()
+                                    
+                                    Text(String(format: "%.1f%%", scannedPercentage))
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.blue)
                                 }
+                                .frame(maxWidth: 380)
                                 
-                                // Overall disk progress (only show for full disk scans)
-                                if analyzer.totalDiskBytes > 0 {
-                                    VStack(spacing: 8) {
-                                        HStack(spacing: 8) {
-                                            Text("Total: \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskScannedBytes, countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskBytes, countStyle: .file))")
-                                                .font(.subheadline)
-                                                .foregroundColor(.secondary)
-                                            
-                                            Spacer()
-                                            
-                                            Text(String(format: "%.2f%%", analyzer.overallProgressPercentage))
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                                .foregroundColor(.orange)
-                                        }
-                                        .frame(maxWidth: 380)
-                                        
-                                        ProgressView(value: analyzer.overallProgressPercentage, total: 100)
-                                            .frame(maxWidth: 380)
-                                            .tint(.orange)
-                                    }
-                                }
+                                ProgressView(value: scannedPercentage, total: 100)
+                                    .frame(maxWidth: 380)
+                                    .tint(.blue)
                                 
                                 HStack {
-                                    Text(String(format: "%.1f%% complete", analyzer.scanProgressPercentage))
+                                    Text("of total used space")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     
@@ -282,7 +232,9 @@ struct DiskAnalysisView: View {
             
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh") {
-                    analyzer.scanDirectory(currentPath)
+                    Task {
+                        await analyzer.scanDirectory(currentPath)
+                    }
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }
@@ -296,7 +248,9 @@ struct DiskAnalysisView: View {
             // Only scan if we haven't scanned yet or if there's no data for current path
             if !hasInitiallyScanned {
                 hasInitiallyScanned = true
-                analyzer.scanDirectory(currentPath)
+                Task {
+                    await analyzer.scanDirectory(currentPath)
+                }
             } else if analyzer.rootItems.isEmpty {
                 // If we have no data, navigate to path (will use cache or scan as needed)
                 analyzer.navigateToPath(currentPath)
@@ -522,5 +476,5 @@ struct PathComponent {
 }
 
 #Preview {
-    DiskAnalysisView() { }
+    DiskAnalysisView(totalUsedSpace: 500_000_000_000) { } // 500 GB for preview
 }

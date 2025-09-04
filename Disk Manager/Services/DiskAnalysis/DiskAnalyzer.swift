@@ -1,6 +1,23 @@
 import Foundation
 import Darwin
 
+// Thread-safe counter for cumulative progress tracking
+actor CumulativeCounter {
+    private var value: Int64 = 0
+    
+    func reset() {
+        value = 0
+    }
+    
+    func add(_ amount: Int64) {
+        value += amount
+    }
+    
+    func getValue() -> Int64 {
+        return value
+    }
+}
+
 @MainActor
 class DiskAnalyzer: ObservableObject {
     @Published var rootItems: [FolderItem] = []
@@ -24,6 +41,9 @@ class DiskAnalyzer: ObservableObject {
     @Published var totalDiskBytes: Int64 = 0
     @Published var totalDiskScannedBytes: Int64 = 0
     @Published var overallProgressPercentage: Double = 0.0
+    
+    // Real-time cumulative progress tracking (actor for thread safety)
+    private let cumulativeCounter = CumulativeCounter()
     
     // Legacy properties (keeping for backward compatibility)
     @Published var scannedBytes: Int64 = 0
@@ -106,7 +126,7 @@ class DiskAnalyzer: ObservableObject {
         return true
     }
     
-    func scanDirectory(_ path: String) {
+    func scanDirectory(_ path: String) async {
         scanTask?.cancel()
         
         // Stop any existing monitoring
@@ -127,6 +147,7 @@ class DiskAnalyzer: ObservableObject {
         scannedBytes = 0
         totalBytes = 0
         totalDiskScannedBytes = 0
+        await cumulativeCounter.reset()
         overallProgressPercentage = 0.0
         
         // Get total disk size for overall progress
@@ -690,18 +711,25 @@ class DiskAnalyzer: ObservableObject {
                         processedSize += sz
                         itemsProcessed += 1
                         
+                        // Update cumulative counter immediately for real-time progress
+                        await self.cumulativeCounter.add(sz)
+                        
                         if itemsProcessed - lastProgressUpdate >= 500 || (sz > 0 && processedSize % (10 * 1024 * 1024) < sz) {
                             lastProgressUpdate = itemsProcessed
                             // Capture values to avoid concurrency issues
                             let capturedSize = processedSize
                             let capturedTotal = max(totalDirectorySize, 1)
                             let capturedPercent = min(100.0, Double(capturedSize) / Double(capturedTotal) * 100.0)
+                            let capturedCumulative = await self.cumulativeCounter.getValue()
                             await MainActor.run {
                                 // Update per-directory progress
                                 self.currentDirScannedBytes = capturedSize
                                 self.currentDirTotalBytes = capturedTotal
                                 self.currentDirPercent = capturedPercent
                                 self.scanProgressPercentage = capturedPercent
+                                
+                                // Update real-time cumulative progress
+                                self.totalDiskScannedBytes = capturedCumulative
                                 
                                 // Update legacy properties for backward compatibility
                                 self.scannedBytes = capturedSize
@@ -718,11 +746,15 @@ class DiskAnalyzer: ObservableObject {
             // Capture final values to avoid concurrency issues
             let finalProcessedSize = processedSize
             let finalTotalSize = max(totalDirectorySize, processedSize)
+            let finalCumulative = await self.cumulativeCounter.getValue()
             await MainActor.run {
                 self.currentDirScannedBytes = finalProcessedSize
                 self.currentDirTotalBytes = finalTotalSize
                 self.currentDirPercent = 100.0
                 self.scanProgressPercentage = 100.0
+                
+                // Update final cumulative progress
+                self.totalDiskScannedBytes = finalCumulative
                 
                 // Update legacy properties
                 self.scannedBytes = finalProcessedSize
