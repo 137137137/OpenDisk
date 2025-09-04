@@ -10,7 +10,6 @@ import SwiftUI
 struct DirectoryCleanupView: View {
     @StateObject private var cleanupManager = DirectoryCleanupManager()
     @StateObject private var diskUtility = DiskSpaceUtility()
-    @State private var showingConfirmation = false
     @State private var showingDefaultsGuide = false
     
     var body: some View {
@@ -241,85 +240,6 @@ struct DirectoryCleanupView: View {
     }
 }
 
-struct CleanupOptionCard: View {
-    let title: String
-    let description: String
-    let icon: String
-    let isEnabled: Bool
-    let foundCount: Int
-    let isWarning: Bool
-    let warningText: String?
-    let onToggle: () -> Void
-    
-    init(title: String, description: String, icon: String, isEnabled: Bool, foundCount: Int, isWarning: Bool = false, warningText: String? = nil, onToggle: @escaping () -> Void) {
-        self.title = title
-        self.description = description
-        self.icon = icon
-        self.isEnabled = isEnabled
-        self.foundCount = foundCount
-        self.isWarning = isWarning
-        self.warningText = warningText
-        self.onToggle = onToggle
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                HStack(spacing: 12) {
-                    Image(systemName: icon)
-                        .font(.title2)
-                        .foregroundColor(isWarning ? .orange : .blue)
-                        .frame(width: 24)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.headline)
-                        
-                        Text(description)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    if foundCount > 0 {
-                        Text("\(foundCount) found")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Toggle("", isOn: Binding(
-                        get: { isEnabled },
-                        set: { _ in onToggle() }
-                    ))
-                    .toggleStyle(SwitchToggleStyle())
-                }
-            }
-            
-            if isWarning, let warningText = warningText {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                        .font(.caption)
-                    
-                    Text(warningText)
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-                .padding(.horizontal, 36)
-            }
-        }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(NSColor.separatorColor), lineWidth: 1)
-        )
-    }
-}
 
 struct SetDefaultsGuideView: View {
     @Environment(\.dismiss) private var dismiss

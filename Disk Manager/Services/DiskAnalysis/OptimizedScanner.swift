@@ -152,7 +152,6 @@ class OptimizedScanner: ObservableObject {
                 for directory in batch {
                     taskGroup.addTask {
                         let directoryItems = await self.scanSingleDirectoryRecursively(directory.path)
-                        let totalSize = directoryItems.reduce(0) { $0 + $1.size }
                         return ProgressiveScanResult(
                             items: directoryItems,
                             directoryPath: directory.path,
@@ -250,7 +249,7 @@ class OptimizedScanner: ObservableObject {
                         }
                     } else {
                         // For directories, use a fast size estimation for immediate feedback
-                        size = await getDirectoryTotalSizeFast(path: fullPath)
+                        size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: fullPath)
                     }
                     
                     let item = FolderItem(
@@ -280,8 +279,6 @@ class OptimizedScanner: ObservableObject {
     ) async -> [FolderItem] {
         
         let startTime = Date()
-        let totalFilesProcessed = 0
-        _ = totalFilesProcessed // Suppress unused warning
         
         progressHandler(0.0, "Initializing optimized scan...")
         
@@ -315,7 +312,7 @@ class OptimizedScanner: ObservableObject {
                     
                     let progress = Double(processedItems) / Double(totalItemsToProcess) * 100.0
                     let elapsed = Date().timeIntervalSince(startTime)
-                    let rate = elapsed > 0 ? Double(totalFilesProcessed) / elapsed : 0
+                    let rate = elapsed > 0 ? Double(processedItems) / elapsed : 0
                     
                     // Update UI properties (already on MainActor)
                     self.scanProgressPercentage = progress
@@ -430,7 +427,7 @@ class OptimizedScanner: ObservableObject {
         for item in items {
             if item.isDirectory && item.size == 0 {
                 // Calculate the actual directory size
-                let actualSize = await getDirectoryTotalSizeFast(path: item.path)
+                let actualSize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: item.path)
                 let updatedItem = FolderItem(
                     name: item.name,
                     path: item.path,
@@ -946,7 +943,7 @@ class OptimizedScanner: ObservableObject {
         var finalItems: [FolderItem] = []
         for item in items {
             if item.isDirectory && item.size == 0 {
-                let actualSize = await getDirectoryTotalSizeFast(path: item.path)
+                let actualSize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: item.path)
                 let updatedItem = FolderItem(
                     name: item.name,
                     path: item.path,
@@ -1007,7 +1004,7 @@ class OptimizedScanner: ObservableObject {
                 
                 // For directories, calculate the actual size (outside autoreleasepool for async)
                 if isDirectory {
-                    size = await getDirectoryTotalSizeFast(path: url.path)
+                    size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: url.path)
                 }
                 
                 let item = FolderItem(

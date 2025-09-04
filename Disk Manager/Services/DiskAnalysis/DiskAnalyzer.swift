@@ -573,10 +573,6 @@ class DiskAnalyzer: ObservableObject {
         }.value
     }
     
-    // Always perform deep scanning - no directories are skipped
-    private func shouldSkipDeepScan(_ path: String) -> Bool {
-        return false
-    }
     
     // Helper method to recursively cache all nested folder structures
     private func cacheNestedFolderTree(children: [FolderItem]) {
@@ -591,37 +587,6 @@ class DiskAnalyzer: ObservableObject {
         }
     }
     
-    private func buildFolderItemSafely(path: String) async -> FolderItem? {
-        let url = URL(fileURLWithPath: path)
-        do {
-            let rv = try url.resourceValues(forKeys: [
-                .isDirectoryKey,
-                .contentModificationDateKey,
-                .totalFileAllocatedSizeKey,
-                .fileAllocatedSizeKey
-            ])
-            let isDir = rv.isDirectory ?? false
-            let modificationDate = rv.contentModificationDate ?? Date()
-            var totalSize: Int64 = 0
-            if isDir {
-                totalSize = await calculateDirectorySize(path: path)
-            } else {
-                if let t = rv.totalFileAllocatedSize { totalSize = Int64(t) }
-                else if let a = rv.fileAllocatedSize { totalSize = Int64(a) }
-            }
-            return FolderItem(
-                name: url.lastPathComponent,
-                path: path,
-                size: totalSize,
-                isDirectory: true,
-                itemCount: 1,
-                lastModified: modificationDate
-            )
-        } catch {
-            print("Error processing \(path): \(error)")
-            return nil
-        }
-    }
     
     private func calculateDirectorySize(path: String, nextPath: String? = nil) async -> Int64 {
         let folderName = URL(fileURLWithPath: path).lastPathComponent

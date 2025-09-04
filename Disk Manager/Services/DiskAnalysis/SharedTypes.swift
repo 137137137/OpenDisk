@@ -141,10 +141,3 @@ func asyncAutoreleasePool<T>(_ body: @escaping () async -> T) async -> T {
     }
 }
 
-// MARK: - Directory Size Calculation
-
-/// Fast directory size calculation - accessible from any context
-public func getDirectoryTotalSizeFast(path: String) async -> Int64 {
-    // Forward to DiskAnalyzer's implementation
-    return await DiskAnalyzer.getDirectoryTotalSizeFast(path: path)
-}
