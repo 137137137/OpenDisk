@@ -253,7 +253,7 @@ struct DiskAnalysisView: View {
                 }
             } else if analyzer.rootItems.isEmpty {
                 // If we have no data, navigate to path (will use cache or scan as needed)
-                analyzer.navigateToPath(currentPath)
+                _ = analyzer.navigateToPath(currentPath)
             }
         }
         .onChange(of: currentPath) {
@@ -266,14 +266,14 @@ struct DiskAnalysisView: View {
         breadcrumbs.append(currentPath)
         currentPath = item.path
         // Navigate to path (will use cache or scan as needed)
-        analyzer.navigateToPath(currentPath)
+        _ = analyzer.navigateToPath(currentPath)
     }
     
     private func goBack() {
         if let previousPath = breadcrumbs.popLast() {
             currentPath = previousPath
             // Navigate to path (will use cache or scan as needed)
-            analyzer.navigateToPath(currentPath)
+            _ = analyzer.navigateToPath(currentPath)
         }
     }
     
@@ -285,7 +285,7 @@ struct DiskAnalysisView: View {
         currentPath = path
         
         // Navigate to path (will use cache or scan as needed)
-        analyzer.navigateToPath(path)
+        _ = analyzer.navigateToPath(path)
     }
     
     private func openFullDiskAccessSettings() {
