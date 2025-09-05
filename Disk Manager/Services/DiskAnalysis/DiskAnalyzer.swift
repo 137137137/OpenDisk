@@ -360,31 +360,43 @@ class DiskAnalyzer: ObservableObject {
             
             var totalScannedBytes: Int64 = 0
             
-            for (index, dirPath) in limitedDirs.enumerated() {
-                // Get next directory for parallel pre-calculation (if any)
-                let nextPath = index + 1 < limitedDirs.count ? limitedDirs[index + 1] : nil
-                
-                let dirName = URL(fileURLWithPath: dirPath).lastPathComponent
-                scanProgress = "Analyzing \(dirName)... (\(index + 1)/\(limitedDirs.count))"
-                scanProgressPercentage = Double(index) / Double(limitedDirs.count) * 100.0
-                
-                print("Starting scan of directory: \(dirPath) (\(index + 1)/\(limitedDirs.count))")
-                
-                if let item = await buildFolderItemSafelyWithCache(path: dirPath, nextPath: nextPath) {
-                    items.append(item)
-                    totalScannedBytes += item.size
-                    
-                    // Update whole-disk progress model
-                    totalDiskScannedBytes = totalScannedBytes
-                    if totalDiskBytes > 0 {
-                        overallProgressPercentage = min(100.0, Double(totalScannedBytes) / Double(totalDiskBytes) * 100.0)
+            // Parallelize root directory scanning using TaskGroup
+            await withTaskGroup(of: FolderItem?.self) { group in
+                for (index, dirPath) in limitedDirs.enumerated() {
+                    group.addTask {
+                        let nextPath = index + 1 < limitedDirs.count ? limitedDirs[index + 1] : nil
+                        return await self.buildFolderItemSafelyWithCache(path: dirPath, nextPath: nextPath)
                     }
-                    
-                    // Update legacy properties
-                    scannedBytes = totalScannedBytes
-                    totalBytes = totalScannedBytes // For compatibility
-                    
-                    print("Completed \(dirPath): \(item.size) bytes, total so far: \(totalScannedBytes) bytes (\(String(format: "%.2f", overallProgressPercentage))%)")
+                }
+                
+                var completedCount = 0
+                for await item in group {
+                    if let item = item {
+                        items.append(item)
+                        totalScannedBytes += item.size
+                        
+                        // Update progress on main actor
+                        await MainActor.run {
+                            completedCount += 1
+                            let dirName = URL(fileURLWithPath: item.path).lastPathComponent
+                            self.scanProgress = "Analyzed \(dirName)... (\(completedCount)/\(limitedDirs.count))"
+                            self.scanProgressPercentage = Double(completedCount) / Double(limitedDirs.count) * 100.0
+                            
+                            print("Completed scan of directory: \(item.path) (\(completedCount)/\(limitedDirs.count))")
+                            
+                            // Update whole-disk progress model
+                            self.totalDiskScannedBytes = totalScannedBytes
+                            if self.totalDiskBytes > 0 {
+                                self.overallProgressPercentage = min(100.0, Double(totalScannedBytes) / Double(self.totalDiskBytes) * 100.0)
+                            }
+                            
+                            // Update legacy properties
+                            self.scannedBytes = totalScannedBytes
+                            self.totalBytes = totalScannedBytes // For compatibility
+                            
+                            print("Completed \(item.path): \(item.size) bytes, total so far: \(totalScannedBytes) bytes (\(String(format: "%.2f", self.overallProgressPercentage))%)")
+                        }
+                    }
                 }
             }
             

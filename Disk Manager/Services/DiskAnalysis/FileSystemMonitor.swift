@@ -248,6 +248,7 @@ class SmartDirectoryCache {
     private let cacheManager = DirectoryCacheManager()
     private var folderTreeCache: [String: [FolderItem]] = [:]
     private var activeScans: Set<String> = []
+    private let persistentCache = PersistentCacheManager()
     
     /// Cache folder tree for a path
     func cacheFolderTree(_ items: [FolderItem], for path: String) {
@@ -258,6 +259,9 @@ class SmartDirectoryCache {
             cacheManager.setCachedSize(item.size, for: item.path)
             cacheManager.setCachedItemCount(item.itemCount, for: item.path)
         }
+        
+        // Save to persistent cache
+        saveToDisk()
     }
     
     /// Get cached folder tree
@@ -298,5 +302,95 @@ class SmartDirectoryCache {
         folderTreeCache.removeAll()
         cacheManager.clearCache()
         activeScans.removeAll()
+        persistentCache.clearCache()
+    }
+    
+    /// Initialize cache from disk
+    func loadFromDisk() {
+        if let cachedData = persistentCache.loadCache() {
+            folderTreeCache = cachedData
+        }
+    }
+    
+    /// Save cache to disk
+    func saveToDisk() {
+        persistentCache.saveCache(folderTreeCache)
+    }
+}
+
+// MARK: - Persistent Cache Manager
+
+/// Manages persistent disk caching of folder tree data
+class PersistentCacheManager {
+    private let cacheDirectory: URL
+    private let cacheFileName = "folder_tree_cache.json"
+    private let maxCacheAge: TimeInterval = 24 * 60 * 60 // 24 hours
+    
+    init() {
+        // Create cache directory in user's caches folder
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        cacheDirectory = cacheDir.appendingPathComponent("DiskManager")
+        
+        // Ensure cache directory exists
+        try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+    }
+    
+    private var cacheFileURL: URL {
+        return cacheDirectory.appendingPathComponent(cacheFileName)
+    }
+    
+    /// Save folder tree cache to disk
+    func saveCache(_ cache: [String: [FolderItem]]) {
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(cache)
+            try data.write(to: cacheFileURL)
+            print("Cache saved to disk with \(cache.count) entries")
+        } catch {
+            print("Failed to save cache to disk: \(error)")
+        }
+    }
+    
+    /// Load folder tree cache from disk
+    func loadCache() -> [String: [FolderItem]]? {
+        guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
+            print("No cache file found on disk")
+            return nil
+        }
+        
+        // Check cache age
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: cacheFileURL.path)
+            if let modificationDate = attributes[.modificationDate] as? Date {
+                let cacheAge = Date().timeIntervalSince(modificationDate)
+                if cacheAge > maxCacheAge {
+                    print("Cache is too old (\(cacheAge)s), ignoring")
+                    return nil
+                }
+            }
+        } catch {
+            print("Failed to check cache age: \(error)")
+            return nil
+        }
+        
+        // Load cache
+        do {
+            let data = try Data(contentsOf: cacheFileURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let cache = try decoder.decode([String: [FolderItem]].self, from: data)
+            print("Cache loaded from disk with \(cache.count) entries")
+            return cache
+        } catch {
+            print("Failed to load cache from disk: \(error)")
+            return nil
+        }
+    }
+    
+    /// Clear persistent cache
+    func clearCache() {
+        try? FileManager.default.removeItem(at: cacheFileURL)
+        print("Persistent cache cleared")
     }
 }

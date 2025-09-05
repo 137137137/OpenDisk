@@ -35,10 +35,10 @@ class OptimizedScanner: ObservableObject {
     
     init() {
         self.processorCount = ProcessInfo.processInfo.processorCount
-        // Use 4-8 concurrent tasks as recommended, limited by CPU cores
-        self.maxConcurrentTasks = min(max(4, processorCount), 8)
+        // More aggressive concurrency for I/O bound tasks - use 2x processor count
+        self.maxConcurrentTasks = max(4, processorCount * 2)
         
-        print("OptimizedScanner initialized with \(maxConcurrentTasks) concurrent tasks")
+        print("OptimizedScanner initialized with \(maxConcurrentTasks) concurrent tasks for \(processorCount) processors")
     }
     
     // MARK: - Smart Scanning with Caching and Progressive Loading
