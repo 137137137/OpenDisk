@@ -360,24 +360,50 @@ class DiskAnalyzer: ObservableObject {
             
             var totalScannedBytes: Int64 = 0
             
-            // Parallelize root directory scanning using TaskGroup
-            await withTaskGroup(of: FolderItem?.self) { group in
-                for (index, dirPath) in limitedDirs.enumerated() {
+            // Scan directories with limited concurrency to prevent system overwhelm
+            let maxConcurrentScans = 3 // Limit concurrent root directory scans
+            await withTaskGroup(of: (Int, FolderItem?).self) { group in
+                var activeTasks = 0
+                var nextIndex = 0
+                
+                // Start initial batch of tasks
+                for index in 0..<min(maxConcurrentScans, limitedDirs.count) {
+                    let dirPath = limitedDirs[index]
                     group.addTask {
                         let nextPath = index + 1 < limitedDirs.count ? limitedDirs[index + 1] : nil
-                        return await self.buildFolderItemSafelyWithCache(path: dirPath, nextPath: nextPath)
+                        let result = await self.buildFolderItemSafelyWithTimeout(path: dirPath, nextPath: nextPath, timeoutSeconds: 300) // 5 minute timeout
+                        return (index, result)
                     }
+                    activeTasks += 1
+                    nextIndex = index + 1
                 }
                 
                 var completedCount = 0
-                for await item in group {
+                var results: [FolderItem?] = Array(repeating: nil, count: limitedDirs.count)
+                
+                // Process completed tasks and start new ones
+                for await (completedIndex, item) in group {
+                    results[completedIndex] = item
+                    activeTasks -= 1
+                    completedCount += 1
+                    
+                    // Start next task if available
+                    if nextIndex < limitedDirs.count {
+                        let dirPath = limitedDirs[nextIndex]
+                        let index = nextIndex
+                        group.addTask {
+                            let nextPath = index + 1 < limitedDirs.count ? limitedDirs[index + 1] : nil
+                            let result = await self.buildFolderItemSafelyWithTimeout(path: dirPath, nextPath: nextPath, timeoutSeconds: 300)
+                            return (index, result)
+                        }
+                        activeTasks += 1
+                        nextIndex += 1
+                    }
+                    
+                    // Update progress
                     if let item = item {
-                        items.append(item)
                         totalScannedBytes += item.size
-                        
-                        // Update progress on main actor
                         await MainActor.run {
-                            completedCount += 1
                             let dirName = URL(fileURLWithPath: item.path).lastPathComponent
                             self.scanProgress = "Analyzed \(dirName)... (\(completedCount)/\(limitedDirs.count))"
                             self.scanProgressPercentage = Double(completedCount) / Double(limitedDirs.count) * 100.0
@@ -396,6 +422,19 @@ class DiskAnalyzer: ObservableObject {
                             
                             print("Completed \(item.path): \(item.size) bytes, total so far: \(totalScannedBytes) bytes (\(String(format: "%.2f", self.overallProgressPercentage))%)")
                         }
+                    } else {
+                        let dirPath = limitedDirs[completedIndex]
+                        await MainActor.run {
+                            print("TIMEOUT/ERROR: Scan of \(dirPath) failed or timed out")
+                            self.scanProgress = "Skipped \(URL(fileURLWithPath: dirPath).lastPathComponent) (timeout)... (\(completedCount)/\(limitedDirs.count))"
+                        }
+                    }
+                }
+                
+                // Add all successful results to items array
+                for result in results {
+                    if let item = result {
+                        items.append(item)
                     }
                 }
             }
@@ -467,6 +506,28 @@ class DiskAnalyzer: ObservableObject {
             return folderItem
         } catch {
             print("Error processing \(path): \(error)")
+            return nil
+        }
+    }
+    
+    // Timeout wrapper for buildFolderItemSafelyWithCache
+    private func buildFolderItemSafelyWithTimeout(path: String, nextPath: String?, timeoutSeconds: Double) async -> FolderItem? {
+        await withTaskGroup(of: FolderItem?.self) { group in
+            group.addTask {
+                await self.buildFolderItemSafelyWithCache(path: path, nextPath: nextPath)
+            }
+            
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+                return nil // Return nil on timeout
+            }
+            
+            // Return first result (either success or timeout)
+            for await result in group {
+                group.cancelAll() // Cancel remaining task
+                return result
+            }
+            
             return nil
         }
     }

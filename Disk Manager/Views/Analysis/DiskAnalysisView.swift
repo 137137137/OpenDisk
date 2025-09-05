@@ -151,7 +151,7 @@ struct DiskAnalysisView: View {
             } else {
                 // Main content with list and chart
                 HStack(spacing: 0) {
-                    // Left side - Folder list with navigation
+                    // Left side - Folder list with navigation (60% width)
                     VStack(spacing: 0) {
                         // Breadcrumb navigation bar
                         BreadcrumbBar(
@@ -188,35 +188,22 @@ struct DiskAnalysisView: View {
                         .listStyle(PlainListStyle())
                     }
                     .frame(maxWidth: .infinity)
+                    .layoutPriority(1) // Give list priority for space
                     
                     // Vertical divider
                     Divider()
                     
-                    // Rings chart
+                    // Rings chart (constrained to available space)
                     VStack {
                         RingsChart(
                             items: Array(analyzer.rootItems.prefix(12)), // Limit to 12 items for visibility
                             totalSize: analyzer.totalSize
                         )
-                        .frame(maxWidth: 400, maxHeight: 400)
+                        .aspectRatio(1.0, contentMode: .fit) // Keep it square
+                        .clipped() // Prevent any overflow
                         
-                        // Chart controls
-                        HStack {
-                            Button("Rings Chart") {
-                                // Already showing rings chart
-                            }
-                            .disabled(true)
-                            
-                            Button("Treemap Chart") {
-                                // Future: implement treemap view
-                            }
-                            .disabled(true)
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                        .padding(.top, 8)
                     }
-                    .frame(width: 400)
+                    .frame(minWidth: 300, idealWidth: 400, maxWidth: 450)
                     .padding()
                 }
             }
