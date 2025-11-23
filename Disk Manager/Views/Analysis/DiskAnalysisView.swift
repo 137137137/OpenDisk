@@ -20,7 +20,6 @@ struct DiskAnalysisView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            
             // Content
             if analyzer.isScanning {
                 // Scanning progress in center
@@ -68,33 +67,33 @@ struct DiskAnalysisView: View {
                         // Show simple cumulative scanning progress as percentage of used disk space
                         if analyzer.totalDiskScannedBytes > 0 && totalUsedDiskSpace > 0 {
                             let scannedPercentage = Double(analyzer.totalDiskScannedBytes) / Double(totalUsedDiskSpace) * 100
-                            
+
                             VStack(spacing: 12) {
                                 HStack(spacing: 8) {
                                     Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskScannedBytes, countStyle: .file))")
                                         .font(.subheadline)
                                         .foregroundColor(.secondary)
-                                    
+
                                     Spacer()
-                                    
+
                                     Text(String(format: "%.1f%%", scannedPercentage))
                                         .font(.title3)
                                         .fontWeight(.semibold)
                                         .foregroundColor(.blue)
                                 }
                                 .frame(maxWidth: 380)
-                                
+
                                 ProgressView(value: scannedPercentage, total: 100)
                                     .frame(maxWidth: 380)
                                     .tint(.blue)
-                                
+
                                 HStack {
                                     Text("of total used space")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
-                                    
+
                                     Spacer()
-                                    
+
                                     if !analyzer.estimatedTimeRemaining.isEmpty {
                                         Text(analyzer.estimatedTimeRemaining)
                                             .font(.subheadline)
@@ -207,6 +206,78 @@ struct DiskAnalysisView: View {
                     .padding()
                 }
             }
+
+            // DEBUG: Scrollable log window at bottom (only in debug builds)
+            #if DEBUG
+            if analyzer.isScanning {
+                VStack(spacing: 0) {
+                    Divider()
+
+                    HStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "ant.fill")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+
+                            Text("Debug Log")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.orange)
+
+                            Text("Files: \(analyzer.debugFilesScannedCount)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button(analyzer.debugEnabled ? "Hide Details" : "Show Details") {
+                            analyzer.debugEnabled.toggle()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.1))
+
+                    if analyzer.debugEnabled {
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    if analyzer.debugScanLog.isEmpty {
+                                        Text("Waiting for scan data...")
+                                            .font(.system(.caption2, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                            .padding(8)
+                                    } else {
+                                        ForEach(Array(analyzer.debugScanLog.enumerated()), id: \.offset) { index, entry in
+                                            Text(entry)
+                                                .font(.system(.caption2, design: .monospaced))
+                                                .foregroundColor(.secondary)
+                                                .textSelection(.enabled)
+                                                .id(index)
+                                        }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                            }
+                            .frame(height: 150)
+                            .background(Color(nsColor: .textBackgroundColor))
+                            .onChange(of: analyzer.debugScanLog.count) {
+                                // Auto-scroll to bottom when new entries are added
+                                if let lastIndex = analyzer.debugScanLog.indices.last {
+                                    withAnimation {
+                                        proxy.scrollTo(lastIndex, anchor: .bottom)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            #endif
         }
         .navigationTitle(currentPath == rootPath ? "Computer" : URL(fileURLWithPath: currentPath).lastPathComponent)
         .toolbar {

@@ -1,113 +1,124 @@
 import Foundation
 import CoreServices
 
-/// Real-time file system monitoring using Apple's FSEvents API
-/// Provides efficient change notifications to avoid expensive full rescans
+// MARK: - File System Monitoring
+
+/// Monitors file system changes using FSEvents
 class FileSystemMonitor {
     private var eventStream: FSEventStreamRef?
-    private var monitoredPaths: [String] = []
     private var isMonitoring = false
-    public var changeHandler: ((FileSystemChange) -> Void)?
-    
+    private let eventQueue = DispatchQueue(label: "com.diskmanager.fsevents", qos: .background)
+
+    /// File system change event
     struct FileSystemChange {
         let path: String
-        let eventFlags: FSEventStreamEventFlags
-        let isCreated: Bool
-        let isRemoved: Bool
-        let isRenamed: Bool
-        let isModified: Bool
-        let isDirectory: Bool
-        
-        init(path: String, flags: FSEventStreamEventFlags) {
-            self.path = path
-            self.eventFlags = flags
-            
-            // Parse event flags for easier usage
-            self.isCreated = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated) != 0
-            self.isRemoved = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved) != 0
-            self.isRenamed = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed) != 0
-            self.isModified = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified) != 0
-            self.isDirectory = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0
+        let eventId: FSEventStreamEventId
+        let flags: FSEventStreamEventFlags
+
+        var isCreated: Bool {
+            return flags & UInt32(kFSEventStreamEventFlagItemCreated) != 0
+        }
+
+        var isRemoved: Bool {
+            return flags & UInt32(kFSEventStreamEventFlagItemRemoved) != 0
+        }
+
+        var isModified: Bool {
+            return flags & UInt32(kFSEventStreamEventFlagItemModified) != 0
+        }
+
+        var isRenamed: Bool {
+            return flags & UInt32(kFSEventStreamEventFlagItemRenamed) != 0
+        }
+
+        var isDirectory: Bool {
+            return flags & UInt32(kFSEventStreamEventFlagItemIsDir) != 0
         }
     }
-    
-    /// Start monitoring the specified paths for changes
-    /// - Parameters:
-    ///   - paths: Array of paths to monitor
-    ///   - latency: Time interval to batch events (in seconds)
-    ///   - onChangeHandler: Closure called when file system changes occur
-    func startMonitoring(
-        paths: [String],
-        latency: TimeInterval = 1.0,
-        onChangeHandler: @escaping (FileSystemChange) -> Void
-    ) {
-        guard !isMonitoring else { return }
-        
-        self.monitoredPaths = paths
-        self.changeHandler = onChangeHandler
-        
-        // Create FSEventStream context
+
+    /// Start monitoring paths for changes
+    func startMonitoring(paths: [String], latency: CFTimeInterval = 1.0, onChange: @escaping (FileSystemChange) -> Void) {
+        stopMonitoring()
+
+        let pathsCFArray = paths as CFArray
+
+        // Create context to pass callback
+        let contextInfo = Unmanaged.passUnretained(self).toOpaque()
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
+            info: contextInfo,
             retain: nil,
             release: nil,
             copyDescription: nil
         )
-        
-        // Create the event stream
-        let pathsToWatch = paths as CFArray
-        let flags = FSEventStreamCreateFlags(
-            kFSEventStreamCreateFlagFileEvents |
-            kFSEventStreamCreateFlagUseCFTypes |
-            kFSEventStreamCreateFlagIgnoreSelf
-        )
-        
+
+        // Store the callback
+        self.changeCallback = onChange
+
+        // Create event stream
         eventStream = FSEventStreamCreate(
-            kCFAllocatorDefault,
+            nil,
             fsEventCallback,
             &context,
-            pathsToWatch,
+            pathsCFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             latency,
-            flags
+            FSEventStreamCreateFlags(
+                kFSEventStreamCreateFlagFileEvents |
+                kFSEventStreamCreateFlagWatchRoot |
+                kFSEventStreamCreateFlagIgnoreSelf
+            )
         )
-        
+
         guard let stream = eventStream else {
-            print("Failed to create FSEventStream")
+            print("Failed to create FSEvents stream")
             return
         }
-        
-        // Use dispatch queue instead of deprecated run loop scheduling
-        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
-        
-        // Start the stream
-        if FSEventStreamStart(stream) {
-            isMonitoring = true
-            print("Started monitoring paths: \(paths)")
-        } else {
-            print("Failed to start FSEventStream")
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-            eventStream = nil
-        }
+
+        // Schedule on background queue
+        FSEventStreamSetDispatchQueue(stream, eventQueue)
+
+        // Start monitoring
+        FSEventStreamStart(stream)
+        isMonitoring = true
+
+        print("Started monitoring paths: \(paths)")
     }
-    
-    /// Stop monitoring file system changes
+
+    /// Stop monitoring
     func stopMonitoring() {
-        guard let stream = eventStream, isMonitoring else { return }
-        
+        guard let stream = eventStream else { return }
+
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
-        
+
         eventStream = nil
         isMonitoring = false
-        changeHandler = nil
-        
-        print("Stopped monitoring file system changes")
+        changeCallback = nil
+
+        print("Stopped file system monitoring")
     }
-    
+
+    /// Process batch of events
+    func processBatchedEvents(_ events: [FileSystemChange]) {
+        // Group events by directory for efficient processing
+        var eventsByDirectory: [String: [FileSystemChange]] = [:]
+
+        for event in events {
+            let dirPath = URL(fileURLWithPath: event.path).deletingLastPathComponent().path
+            eventsByDirectory[dirPath, default: []].append(event)
+        }
+
+        // Process each directory's changes
+        for (directory, changes) in eventsByDirectory {
+            print("Directory \(directory) has \(changes.count) changes")
+            // Could trigger partial rescan here if needed
+        }
+    }
+
+    internal var changeCallback: ((FileSystemChange) -> Void)?
+
     deinit {
         stopMonitoring()
     }
@@ -124,273 +135,24 @@ private func fsEventCallback(
     eventIds: UnsafePointer<FSEventStreamEventId>
 ) {
     guard let info = clientCallBackInfo else { return }
-    
+
     let monitor = Unmanaged<FileSystemMonitor>.fromOpaque(info).takeUnretainedValue()
-    
-    // Extract paths using proper FSEvents API
-    let pathsPtr = eventPaths.assumingMemoryBound(to: UnsafePointer<CChar>.self)
-    
-    // Process events on the main actor
-    Task { @MainActor in
-        for i in 0..<numEvents {
-            let pathCString = pathsPtr[i]
-            let path = String(cString: pathCString)
-            let flags = eventFlags[i]
-            
-            let change = FileSystemMonitor.FileSystemChange(path: path, flags: flags)
-            monitor.changeHandler?(change)
-        }
-    }
-}
 
-// MARK: - Directory Cache Manager
+    let pathsArray = eventPaths.bindMemory(to: UnsafePointer<CChar>?.self, capacity: numEvents)
 
-/// Manages cached directory information and updates based on file system events  
-class DirectoryCacheManager {
-    private var sizeCache: [String: Int64] = [:]
-    private var itemCountCache: [String: Int] = [:]
-    private var lastModifiedCache: [String: Date] = [:]
-    private let fileSystemMonitor = FileSystemMonitor()
-    
-    /// Get cached size for a directory
-    func getCachedSize(for path: String) -> Int64? {
-        return sizeCache[path]
-    }
-    
-    /// Set cached size for a directory
-    func setCachedSize(_ size: Int64, for path: String) {
-        sizeCache[path] = size
-    }
-    
-    /// Get cached item count for a directory
-    func getCachedItemCount(for path: String) -> Int? {
-        return itemCountCache[path]
-    }
-    
-    /// Set cached item count for a directory
-    func setCachedItemCount(_ count: Int, for path: String) {
-        itemCountCache[path] = count
-    }
-    
-    /// Start monitoring for changes and update cache accordingly
-    func startMonitoring(paths: [String], onCacheInvalidated: @escaping (String) -> Void) {
-        fileSystemMonitor.startMonitoring(paths: paths) { [weak self] change in
-            self?.handleFileSystemChange(change, onCacheInvalidated: onCacheInvalidated)
-        }
-    }
-    
-    /// Stop monitoring
-    func stopMonitoring() {
-        fileSystemMonitor.stopMonitoring()
-    }
-    
-    /// Clear all cached data
-    func clearCache() {
-        sizeCache.removeAll()
-        itemCountCache.removeAll()
-        lastModifiedCache.removeAll()
-    }
-    
-    /// Handle file system changes and update cache
-    private func handleFileSystemChange(
-        _ change: FileSystemMonitor.FileSystemChange,
-        onCacheInvalidated: @escaping (String) -> Void
-    ) {
-        let affectedPath = change.path
-        let parentPath = URL(fileURLWithPath: affectedPath).deletingLastPathComponent().path
-        
-        // Invalidate cache for the affected directory and its parent
-        let pathsToInvalidate = [affectedPath, parentPath]
-        
-        for path in pathsToInvalidate {
-            if sizeCache[path] != nil || itemCountCache[path] != nil {
-                sizeCache.removeValue(forKey: path)
-                itemCountCache.removeValue(forKey: path)
-                lastModifiedCache.removeValue(forKey: path)
-                
-                print("Cache invalidated for: \(path) due to change: \(change.path)")
-                onCacheInvalidated(path)
-            }
-        }
-        
-        // For created/removed files, we need to invalidate parent directories all the way up
-        if change.isCreated || change.isRemoved {
-            invalidateParentDirectories(of: affectedPath, onCacheInvalidated: onCacheInvalidated)
-        }
-    }
-    
-    /// Recursively invalidate parent directory caches
-    private func invalidateParentDirectories(of path: String, onCacheInvalidated: @escaping (String) -> Void) {
-        var currentPath = path
-        let rootPath = "/"
-        
-        while currentPath != rootPath {
-            currentPath = URL(fileURLWithPath: currentPath).deletingLastPathComponent().path
-            
-            if sizeCache[currentPath] != nil || itemCountCache[currentPath] != nil {
-                sizeCache.removeValue(forKey: currentPath)
-                itemCountCache.removeValue(forKey: currentPath)
-                lastModifiedCache.removeValue(forKey: currentPath)
-                
-                onCacheInvalidated(currentPath)
-            }
-            
-            if currentPath == "/" { break }
-        }
-    }
-}
+    for i in 0..<numEvents {
+        guard let pathCString = pathsArray[i] else { continue }
 
-// MARK: - Smart Cache with FSEvents Integration
+        let path = String(cString: pathCString)
+        let flags = eventFlags[i]
+        let eventId = eventIds[i]
 
-/// Enhanced caching system that integrates with FSEvents for automatic invalidation
-@MainActor
-class SmartDirectoryCache {
-    private let cacheManager = DirectoryCacheManager()
-    private var folderTreeCache: [String: [FolderItem]] = [:]
-    private var activeScans: Set<String> = []
-    private let persistentCache = PersistentCacheManager()
-    
-    /// Cache folder tree for a path
-    func cacheFolderTree(_ items: [FolderItem], for path: String) {
-        folderTreeCache[path] = items
-        
-        // Also cache sizes for all items
-        for item in items {
-            cacheManager.setCachedSize(item.size, for: item.path)
-            cacheManager.setCachedItemCount(item.itemCount, for: item.path)
-        }
-        
-        // Save to persistent cache
-        saveToDisk()
-    }
-    
-    /// Get cached folder tree
-    func getCachedFolderTree(for path: String) -> [FolderItem]? {
-        return folderTreeCache[path]
-    }
-    
-    /// Start monitoring for automatic cache invalidation
-    func startSmartMonitoring(for paths: [String], onInvalidation: @escaping (String) -> Void) {
-        cacheManager.startMonitoring(paths: paths) { [weak self] invalidatedPath in
-            self?.folderTreeCache.removeValue(forKey: invalidatedPath)
-            onInvalidation(invalidatedPath)
-        }
-    }
-    
-    /// Stop monitoring
-    func stopMonitoring() {
-        cacheManager.stopMonitoring()
-    }
-    
-    /// Check if a scan is already active for a path
-    func isScanActive(for path: String) -> Bool {
-        return activeScans.contains(path)
-    }
-    
-    /// Mark scan as active
-    func markScanActive(for path: String) {
-        activeScans.insert(path)
-    }
-    
-    /// Mark scan as completed
-    func markScanCompleted(for path: String) {
-        activeScans.remove(path)
-    }
-    
-    /// Clear all caches
-    func clearAllCaches() {
-        folderTreeCache.removeAll()
-        cacheManager.clearCache()
-        activeScans.removeAll()
-        persistentCache.clearCache()
-    }
-    
-    /// Initialize cache from disk
-    func loadFromDisk() {
-        if let cachedData = persistentCache.loadCache() {
-            folderTreeCache = cachedData
-        }
-    }
-    
-    /// Save cache to disk
-    func saveToDisk() {
-        persistentCache.saveCache(folderTreeCache)
-    }
-}
+        let change = FileSystemMonitor.FileSystemChange(
+            path: path,
+            eventId: eventId,
+            flags: flags
+        )
 
-// MARK: - Persistent Cache Manager
-
-/// Manages persistent disk caching of folder tree data
-class PersistentCacheManager {
-    private let cacheDirectory: URL
-    private let cacheFileName = "folder_tree_cache.json"
-    private let maxCacheAge: TimeInterval = 24 * 60 * 60 // 24 hours
-    
-    init() {
-        // Create cache directory in user's caches folder
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        cacheDirectory = cacheDir.appendingPathComponent("DiskManager")
-        
-        // Ensure cache directory exists
-        try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-    }
-    
-    private var cacheFileURL: URL {
-        return cacheDirectory.appendingPathComponent(cacheFileName)
-    }
-    
-    /// Save folder tree cache to disk
-    func saveCache(_ cache: [String: [FolderItem]]) {
-        do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(cache)
-            try data.write(to: cacheFileURL)
-            print("Cache saved to disk with \(cache.count) entries")
-        } catch {
-            print("Failed to save cache to disk: \(error)")
-        }
-    }
-    
-    /// Load folder tree cache from disk
-    func loadCache() -> [String: [FolderItem]]? {
-        guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
-            print("No cache file found on disk")
-            return nil
-        }
-        
-        // Check cache age
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: cacheFileURL.path)
-            if let modificationDate = attributes[.modificationDate] as? Date {
-                let cacheAge = Date().timeIntervalSince(modificationDate)
-                if cacheAge > maxCacheAge {
-                    print("Cache is too old (\(cacheAge)s), ignoring")
-                    return nil
-                }
-            }
-        } catch {
-            print("Failed to check cache age: \(error)")
-            return nil
-        }
-        
-        // Load cache
-        do {
-            let data = try Data(contentsOf: cacheFileURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let cache = try decoder.decode([String: [FolderItem]].self, from: data)
-            print("Cache loaded from disk with \(cache.count) entries")
-            return cache
-        } catch {
-            print("Failed to load cache from disk: \(error)")
-            return nil
-        }
-    }
-    
-    /// Clear persistent cache
-    func clearCache() {
-        try? FileManager.default.removeItem(at: cacheFileURL)
-        print("Persistent cache cleared")
+        monitor.changeCallback?(change)
     }
 }

@@ -5,324 +5,357 @@ struct RingsChart: View {
     let totalSize: Int64
     @State private var selectedItem: FolderItem?
     @State private var hoveredItem: FolderItem?
-    @State private var currentRoot: FolderItem?
+    @State private var currentPath: [FolderItem] = []
     
     // Navigation callback
     var onNavigate: ((FolderItem) -> Void)?
     
-    // Build true Baobab-style hierarchy with multiple depth levels
-    private var hierarchyData: BaobabHierarchy {
-        buildBaobabHierarchy()
-    }
-    
-    private func buildBaobabHierarchy() -> BaobabHierarchy {
-        guard totalSize > 0 else { return BaobabHierarchy(levels: []) }
+    private var currentItems: [FolderItem] {
+        guard !items.isEmpty else { return [] }
         
-        if let currentRoot = currentRoot {
-            // Drilling down into a specific directory
-            return buildHierarchyFromRoot(currentRoot)
-        } else {
-            // Show main directory structure
-            return buildMainHierarchy()
+        if let current = currentPath.last {
+            // Safely access children with validation
+            let childItems = current.children.compactMap { child -> FolderItem? in
+                guard child.size > 0,
+                      !child.name.isEmpty,
+                      !child.path.isEmpty else {
+                    return nil
+                }
+                return child
+            }
+            
+            if childItems.isEmpty {
+                return items.compactMap { item -> FolderItem? in
+                    guard item.size > 0,
+                          !item.name.isEmpty,
+                          !item.path.isEmpty else {
+                        return nil
+                    }
+                    return item
+                }
+            }
+            return childItems
+        }
+        
+        return items.compactMap { item -> FolderItem? in
+            guard item.size > 0,
+                  !item.name.isEmpty,
+                  !item.path.isEmpty else {
+                return nil
+            }
+            return item
         }
     }
     
-    private func buildMainHierarchy() -> BaobabHierarchy {
-        var levels: [BaobabRingLevel] = []
+    private var currentTotalSize: Int64 {
+        currentPath.last?.size ?? totalSize
+    }
+    
+    private var hierarchyData: [RingLevel] {
+        buildHierarchy()
+    }
+    
+    private func buildHierarchy() -> [RingLevel] {
+        let maxDepth = 3
+        var levels: [RingLevel] = []
         
-        // Level 0: Root directories (first ring)
-        var segments: [BaobabSegment] = []
+        // First ring: Current level items
+        levels.append(buildRingLevel(items: currentItems, depth: 0, totalSize: currentTotalSize))
+        
+        // Additional rings: Show children of larger directories (safely)
+        var currentLevelItems = currentItems.filter { item in
+            item.isDirectory && item.size > 0 && !item.children.isEmpty
+        }
+        
+        for depth in 1..<maxDepth {
+            guard !currentLevelItems.isEmpty else { break }
+            
+            var nextLevelSegments: [RingSegment] = []
+            
+            for parentItem in currentLevelItems {
+                guard parentItem.size > 0 else { continue }
+                
+                let parentProportion = Double(parentItem.size) / Double(currentTotalSize)
+                let parentSpan = parentProportion * 360.0
+                
+                // Only show children if parent is significant enough
+                guard parentSpan > 10.0 else { continue }
+                
+                let childSegments = buildChildSegments(
+                    parent: parentItem,
+                    parentSpan: parentSpan,
+                    depth: depth,
+                    totalSize: currentTotalSize
+                )
+                
+                nextLevelSegments.append(contentsOf: childSegments)
+            }
+            
+            if !nextLevelSegments.isEmpty {
+                levels.append(RingLevel(depth: depth, segments: nextLevelSegments))
+                currentLevelItems = nextLevelSegments.compactMap { segment -> FolderItem? in
+                    guard segment.item.isDirectory,
+                          segment.item.size > 0,
+                          !segment.item.children.isEmpty else { return nil }
+                    
+                    let itemProportion = Double(segment.item.size) / Double(currentTotalSize) * 360.0
+                    return itemProportion > 5.0 ? segment.item : nil
+                }
+            } else {
+                break
+            }
+        }
+        
+        return levels
+    }
+    
+    private func buildRingLevel(items: [FolderItem], depth: Int, totalSize: Int64) -> RingLevel {
+        var segments: [RingSegment] = []
         var currentAngle: Double = 0
         
-        let sortedItems = items.sorted { $0.size > $1.size }.prefix(15)
+        guard !items.isEmpty, totalSize > 0 else {
+            return RingLevel(depth: depth, segments: [])
+        }
         
-        for (index, item) in sortedItems.enumerated() {
+        // Filter out any potentially problematic items before sorting
+        let validItems = items.compactMap { item -> FolderItem? in
+            // Validate that the item has proper data
+            guard item.size >= 0,
+                  !item.name.isEmpty,
+                  !item.path.isEmpty else {
+                return nil
+            }
+            return item
+        }
+
+        guard !validItems.isEmpty else {
+            return RingLevel(depth: depth, segments: [])
+        }
+
+        // CRASH FIX: Use array-based sorting to avoid stack overflow
+        // Convert to array of tuples to avoid accessing potentially deallocated objects
+        let itemsWithSizes = validItems.map { ($0, $0.size) }
+
+        // Sort using the captured sizes
+        let sortedPairs = itemsWithSizes.sorted { lhs, rhs in
+            return lhs.1 > rhs.1  // Compare by size only
+        }
+
+        // Extract the sorted items
+        let sortedItems = sortedPairs.map { $0.0 }
+        
+        let limitedItems = Array(sortedItems.prefix(20))
+        
+        for item in limitedItems {
             guard item.size > 0 else { continue }
             
             let proportion = Double(item.size) / Double(totalSize)
             let angleSpan = proportion * 360.0
             
-            guard angleSpan > 1.0 else { continue }
+            guard angleSpan > 0.5, angleSpan.isFinite else { continue }
             
-            let segment = BaobabSegment(
+            let segment = RingSegment(
                 item: item,
                 startAngle: currentAngle,
                 endAngle: currentAngle + angleSpan,
-                totalSize: totalSize,
-                color: generateColorForDirectory(item.name, level: 0),
-                path: [item]
+                color: colorForItem(item, depth: depth),
+                depth: depth
             )
             
             segments.append(segment)
             currentAngle += angleSpan
         }
         
-        levels.append(BaobabRingLevel(depth: 0, segments: segments))
-        
-        // Level 1: Simulate subdirectories for major folders
-        buildSimulatedSubdirectories(parentSegments: segments, level: 1, levels: &levels)
-        
-        return BaobabHierarchy(levels: levels)
+        return RingLevel(depth: depth, segments: segments)
     }
     
-    private func buildHierarchyFromRoot(_ root: FolderItem) -> BaobabHierarchy {
-        var levels: [BaobabRingLevel] = []
+    private func buildChildSegments(parent: FolderItem, parentSpan: Double, depth: Int, totalSize: Int64) -> [RingSegment] {
+        var segments: [RingSegment] = []
+        var currentAngle: Double = 0
         
-        // Center: the root directory
-        levels.append(BaobabRingLevel(
-            depth: 0,
-            segments: [BaobabSegment(
-                item: root,
-                startAngle: 0,
-                endAngle: 360,
-                totalSize: root.size,
-                color: generateColorForDirectory(root.name, level: 0),
-                path: [root]
-            )]
-        ))
-        
-        // Ring 1: Children of root
-        if !root.children.isEmpty {
-            buildLevelFromItems(root.children, parentAngle: 0, parentSpan: 360, parentSize: root.size, level: 1, levels: &levels, maxItems: 15)
+        guard parent.size > 0, !parent.children.isEmpty else {
+            return []
         }
         
-        return BaobabHierarchy(levels: levels)
-    }
-    
-    private func buildSimulatedSubdirectories(parentSegments: [BaobabSegment], level: Int, levels: inout [BaobabRingLevel]) {
-        guard level < 3 else { return } // Limit depth
+        // CRASH FIX: Safer sorting with memory optimization
+        let childrenWithSizes = parent.children.map { ($0, $0.size) }
+        let sortedPairs = childrenWithSizes.sorted { $0.1 > $1.1 }
+        let sortedChildren = Array(sortedPairs.map { $0.0 }.prefix(10))
+        let parentStartAngle = findParentStartAngle(for: parent, in: hierarchyData)
         
-        var childSegments: [BaobabSegment] = []
-        
-        for parentSegment in parentSegments {
-            // Only create subdirectories for larger directories
-            guard parentSegment.angleSpan > 15.0 else { continue }
+        for child in sortedChildren {
+            guard child.size > 0 else { continue }
             
-            let subdirCount = Int.random(in: 2...6) // Simulate 2-6 subdirectories
-            let anglePerSubdir = parentSegment.angleSpan / Double(subdirCount)
+            let childProportion = Double(child.size) / Double(parent.size)
+            let childSpan = childProportion * parentSpan
             
-            for i in 0..<subdirCount {
-                let startAngle = parentSegment.startAngle + Double(i) * anglePerSubdir
-                let endAngle = startAngle + anglePerSubdir
-                
-                // Create simulated subdirectory
-                let subdirName = generateSubdirName(for: parentSegment.item.name, index: i)
-                let subdirSize = Int64(Double(parentSegment.item.size) * (0.1 + Double.random(in: 0...0.4)))
-                
-                let subdirItem = FolderItem(
-                    name: subdirName,
-                    path: "\(parentSegment.item.path)/\(subdirName)",
-                    size: subdirSize,
-                    isDirectory: true,
-                    itemCount: Int.random(in: 5...500),
-                    lastModified: Date()
-                )
-                
-                let childSegment = BaobabSegment(
-                    item: subdirItem,
-                    startAngle: startAngle,
-                    endAngle: endAngle,
-                    totalSize: parentSegment.item.size,
-                    color: generateColorForDirectory(subdirName, level: level, parentColor: parentSegment.color),
-                    path: parentSegment.path + [subdirItem]
-                )
-                
-                childSegments.append(childSegment)
-            }
-        }
-        
-        if !childSegments.isEmpty {
-            levels.append(BaobabRingLevel(depth: level, segments: childSegments))
+            guard childSpan > 0.5 else { continue }
             
-            // Recurse for next level if we have significant segments
-            let significantSegments = childSegments.filter { $0.angleSpan > 10.0 }
-            if !significantSegments.isEmpty {
-                buildSimulatedSubdirectories(parentSegments: significantSegments, level: level + 1, levels: &levels)
-            }
-        }
-    }
-    
-    private func buildLevelFromItems(_ items: [FolderItem], parentAngle: Double, parentSpan: Double, parentSize: Int64, level: Int, levels: inout [BaobabRingLevel], maxItems: Int) {
-        var segments: [BaobabSegment] = []
-        var currentAngle = parentAngle
-        
-        let sortedItems = items.sorted { $0.size > $1.size }.prefix(maxItems)
-        
-        for (index, item) in sortedItems.enumerated() {
-            guard item.size > 0 else { continue }
-            
-            let proportion = Double(item.size) / Double(parentSize)
-            let angleSpan = proportion * parentSpan
-            
-            guard angleSpan > 1.0 else { continue }
-            
-            let segment = BaobabSegment(
-                item: item,
-                startAngle: currentAngle,
-                endAngle: currentAngle + angleSpan,
-                totalSize: parentSize,
-                color: generateColorForDirectory(item.name, level: level),
-                path: [item]
+            let segment = RingSegment(
+                item: child,
+                startAngle: parentStartAngle + currentAngle,
+                endAngle: parentStartAngle + currentAngle + childSpan,
+                color: colorForItem(child, depth: depth, parentItem: parent),
+                depth: depth
             )
             
             segments.append(segment)
-            currentAngle += angleSpan
+            currentAngle += childSpan
         }
         
-        if !segments.isEmpty {
-            levels.append(BaobabRingLevel(depth: level, segments: segments))
-        }
+        return segments
     }
     
-    private func generateSubdirName(for parentName: String, index: Int) -> String {
-        let subdirNames: [String: [String]] = [
-            "Users": ["user", "Shared", "Guest", ".localized"],
-            "Applications": ["Utilities", "System Preferences.app", "Safari.app", "Xcode.app", "Terminal.app"],
-            "System": ["Library", "Applications", "Frameworks", "Kernel"],
-            "Library": ["Application Support", "Caches", "Frameworks", "Preferences", "Logs"],
-            "opt": ["homebrew", "local", "X11", "git", "python"],
-            "usr": ["bin", "lib", "share", "local", "include"],
-            "private": ["var", "tmp", "etc", "tftpboot"],
-            "var": ["log", "tmp", "lib", "cache", "run"]
-        ]
-        
-        if let names = subdirNames[parentName], index < names.count {
-            return names[index]
+    private func findParentStartAngle(for item: FolderItem, in levels: [RingLevel]) -> Double {
+        for level in levels {
+            if let segment = level.segments.first(where: { $0.item.id == item.id }) {
+                return segment.startAngle
+            }
         }
-        
-        return "folder\(index + 1)"
+        return 0
     }
     
-    private func generateColorForDirectory(_ name: String, level: Int, parentColor: Color? = nil) -> Color {
-        // Generate consistent colors based on directory name
-        let colorMap: [String: Color] = [
-            "Users": .blue,
-            "System": .red,
-            "Applications": .green,
-            "Library": .purple,
-            "opt": .orange,
-            "usr": .yellow,
-            "private": .pink,
-            "var": .cyan,
-            "bin": .mint,
-            "sbin": .indigo,
-            "cores": .brown,
-            "Volumes": .teal
+    private func colorForItem(_ item: FolderItem, depth: Int, parentItem: FolderItem? = nil) -> Color {
+        // Generate more subtle, Baobab-like colors
+        let colorMap: [String: (hue: Double, saturation: Double)] = [
+            "System": (0.0, 0.6),      // Red family
+            "Users": (0.6, 0.5),       // Blue family  
+            "Applications": (0.33, 0.5), // Green family
+            "Library": (0.75, 0.5),    // Purple family
+            "opt": (0.08, 0.6),        // Orange family
+            "usr": (0.15, 0.5),        // Yellow family
+            "private": (0.9, 0.4),     // Pink family
+            "var": (0.5, 0.4),         // Cyan family
+            "bin": (0.4, 0.4),         // Teal family
+            "sbin": (0.65, 0.4),       // Light blue family
         ]
         
-        let baseColor = colorMap[name] ?? Color.gray
+        let baseColor = colorMap[item.name] ?? (hue: Double(abs(item.name.hashValue)) / Double(Int.max), saturation: 0.4)
         
-        if let parent = parentColor, level > 0 {
-            // Create variations of parent color for children
-            return baseColor.opacity(0.7 + Double(level) * 0.1)
-        }
+        // Adjust brightness and saturation based on depth
+        let brightness = max(0.3, 0.8 - Double(depth) * 0.15)
+        let saturation = max(0.2, baseColor.saturation - Double(depth) * 0.1)
         
-        return baseColor.opacity(0.8)
+        return Color(hue: baseColor.hue, saturation: saturation, brightness: brightness)
     }
     
     
     var body: some View {
-        GeometryReader { geometry in
-            let size = min(geometry.size.width, geometry.size.height)
-            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-            let maxRadius = size * 0.45
-            let centerRadius = maxRadius * 0.15
-            
-            ZStack {
-                // Background
-                Circle()
-                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.1))
-                    .frame(width: size * 0.95, height: size * 0.95)
+        // Check if data is invalid and show appropriate content
+        if items.isEmpty || totalSize <= 0 {
+            Text("No data to display")
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            GeometryReader { geometry in
+                let size = min(geometry.size.width, geometry.size.height)
+                let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                let maxRadius = size * 0.45
+                let centerHoleRadius = maxRadius * 0.2  // Create hollow center like Baobab
                 
-                // Render rings from innermost to outermost (authentic Baobab style)
-                ForEach(hierarchyData.levels, id: \.depth) { level in
-                    let ringThickness = (maxRadius - centerRadius) / Double(max(1, hierarchyData.levels.count))
-                    let innerRadius = centerRadius + Double(level.depth) * ringThickness  
-                    let outerRadius = centerRadius + Double(level.depth + 1) * ringThickness
+                ZStack {
+                    // Background circle
+                    Circle()
+                        .fill(Color(NSColor.controlBackgroundColor).opacity(0.05))
+                        .frame(width: size * 0.95, height: size * 0.95)
                     
-                    ForEach(Array(level.segments.enumerated()), id: \.offset) { _, segment in
-                        BaobabRingSegment(
-                            segment: segment,
-                            innerRadius: level.depth == 0 ? 0 : innerRadius,
-                            outerRadius: outerRadius,
-                            center: center,
-                            isSelected: selectedItem?.id == segment.item.id,
-                            isHovered: hoveredItem?.id == segment.item.id
-                        )
-                        .onTapGesture {
-                            handleSegmentTap(segment)
-                        }
-                        .onHover { isHovered in
-                            hoveredItem = isHovered ? segment.item : nil
-                        }
-                    }
-                }
-                
-                // Center label
-                VStack(spacing: 2) {
-                    if let current = currentRoot {
-                        Text(current.name)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .lineLimit(1)
-                        Text(formatBytes(current.size))
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                    } else {
-                        Text("Total")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                        Text(formatBytes(totalSize))
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                    }
-                }
-                .foregroundColor(.primary)
-                
-                // Hover/Selection tooltip
-                if let hovered = hoveredItem ?? selectedItem {
-                    BaobabTooltip(item: hovered)
-                        .offset(x: 0, y: -maxRadius * 0.7)
-                }
-                
-                // Navigation breadcrumb
-                if let currentRoot = currentRoot {
-                    VStack {
-                        HStack {
-                            Button("← Back") {
-                                navigateUp()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.caption)
-                            
-                            Text("/" + currentRoot.name)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        .padding(6)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .shadow(radius: 2)
+                    // Render rings with proper hollow center
+                    ForEach(Array(hierarchyData.enumerated()), id: \.offset) { levelIndex, level in
+                        let ringThickness = (maxRadius - centerHoleRadius) / Double(max(1, hierarchyData.count))
+                        let innerRadius = centerHoleRadius + Double(levelIndex) * ringThickness
+                        let outerRadius = centerHoleRadius + Double(levelIndex + 1) * ringThickness
                         
-                        Spacer()
+                        ForEach(Array(level.segments.enumerated()), id: \.offset) { segmentIndex, segment in
+                            RingSegmentView(
+                                segment: segment,
+                                innerRadius: innerRadius,
+                                outerRadius: outerRadius,
+                                center: center,
+                                isSelected: selectedItem?.id == segment.item.id,
+                                isHovered: hoveredItem?.id == segment.item.id
+                            )
+                            .onTapGesture {
+                                handleSegmentTap(segment)
+                            }
+                            .onHover { isHovered in
+                                hoveredItem = isHovered ? segment.item : nil
+                            }
+                        }
                     }
-                    .padding(.top, 8)
+                
+                    // Center hole with label
+                    Circle()
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .frame(width: centerHoleRadius * 2, height: centerHoleRadius * 2)
+                        .overlay(
+                            VStack(spacing: 2) {
+                                if let current = currentPath.last {
+                                    Text(current.name)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                    Text(formatBytes(current.size))
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                } else {
+                                    Text("Computer")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                    Text(formatBytes(totalSize))
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                }
+                            }
+                            .foregroundColor(.primary)
+                            .padding(8)
+                        )
+                    
+                    // Hover/Selection tooltip
+                    if let hovered = hoveredItem ?? selectedItem {
+                        TooltipView(item: hovered)
+                            .offset(x: 0, y: -maxRadius * 0.7)
+                    }
+                    
+                    // Navigation breadcrumb
+                    if !currentPath.isEmpty {
+                        VStack {
+                            HStack {
+                                Button("← Back") {
+                                    navigateUp()
+                                }
+                                .buttonStyle(.plain)
+                                .font(.caption)
+                                
+                                Text("/" + currentPath.map { $0.name }.joined(separator: "/"))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .padding(6)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .shadow(radius: 2)
+                            
+                            Spacer()
+                        }
+                        .padding(.top, 8)
+                    }
                 }
+                .onTapGesture {
+                    selectedItem = nil
+                }
+                .animation(.easeInOut(duration: 0.3), value: hierarchyData.count)
             }
         }
-        .onTapGesture {
-            selectedItem = nil
-        }
-        .animation(.easeInOut(duration: 0.3), value: hierarchyData.levels.count)
     }
     
-    private func handleSegmentTap(_ segment: BaobabSegment) {
+    private func handleSegmentTap(_ segment: RingSegment) {
         if selectedItem?.id == segment.item.id {
             // Double-tap behavior: drill down if it's a directory
-            if segment.item.isDirectory {
+            if segment.item.isDirectory && !segment.item.children.isEmpty {
                 withAnimation(.easeInOut(duration: 0.4)) {
-                    currentRoot = segment.item
+                    currentPath.append(segment.item)
                     selectedItem = nil
                 }
             }
@@ -333,7 +366,9 @@ struct RingsChart: View {
     
     private func navigateUp() {
         withAnimation(.easeInOut(duration: 0.4)) {
-            currentRoot = nil // For now, just go back to root
+            if !currentPath.isEmpty {
+                currentPath.removeLast()
+            }
             selectedItem = nil
         }
     }
@@ -353,36 +388,27 @@ struct RingsChart: View {
 
 // MARK: - Data Structures
 
-struct BaobabHierarchy {
-    let levels: [BaobabRingLevel]
-}
-
-struct BaobabRingLevel {
+struct RingLevel {
     let depth: Int
-    var segments: [BaobabSegment]
+    let segments: [RingSegment]
 }
 
-struct BaobabSegment {
+struct RingSegment {
     let item: FolderItem
     let startAngle: Double
     let endAngle: Double
-    let totalSize: Int64
     let color: Color
-    let path: [FolderItem] // Full path from root to this item
+    let depth: Int
     
     var angleSpan: Double {
         endAngle - startAngle
-    }
-    
-    var proportion: Double {
-        Double(item.size) / Double(totalSize)
     }
 }
 
 // MARK: - Visual Components
 
-struct BaobabRingSegment: View {
-    let segment: BaobabSegment
+struct RingSegmentView: View {
+    let segment: RingSegment
     let innerRadius: Double
     let outerRadius: Double
     let center: CGPoint
@@ -394,74 +420,63 @@ struct BaobabRingSegment: View {
             let startAngle = Angle(degrees: segment.startAngle - 90) // Start from top
             let endAngle = Angle(degrees: segment.endAngle - 90)
             
-            if innerRadius == 0 {
-                // Center circle
-                path.addArc(
-                    center: center,
-                    radius: outerRadius,
-                    startAngle: startAngle,
-                    endAngle: endAngle,
-                    clockwise: false
-                )
-                path.addLine(to: center)
-            } else {
-                // Ring segment
-                path.addArc(
-                    center: center,
-                    radius: outerRadius,
-                    startAngle: startAngle,
-                    endAngle: endAngle,
-                    clockwise: false
-                )
-                
-                path.addArc(
-                    center: center,
-                    radius: innerRadius,
-                    startAngle: endAngle,
-                    endAngle: startAngle,
-                    clockwise: true
-                )
-                
-                path.closeSubpath()
-            }
+            // Ring segment with hollow center
+            path.addArc(
+                center: center,
+                radius: outerRadius,
+                startAngle: startAngle,
+                endAngle: endAngle,
+                clockwise: false
+            )
+            
+            path.addArc(
+                center: center,
+                radius: innerRadius,
+                startAngle: endAngle,
+                endAngle: startAngle,
+                clockwise: true
+            )
+            
+            path.closeSubpath()
         }
-        .fill(segment.color.opacity(opacity))
+        .fill(segment.color.opacity(fillOpacity))
         .stroke(strokeColor, lineWidth: strokeWidth)
-        .scaleEffect(isSelected ? 1.03 : (isHovered ? 1.01 : 1.0))
+        .scaleEffect(isSelected ? 1.02 : (isHovered ? 1.01 : 1.0))
         .animation(.easeInOut(duration: 0.15), value: isSelected)
         .animation(.easeInOut(duration: 0.1), value: isHovered)
     }
     
-    private var opacity: Double {
-        if isSelected { return 0.95 }
-        if isHovered { return 0.85 }
-        return 0.75
+    private var fillOpacity: Double {
+        if isSelected { return 0.9 }
+        if isHovered { return 0.8 }
+        return 0.7
     }
     
     private var strokeColor: Color {
         if isSelected { return .primary }
-        if isHovered { return .primary.opacity(0.3) }
-        return .primary.opacity(0.1)
+        if isHovered { return .primary.opacity(0.4) }
+        return Color(NSColor.separatorColor).opacity(0.3)
     }
     
     private var strokeWidth: Double {
         if isSelected { return 1.5 }
-        if isHovered { return 1.0 }
-        return 0.5
+        if isHovered { return 0.8 }
+        return 0.3
     }
 }
 
-struct BaobabTooltip: View {
+struct TooltipView: View {
     let item: FolderItem
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(item.name)
                 .font(.headline)
                 .lineLimit(2)
+                .multilineTextAlignment(.leading)
             
             HStack(spacing: 12) {
-                Text(item.formattedSize)
+                Text(formatBytes(item.size))
                     .font(.subheadline)
                     .fontWeight(.medium)
                 
@@ -476,23 +491,38 @@ struct BaobabTooltip: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(8)
+        .padding(10)
         .background(Color(NSColor.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false
+        formatter.includesUnit = true
+        formatter.includesCount = true
+        formatter.allowedUnits = [.useAll]
+        formatter.formattingContext = .standalone
+        formatter.zeroPadsFractionDigits = false
+        return formatter.string(fromByteCount: bytes).replacingOccurrences(of: ",", with: "")
     }
 }
 
 #Preview {
     RingsChart(
         items: [
-            FolderItem(name: "Applications", path: "/Applications", size: 15000000000, isDirectory: true, itemCount: 100, lastModified: Date()),
-            FolderItem(name: "Users", path: "/Users", size: 12000000000, isDirectory: true, itemCount: 50, lastModified: Date()),
-            FolderItem(name: "System", path: "/System", size: 8000000000, isDirectory: true, itemCount: 30, lastModified: Date()),
-            FolderItem(name: "Library", path: "/Library", size: 4000000000, isDirectory: true, itemCount: 200, lastModified: Date()),
-            FolderItem(name: "private", path: "/private", size: 2000000000, isDirectory: true, itemCount: 80, lastModified: Date()),
+            FolderItem(name: "System", path: "/System", size: 671500000000, isDirectory: true, itemCount: 3971545, lastModified: Date()),
+            FolderItem(name: "Users", path: "/Users", size: 396200000000, isDirectory: true, itemCount: 2454487, lastModified: Date()),
+            FolderItem(name: "opt", path: "/opt", size: 194600000000, isDirectory: true, itemCount: 174089, lastModified: Date()),
+            FolderItem(name: "Applications", path: "/Applications", size: 36000000000, isDirectory: true, itemCount: 411709, lastModified: Date()),
+            FolderItem(name: "usr", path: "/usr", size: 10700000000, isDirectory: true, itemCount: 269727, lastModified: Date()),
+            FolderItem(name: "private", path: "/private", size: 4400000000, isDirectory: true, itemCount: 7146, lastModified: Date()),
+            FolderItem(name: "Library", path: "/Library", size: 4000000000, isDirectory: true, itemCount: 98859, lastModified: Date()),
         ],
-        totalSize: 41000000000
+        totalSize: 1317400000000
     )
-    .frame(width: 500, height: 500)
+    .frame(width: 600, height: 600)
+    .background(Color(NSColor.controlBackgroundColor))
 }
