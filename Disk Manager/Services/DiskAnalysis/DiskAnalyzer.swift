@@ -61,8 +61,6 @@ class DiskAnalyzer: ObservableObject {
     private var totalBytesProcessed: Int64 = 0
     private var progressModel = RateModel()
     private var lastProgressUpdate: Date = Date()
-    private var seenFileIDs = ShardedFileIDSet(shardCount: 16)
-    private let firmlinkResolver = FirmlinkResolver()
     
     // HYPER: Ultra-fast scanner using getattrlistbulk
     private let hyperScanner = HyperScanner()
@@ -182,7 +180,7 @@ class DiskAnalyzer: ObservableObject {
         }
         
         // For root directory scan, request full disk access
-        var scanPath = firmlinkResolver.canonicalize(path)
+        var scanPath = path
         
         if path == "/" {
             if !hasFullDiskAccess() {
@@ -195,7 +193,6 @@ class DiskAnalyzer: ObservableObject {
         }
         
         // Reset dedupe set for this scan
-        seenFileIDs = ShardedFileIDSet(shardCount: 16)
         
         scanTask = Task { [weak self] in
             guard let self = self else { return }
@@ -320,7 +317,6 @@ class DiskAnalyzer: ObservableObject {
             self.totalFilesProcessed = 0
             self.totalBytesProcessed = 0
             self.lastProgressUpdate = Date()
-            self.seenFileIDs = ShardedFileIDSet(shardCount: 16)
         }
         
         // Enumerate accessible top-level directories with better error handling
@@ -807,7 +803,7 @@ class DiskAnalyzer: ObservableObject {
         // PARALLEL: Start pre-calculating the next directory size while we analyze this one
         if let nextPath = nextPath, sizeCache[nextPath] == nil, sizePrecalculationTasks[nextPath] == nil {
             let capturedNextPath = nextPath // Capture for concurrent access
-            sizePrecalculationTasks[nextPath] = Task { [weak self] in
+            sizePrecalculationTasks[capturedNextPath] = Task { [weak self] in
                 let size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: capturedNextPath)
                 await MainActor.run { [weak self] in
                     self?.sizeCache[capturedNextPath] = size
@@ -838,8 +834,8 @@ class DiskAnalyzer: ObservableObject {
             var itemsProcessed = 0
             var lastProgressUpdate = 0
             // Match fast pass deduplication behavior
-            let localSeen = ShardedFileIDSet(shardCount: 16)
-            
+            var localSeen = Set<Data>()
+
             while let item = enumerator.nextObject() {
                 guard let url = item as? URL else { continue }
                 do {
@@ -848,7 +844,7 @@ class DiskAnalyzer: ObservableObject {
                     if rv.isRegularFile == true {
                         // Deduplicate hard-links to match fast pass behavior
                         if let id = rv.fileResourceIdentifier as? Data {
-                            if !localSeen.insert(id) { continue }
+                            if !localSeen.insert(id).inserted { continue }
                         }
 
                         let sz = Int64(rv.totalFileAllocatedSize ?? rv.fileAllocatedSize ?? 0)
@@ -1031,118 +1027,25 @@ class DiskAnalyzer: ObservableObject {
     
     // MARK: - Enhanced Memory Management
     
-    /// Enhanced scanning with better memory management
-    private func performOptimizedScan(path: String) async -> [FolderItem] {
-        return await asyncAutoreleasePool {
-            // Use the hyper scanner for maximum performance
-            let hyperResult = await self.hyperScanner.scan(
-                url: URL(fileURLWithPath: path)
-            ) { [weak self] progress in
-                Task { @MainActor in
-                    self?.scanProgressPercentage = progress.fractionCompleted * 100.0
-                    self?.scanProgress = "Scanning: \(progress.currentPath)"
-                    self?.totalDiskScannedBytes = progress.scannedBytes
-                    self?.overallProgressPercentage = progress.fractionCompleted * 100.0
-                }
-            }
-
-            // Convert HyperScanItem to FolderItem
-            return hyperResult.children?.map { $0.toFolderItem() } ?? []
-        }
-    }
-    
     public nonisolated static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
         return await Task.detached {
             var totalSize: Int64 = 0
-            var fileCount: Int = 0
-            var errorCount: Int = 0
-            let localSeen = ShardedFileIDSet(shardCount: 16)
-            
-            // Try to use optimized bulk scanning first
-            do {
-                let dirFd = open(path, O_RDONLY)
-                if dirFd >= 0 {
-                    defer { close(dirFd) }
-                    
-                    // Use the fast getattrlistbulk syscall for immediate children
-                    let scanEntries = try bulkScanDirectoryOptimized(dirFd: dirFd)
-                    let entries = scanEntries.map { entry in
-                        DirectoryEntry(
-                            name: entry.name,
-                            isDir: entry.isDir,
-                            allocSize: entry.allocSize,
-                            deviceId: entry.deviceId,
-                            inode: entry.inode
-                        )
-                    }
-                    
-                    for entry in entries {
-                        if !entry.isDir {
-                            fileCount += 1
-                            // Use device+inode for deduplication - convert to Data
-                            var devIno = FileDeviceInode(dev: entry.deviceId, ino: entry.inode)
-                            let devInoData = withUnsafeBytes(of: &devIno) { Data($0) }
-                            if localSeen.insert(devInoData) {
-                                totalSize += entry.allocSize
-                            }
-                        } else {
-                            // Recursively scan subdirectories
-                            let subPath = path.hasSuffix("/") ? path + entry.name : path + "/" + entry.name
-                            let subSize = await getDirectoryTotalSizeFast(path: subPath)
-                            totalSize += subSize
-                        }
-                    }
-                    
-                    return totalSize
-                } else {
-                    throw NSError(domain: "FileSystem", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Cannot open directory"])
-                }
-            } catch {
-                // Fallback to FileManager if bulk scan fails
-                do {
-                    let keys: Set<URLResourceKey> = [
-                        .isRegularFileKey, .isSymbolicLinkKey, .isDirectoryKey,
-                        .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-                        .fileResourceIdentifierKey
-                    ]
-                    
-                    let contentsData = try FileManager.default.contentsOfDirectory(
-                        at: URL(fileURLWithPath: path),
-                        includingPropertiesForKeys: Array(keys),
-                        options: [.skipsPackageDescendants]
-                    )
-                    
-                    for url in contentsData {
-                        do {
-                            let rv = try url.resourceValues(forKeys: keys)
-                            
-                            if rv.isSymbolicLink == true { continue }
-                            
-                            if rv.isDirectory == true {
-                                let subSize = await getDirectoryTotalSizeFast(path: url.path)
-                                totalSize += subSize
-                            } else if rv.isRegularFile == true {
-                                fileCount += 1
-                                
-                                // Deduplicate hard-links
-                                if let id = rv.fileResourceIdentifier as? Data {
-                                    if !localSeen.insert(id) { continue }
-                                }
-                                
-                                let sz = Int64(rv.totalFileAllocatedSize ?? rv.fileAllocatedSize ?? 0)
-                                totalSize += sz
-                            }
-                        } catch {
-                            errorCount += 1
-                            continue
-                        }
-                    }
-                    
-                    return totalSize
-                } catch {
-                    return 0
+
+            // Simple FileManager enumeration for total size
+            let enumerator = FileManager.default.enumerator(
+                at: URL(fileURLWithPath: path),
+                includingPropertiesForKeys: [.totalFileAllocatedSizeKey],
+                options: [.skipsPackageDescendants, .skipsHiddenFiles]
+            )
+
+            while let url = enumerator?.nextObject() as? URL {
+                if let resourceValues = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]),
+                   let size = resourceValues.totalFileAllocatedSize {
+                    totalSize += Int64(size)
                 }
             }
+
+            return totalSize
         }.value
     }
     
@@ -1478,6 +1381,3 @@ class DiskAnalyzer: ObservableObject {
 
 // MARK: - Supporting Types moved to SharedTypes.swift
 
-// Bulk scanning functionality moved to BulkScanningService.swift
-
-// MARK: - Autoreleasepool moved to SharedTypes.swift
