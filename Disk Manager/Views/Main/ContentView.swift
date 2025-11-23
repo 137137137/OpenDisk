@@ -15,11 +15,13 @@ struct ContentView: View {
     enum Tab: String, CaseIterable {
         case analysis = "Analysis"
         case cleanup = "Reset Views"
-        
+        case settings = "Settings"
+
         var icon: String {
             switch self {
             case .analysis: return "chart.pie"
             case .cleanup: return "folder.badge.gearshape"
+            case .settings: return "gearshape"
             }
         }
     }
@@ -95,7 +97,7 @@ struct ContentView: View {
                             Image(systemName: "externaldrive")
                                 .font(.system(size: 48))
                                 .foregroundColor(.secondary)
-                            
+
                             Text("Select a device to analyze")
                                 .font(.headline)
                                 .foregroundColor(.secondary)
@@ -103,9 +105,12 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color(NSColor.controlBackgroundColor))
                     }
-                    
+
                 case .cleanup:
                     DirectoryCleanupView()
+
+                case .settings:
+                    SettingsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

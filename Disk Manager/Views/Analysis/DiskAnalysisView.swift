@@ -185,6 +185,31 @@ struct DiskAnalysisView: View {
                             .listRowInsets(EdgeInsets())
                         }
                         .listStyle(PlainListStyle())
+
+                        // Total bar at the bottom
+                        VStack(spacing: 0) {
+                            Divider()
+
+                            HStack(spacing: 12) {
+                                Text("Total")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.secondary)
+
+                                Spacer()
+
+                                let totalSize = analyzer.rootItems.reduce(0) { $0 + $1.size }
+                                Text(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.primary)
+
+                                Text("(\(analyzer.rootItems.count) items)")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+                        }
                     }
                     .frame(maxWidth: .infinity)
                 }
