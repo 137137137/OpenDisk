@@ -249,6 +249,11 @@ class DiskAnalyzer: ObservableObject {
                 self.currentRootItemsPath = path
                 // Cache the scan results for navigation
                 self.folderTree[path] = items.sorted()
+
+                // IMPORTANT: Cache ALL nested folder contents from HyperScanner
+                // This prevents re-scanning when navigating into folders
+                self.cacheNestedFolderTree(children: items)
+
                 self.totalSize = items.reduce(0) { $0 + $1.size }
                 self.calculatePercentages()
 
