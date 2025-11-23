@@ -39,6 +39,12 @@ struct HyperScanProgress: Sendable {
 
 // MARK: - Core Engine
 
+/// A unique identifier for a file system object (Device + Inode).
+struct FileSystemID: Hashable {
+    let device: dev_t
+    let inode: ino_t
+}
+
 actor HyperScanner {
     private var scannedBytes: Int64 = 0
     private var totalUsedBytes: Int64 = 0
@@ -49,26 +55,24 @@ actor HyperScanner {
     private var startTime = Date()
     private var lastProgressUpdate = Date()
     private var lastConsolePrint = Date()
-    private var visitedPaths: Set<String> = []
-    private var startPath: String = ""
+    
+    // Cycle Detection (The Robust Fix)
+    // We track unique (Device, Inode) pairs for every directory we enter.
+    private var visitedInodes: Set<FileSystemID> = []
     
     // Config
     private let bufferSize = 256 * 1024
     private let aggregationThreshold = 5000
     private let progressUpdateInterval: TimeInterval = 0.1
     private let consolePrintInterval: TimeInterval = 0.5
-
-    // Paths that should never be traversed recursively unless they are the start path
-    private let excludedPaths: Set<String> = [
-        "/Volumes",
-        "/System/Volumes/Data/Volumes",
-        "/dev",
-        "/net",
-        "/home"
+    
+    // User configuration for strictly excluding Volumes if desired
+    private let excludedPathPrefixes: [String] = [
+        "/dev", "/net", "/home", "/private/var/vm"
     ]
 
     func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
-        print("[HyperScanner] ===== STARTING SCAN (v9 - Volume Exclusion) =====")
+        print("[HyperScanner] ===== STARTING SCAN (v11 - Inode Cycle Detection) =====")
         self.onProgress = onProgress
         self.totalUsedBytes = getVolumeUsedSize(for: url)
         self.scannedBytes = 0
@@ -76,54 +80,74 @@ actor HyperScanner {
         self.startTime = Date()
         self.lastProgressUpdate = Date()
         self.lastConsolePrint = Date()
-        self.visitedPaths.removeAll()
-        self.startPath = url.resolvingSymlinksInPath().path
+        self.visitedInodes.removeAll()
 
         if url.path == "/" {
             return await scanRootWithFileManager(url: url)
         }
 
-        return await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent, depth: 0)
+        return await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent)
     }
 
-    private func scanDirectoryOptimized(path: String, name: String, depth: Int) async -> HyperScanItem {
-        // Resolve symlinks to ensure we handle unique paths correctly
-        let realPath = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-        
-        // Cycle detection
-        if visitedPaths.contains(realPath) { 
-            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: []) 
-        }
-        visitedPaths.insert(realPath)
-
-        // Volume Boundary Protection:
-        // If we are not at the start, and we hit a known volume mount point, skip it.
-        if path != startPath && excludedPaths.contains(path) {
-            // Return empty item for skipped volumes
+    private func scanDirectoryOptimized(path: String, name: String) async -> HyperScanItem {
+        // 1. Inode-Based Cycle Detection
+        // Open the directory primarily to identify it.
+        let fd = open(path, O_RDONLY | O_DIRECTORY)
+        guard fd >= 0 else {
+            // Permission denied or not a directory. Fallback if it's strictly permission.
+            if errno == EACCES || errno == EPERM { return await scanWithFileManager(path: path, name: name) }
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
+        
+        // Stat the file descriptor to get the REAL identity of this directory
+        var fileStat = stat()
+        guard fstat(fd, &fileStat) == 0 else {
+            close(fd)
+            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
+        }
+        
+        let fileID = FileSystemID(device: fileStat.st_dev, inode: fileStat.st_ino)
+        
+        // CRITICAL CHECK: Have we visited this physical directory before?
+        if visitedInodes.contains(fileID) {
+            // We have already scanned this exact directory (referenced via a symlink, loop, or mount point).
+            // Skip it to prevent infinite recursion and stack overflow.
+            close(fd)
+            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
+        }
+        
+        // Mark as visited
+        visitedInodes.insert(fileID)
+        
+        // Check for manual exclusions (user preferences)
+        for excluded in excludedPathPrefixes {
+            if path.hasPrefix(excluded) {
+                close(fd)
+                return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
+            }
+        }
+
+        // 2. Scan Logic (Pass the FD to avoid re-opening)
+        // We close FD inside scanDirectoryFull or if we don't proceed.
+        // For the purpose of this clean separation, we will close it here and let scanDirectoryFull re-open 
+        // OR refactor to pass FD. Re-opening is safer for avoiding logic errors in this specific snippet context, 
+        // but `fstat` cost is negligible.
+        close(fd) 
 
         let quickCheck = await quickDirectoryCheck(path: path)
         
+        // Optimization: Aggregate massive generated folders (node_modules, etc.)
         if quickCheck.itemCount > aggregationThreshold && isLikelyGenerated(name: name, itemCount: quickCheck.itemCount) {
              return await createAggregatedItem(path: path, name: name, quickCheck: quickCheck)
         }
 
-        return await scanDirectoryFull(path: path, name: name, depth: depth)
+        return await scanDirectoryFull(path: path, name: name)
     }
 
-    private func scanDirectoryFull(path: String, name: String, depth: Int) async -> HyperScanItem {
-        // Fallback to FileManager for paths we can't open with open() (like some /Volumes roots)
-        // or if we specifically want to avoid traversing deeper into other volumes
-        if path.hasPrefix("/Volumes") && path != "/Volumes" && path.components(separatedBy: "/Volumes").count > 2 {
-             // Logic to handle nested volumes if necessary, or just return empty
-        }
-        
+    private func scanDirectoryFull(path: String, name: String) async -> HyperScanItem {
+        // Re-open is cheap and safe here to ensure clean FD lifecycle management in the loop
         let fd = open(path, O_RDONLY | O_DIRECTORY)
-        guard fd >= 0 else {
-            if errno == EACCES || errno == EPERM { return await scanWithFileManager(path: path, name: name, depth: depth) }
-            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
-        }
+        guard fd >= 0 else { return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: []) }
         defer { close(fd) }
 
         var attrList = attrlist()
@@ -142,8 +166,8 @@ actor HyperScanner {
 
         while true {
             let count = getattrlistbulk(fd, &attrList, buffer, bufferSize, 0)
-            if count == 0 { break }
-            if count < 0 { break }
+            if count == 0 { break } // End of directory
+            if count < 0 { break }  // Error
 
             var ptr = buffer
             for _ in 0..<count {
@@ -152,10 +176,11 @@ actor HyperScanner {
 
                 if entry.name == "." || entry.name == ".." || entry.name == "unknown" { continue }
                 
-                // Construct path safely
                 let fullPath = path == "/" ? "/\(entry.name)" : "\(path)/\(entry.name)"
                 
-                // STOP SCANNING if we encounter the Volumes folder and we aren't explicitly scanning inside it
+                // Volume Boundary Guard
+                // Even with Inode protection, we often don't *want* to traverse into /Volumes
+                // because it scans backup drives which is slow, even if not an infinite loop.
                 if entry.name == "Volumes" && (path == "/" || path == "/System/Volumes/Data") {
                     continue
                 }
@@ -170,11 +195,11 @@ actor HyperScanner {
             }
         }
 
-        // Process subdirectories
-        if depth < 3 && subdirectories.count > 1 {
+        // Process subdirectories - Recursive calls will hit the Inode Check first
+        if subdirectories.count > 1 {
              await withTaskGroup(of: HyperScanItem.self) { group in
                 for (subPath, subName) in subdirectories {
-                    group.addTask { await self.scanDirectoryOptimized(path: subPath, name: subName, depth: depth + 1) }
+                    group.addTask { await self.scanDirectoryOptimized(path: subPath, name: subName) }
                 }
                 for await result in group {
                     localItems.append(result)
@@ -183,7 +208,7 @@ actor HyperScanner {
             }
         } else {
             for (subPath, subName) in subdirectories {
-                let res = await scanDirectoryOptimized(path: subPath, name: subName, depth: depth + 1)
+                let res = await scanDirectoryOptimized(path: subPath, name: subName)
                 localItems.append(res)
                 localSize += res.size
             }
@@ -224,15 +249,15 @@ actor HyperScanner {
         if (returnedCommon & UInt32(ATTR_CMN_OBJTYPE)) != 0 {
             let objType = ptr.load(fromByteOffset: currentOffset, as: UInt32.self)
             currentOffset += 4
-            isDirectory = (objType == 2) // VDIR
-            isRegularFile = (objType == 1) // VREG
+            isDirectory = (objType == 2)
+            isRegularFile = (objType == 1)
         }
 
         // 4. Total Size (Logical)
         var size: Int64 = 0
         if isRegularFile && (returnedFile & UInt32(ATTR_FILE_TOTALSIZE)) != 0 {
             if currentOffset + 8 <= Int(length) {
-                // Safe unaligned load
+                // Safe memcpy for unaligned Int64 access
                 var rawSize: Int64 = 0
                 withUnsafeMutableBytes(of: &rawSize) { sizeBuf in
                     let srcPtr = ptr.advanced(by: currentOffset)
@@ -240,6 +265,7 @@ actor HyperScanner {
                 }
                 currentOffset += 8
                 
+                // Sanity check for corruption
                 if rawSize > 0 && rawSize < 1_000_000_000_000_000 {
                     size = rawSize
                 }
@@ -313,13 +339,13 @@ actor HyperScanner {
         return "📦 \(name) (\(itemCount.formatted()) items)"
     }
 
-    private func scanWithFileManager(path: String, name: String, depth: Int) async -> HyperScanItem {
+    private func scanWithFileManager(path: String, name: String) async -> HyperScanItem {
         var children: [HyperScanItem] = []
         var totalSize: Int64 = 0
         
-        // Prevent FM from wandering into /Volumes
-        if path.hasPrefix("/Volumes") || path.hasPrefix("/System/Volumes/Data/Volumes") {
-             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
+        // Manual exclude check for FM path
+        for excluded in excludedPathPrefixes {
+            if path.hasPrefix(excluded) { return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: []) }
         }
 
         do {
@@ -328,17 +354,15 @@ actor HyperScanner {
                 if itemName.hasPrefix(".") { continue }
                 let fullPath = path + "/" + itemName
                 
-                // Double check names here too
                 if itemName == "Volumes" && (path == "/" || path == "/System/Volumes/Data") { continue }
 
                 var isDir: ObjCBool = false
                 if FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir) {
                     if isDir.boolValue {
-                         if depth < 10 {
-                             let sub = await scanDirectoryOptimized(path: fullPath, name: itemName, depth: depth + 1)
-                             children.append(sub)
-                             totalSize += sub.size
-                         }
+                         // Recursion here also needs Inode check, so we route back to Optimized
+                         let sub = await scanDirectoryOptimized(path: fullPath, name: itemName)
+                         children.append(sub)
+                         totalSize += sub.size
                     } else {
                          if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath), let s = attrs[.size] as? Int64 {
                              children.append(HyperScanItem(name: itemName, path: fullPath, size: s, isDirectory: false, children: nil))
@@ -362,10 +386,10 @@ actor HyperScanner {
         for path in rootPaths {
             guard FileManager.default.fileExists(atPath: path) else { continue }
             
-            // IMPORTANT: Prevent scanning /System/Volumes/Data/Volumes through symlinks
-            if path.contains("/Volumes") { continue }
+            // Explicitly prevent Volumes scan from root logic
+            if path.contains("Volumes") { continue }
             
-            let item = await scanDirectoryOptimized(path: path, name: URL(fileURLWithPath: path).lastPathComponent, depth: 1)
+            let item = await scanDirectoryOptimized(path: path, name: URL(fileURLWithPath: path).lastPathComponent)
             rootChildren.append(item)
             totalSize += item.size
         }

@@ -190,8 +190,12 @@ struct DiskAnalysisView: View {
                     .layoutPriority(1) // Give list priority for space
                     
                     // Vertical divider
-                    Divider()
-                    
+                    // Divider()
+
+                    // DISABLED: Rings chart causing EXC_BAD_ACCESS crashes
+                    // The crash occurs in buildRingLevel when sorting items
+                    // Keeping code commented for future fix
+                    /*
                     // Rings chart (constrained to available space)
                     VStack {
                         RingsChart(
@@ -200,10 +204,11 @@ struct DiskAnalysisView: View {
                         )
                         .aspectRatio(1.0, contentMode: .fit) // Keep it square
                         .clipped() // Prevent any overflow
-                        
+
                     }
                     .frame(minWidth: 300, idealWidth: 400, maxWidth: 450)
                     .padding()
+                    */
                 }
             }
 
