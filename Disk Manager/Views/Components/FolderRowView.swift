@@ -14,6 +14,13 @@ struct FolderRowView: View {
     var body: some View {
         Button(action: onTap) {
             HStack {
+                // Percentage badge - always show exact percentage
+                Text(String(format: "%.1f%%", item.percentage))
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 45, alignment: .trailing)
+
                 Label {
                     HStack {
                         Text(item.name)
@@ -22,14 +29,11 @@ struct FolderRowView: View {
                         Spacer()
 
                         Text(item.formattedSize)
+                            .monospacedDigit()
 
                         Text(item.formattedItemCount + " items")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-
-                        Text(item.relativeModified)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
                     }
                 } icon: {
                     Image(systemName: item.isDirectory ? "folder" : "doc")
