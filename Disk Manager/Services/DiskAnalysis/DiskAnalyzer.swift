@@ -9,6 +9,9 @@ final class DiskAnalyzer: ObservableObject {
     @Published var totalSize: Int64 = 0
     @Published var totalDiskScannedBytes: Int64 = 0
 
+    // Keep the complete tree structure for instant navigation
+    private var completeTree: [FolderItem] = []
+
     // MARK: - Published Properties for Progress (for UI compatibility)
     @Published var isScanning: Bool = false
     @Published var scanProgress: String = ""
@@ -23,13 +26,53 @@ final class DiskAnalyzer: ObservableObject {
 
     // MARK: - State
     private var currentPath: String = ""
+    private var initialScanPath: String = ""
     private var scanTask: Task<Void, Never>?
 
     // MARK: - Public Methods
 
     /// Scan a directory (compatibility method)
     func scanDirectory(_ path: String) async {
-        scanDisk(path: path)
+        // Cancel any existing scan
+        cancelCurrentScan()
+
+        // Store the initial scan path
+        initialScanPath = path
+
+        // Start scan
+        isScanning = true
+        scanProgress = "Preparing high-performance scan..."
+        scanProgressPercentage = 0.0
+        estimatedTimeRemaining = ""
+        filesPerSecond = ""
+        currentScanPath = ""
+
+        // Check Full Disk Access
+        if path == "/" && !hasFullDiskAccess() {
+            scanProgress = "Full Disk Access required. Grant in System Settings > Privacy & Security."
+            scanProgressPercentage = 0
+            isScanning = false
+            return
+        }
+
+        // Perform scan
+        let hyperResult = await performHyperScan(path: path)
+
+        // Process results
+        var items = ScanResultProcessor.convertToFolderItems(hyperResult)
+        items = ScanResultProcessor.filterAndSort(items)
+        ScanResultProcessor.calculatePercentages(for: &items)
+
+        // Store complete tree for instant navigation
+        completeTree = items
+
+        // Cache and display
+        await cacheResults(items, for: path)
+        updateUI(with: items, path: path)
+
+        // Complete scan
+        isScanning = false
+        scanProgressPercentage = 100.0
     }
 
     /// Navigate to a path, using cache if available (synchronous for UI)
@@ -39,79 +82,48 @@ final class DiskAnalyzer: ObservableObject {
             return true
         }
 
-        // Start async navigation in background
+        // Look for the path in the current tree structure - should be instant
+        if let targetItems = findChildrenInTree(for: path) {
+            updateUI(with: targetItems, path: path)
+            return true
+        }
+
+        // Fallback to cache if not found in tree
         Task { @MainActor in
-            await navigateToPathAsync(path)
+            if let cachedItems = await cacheManager.getCachedChildren(for: path), !cachedItems.isEmpty {
+                updateUI(with: cachedItems, path: path)
+            }
         }
 
         return true // Always return true for UI compatibility
     }
 
-    /// Navigate to a path asynchronously
-    private func navigateToPathAsync(_ path: String) async -> Bool {
-        // Check if already showing this path
-        if path == currentPath && !rootItems.isEmpty {
-            return true
+    /// Find children for a path in the current tree structure
+    private func findChildrenInTree(for targetPath: String) -> [FolderItem]? {
+        // Special case: navigating to the initial scan root
+        if targetPath == initialScanPath && !completeTree.isEmpty {
+            return completeTree
         }
 
-        // Try cache first
-        if let cachedItems = await cacheManager.getCachedChildren(for: path), !cachedItems.isEmpty {
-            updateUI(with: cachedItems, path: path)
-            return true
-        }
-
-        // Need fresh scan - do a shallow scan for navigation
-        let hyperResult = await performHyperScan(path: path)
-        var items = ScanResultProcessor.convertToFolderItems(hyperResult)
-        items = ScanResultProcessor.filterAndSort(items)
-
-        if !items.isEmpty {
-            await cacheResults(items, for: path)
-            updateUI(with: items, path: path)
-            return true
-        }
-
-        return false
-    }
-
-    /// Perform a full disk scan
-    func scanDisk(path: String = "/") {
-        cancelCurrentScan()
-
-        scanTask = Task {
-            // Start scan
-            isScanning = true
-            scanProgress = "Preparing high-performance scan..."
-            scanProgressPercentage = 0.0
-            estimatedTimeRemaining = ""
-            filesPerSecond = ""
-            currentScanPath = ""
-
-            // Check Full Disk Access
-            if path == "/" && !hasFullDiskAccess() {
-                scanProgress = "Full Disk Access required. Grant in System Settings > Privacy & Security."
-                scanProgressPercentage = 0
-                isScanning = false
-                return
+        func searchItems(_ items: [FolderItem]) -> [FolderItem]? {
+            for item in items {
+                if item.path == targetPath && item.isDirectory {
+                    return item.children
+                }
+                if item.isDirectory && !item.children.isEmpty {
+                    if let found = searchItems(item.children) {
+                        return found
+                    }
+                }
             }
-
-            // Perform scan
-            let hyperResult = await performHyperScan(path: path)
-
-            // Process results
-            var items = ScanResultProcessor.convertToFolderItems(hyperResult)
-            items = ScanResultProcessor.filterAndSort(items)
-            ScanResultProcessor.calculatePercentages(for: &items)
-
-            // Cache and display
-            await cacheResults(items, for: path)
-            updateUI(with: items, path: path)
-
-            // Complete scan
-            isScanning = false
-            scanProgressPercentage = 100.0
+            return nil
         }
+
+        // Search in the complete tree (has everything from initial scan)
+        return searchItems(completeTree)
     }
+
+
 
     /// Cancel current scan
     func cancelCurrentScan() {
