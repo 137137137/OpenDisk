@@ -41,33 +41,32 @@ struct BreadcrumbBar: View {
     }
 
     var body: some View {
-        HStack {
-            // Breadcrumb path
-            HStack {
-                ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
-                    Button {
-                        if component.name == "Computer" && currentPath != rootPath {
-                            onNavigate(component.path)
-                        } else if component.name == "Computer" && currentPath == rootPath {
-                            onComputerClick()
-                        } else {
-                            onNavigate(component.path)
-                        }
-                    } label: {
-                        Text(component.name)
-                            .foregroundStyle(index == pathComponents.count - 1 ? .primary : .secondary)
+        HStack(spacing: 4) {
+            ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
+                Button {
+                    if component.name == "Computer" && currentPath != rootPath {
+                        onNavigate(component.path)
+                    } else if component.name == "Computer" && currentPath == rootPath {
+                        onComputerClick()
+                    } else {
+                        onNavigate(component.path)
                     }
-                    .buttonStyle(.plain)
+                } label: {
+                    Text(component.name)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
 
-                    if index < pathComponents.count - 1 {
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
+                if index < pathComponents.count - 1 {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .imageScale(.small)
                 }
             }
-
-            Spacer()
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }

@@ -194,17 +194,7 @@ struct DiskAnalysisView: View {
         }
         .navigationTitle(currentPath == rootPath ? "Computer" : URL(fileURLWithPath: currentPath).lastPathComponent)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Refresh") {
-                    Task {
-                        await analyzer.scanDirectory(currentPath)
-                    }
-                }
-                .keyboardShortcut("r", modifiers: .command)
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItemGroup(placement: .principal) {
                 if !analyzer.rootItems.isEmpty {
                     BreadcrumbBar(
                         currentPath: currentPath,
@@ -225,6 +215,17 @@ struct DiskAnalysisView: View {
                         }
                     )
                 }
+            }
+
+            ToolbarItem(placement: .confirmationAction) {
+                Button {
+                    Task {
+                        await analyzer.scanDirectory(currentPath)
+                    }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .keyboardShortcut("r", modifiers: .command)
             }
         }
         .onAppear {
