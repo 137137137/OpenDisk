@@ -32,30 +32,15 @@ class DiskAnalyzer: ObservableObject {
     // Track what path the current rootItems represent
     private var currentRootItemsPath: String = ""
 
-    // Per-directory progress model
-    @Published var currentDirTotalBytes: Int64 = 0
-    @Published var currentDirScannedBytes: Int64 = 0
-    @Published var currentDirPercent: Double = 0.0
-
     // Whole-disk progress model
     @Published var totalDiskBytes: Int64 = 0
     @Published var totalDiskScannedBytes: Int64 = 0
-    @Published var overallProgressPercentage: Double = 0.0
 
     // Real-time cumulative progress tracking (actor for thread safety)
     private let cumulativeCounter = CumulativeCounter()
-    
-    // Legacy properties (keeping for backward compatibility)
-    @Published var scannedBytes: Int64 = 0
-    @Published var totalBytes: Int64 = 0
-    @Published var externalVolumes: [FolderItem] = []
-    
+
     private var scanTask: Task<Void, Never>?
     private var scanStartTime: Date?
-    private var totalFilesProcessed: Int = 0
-    private var totalBytesProcessed: Int64 = 0
-    private var progressModel = RateModel()
-    private var lastProgressUpdate: Date = Date()
     
     // HYPER: Ultra-fast scanner using getattrlistbulk
     private let hyperScanner = HyperScanner()
@@ -66,7 +51,6 @@ class DiskAnalyzer: ObservableObject {
 
     // Pre-calculated directory sizes for instant progress bars
     private var sizeCache: [String: Int64] = [:]
-    private var sizePrecalculationTasks: [String: Task<Int64, Never>] = [:]
 
     
     
@@ -136,17 +120,11 @@ class DiskAnalyzer: ObservableObject {
         currentRootItemsPath = ""
         scanProgressPercentage = 0.0
         estimatedTimeRemaining = ""
-        totalFilesProcessed = 0
-        totalBytesProcessed = 0
         scanStartTime = Date()
-        lastProgressUpdate = Date()
         currentScanPath = ""
         filesPerSecond = ""
-        scannedBytes = 0
-        totalBytes = 0
         totalDiskScannedBytes = 0
         await cumulativeCounter.reset()
-        overallProgressPercentage = 0.0
 
         // Get total USED disk space for accurate progress tracking
         // This matches the sidebar display and what we're actually scanning
@@ -156,18 +134,6 @@ class DiskAnalyzer: ObservableObject {
             // For subdirectory scans, we could get the directory's total size
             // but for now we'll rely on estimates
             totalDiskBytes = 0
-        }
-        
-        // Initialize fresh progress model with better estimates for disk scanning
-        progressModel = RateModel()
-        
-        // Improve initial estimate based on scan type
-        if path == "/" {
-            // Full disk scan - typically 500K to 2M files on macOS systems
-            progressModel.estTotalFiles = 750_000
-        } else {
-            // Directory scan - start with smaller estimate
-            progressModel.estTotalFiles = 50_000
         }
         
         // For root directory scan, request full disk access
@@ -203,9 +169,6 @@ class DiskAnalyzer: ObservableObject {
             ) { progress in
                 Task { @MainActor in
                     self.scanProgressPercentage = progress.fractionCompleted * 100.0
-                    self.scannedBytes = progress.scannedBytes
-                    self.totalBytes = progress.totalUsedBytes
-                    self.overallProgressPercentage = progress.fractionCompleted * 100.0
 
                     let sizeStr = ByteFormatter.formatFileSize(progress.scannedBytes)
                     self.scanProgress = "Scanning: \(sizeStr) (\(progress.itemsScanned.formatted()) items)"
@@ -259,9 +222,6 @@ class DiskAnalyzer: ObservableObject {
                 }
             }
 
-            // Scan external volumes in parallel
-            await self.scanExternalVolumes()
-
             // Start FSEvents monitoring for real-time updates
             if pathToScan != "/" {
                 await self.startFileSystemMonitoring(for: pathToScan)
@@ -306,10 +266,8 @@ class DiskAnalyzer: ObservableObject {
             totalDirectorySize = cachedSize
             let capturedSize = totalDirectorySize
             await MainActor.run { [weak self, capturedSize, folderName, path] in
-                self?.totalBytes = capturedSize
                 self?.scanProgress = "Analyzing \(folderName)"
                 self?.currentScanPath = path
-                self?.scannedBytes = 0
                 self?.scanProgressPercentage = 0.0
             }
         } else {
@@ -317,34 +275,17 @@ class DiskAnalyzer: ObservableObject {
             await MainActor.run { [weak self, folderName, path] in
                 self?.scanProgress = "Getting size of \(folderName)..."
                 self?.currentScanPath = path
-                self?.scannedBytes = 0
-                self?.totalBytes = 0
                 self?.scanProgressPercentage = 0.0
             }
             
             totalDirectorySize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: path)
             sizeCache[path] = totalDirectorySize
             
-            let capturedSize = totalDirectorySize
-            await MainActor.run { [weak self, capturedSize, folderName] in
-                self?.totalBytes = capturedSize
+            await MainActor.run { [weak self, folderName] in
                 self?.scanProgress = "Analyzing \(folderName)"
             }
         }
-        
-        // PARALLEL: Start pre-calculating the next directory size while we analyze this one
-        if let nextPath = nextPath, sizeCache[nextPath] == nil, sizePrecalculationTasks[nextPath] == nil {
-            let capturedNextPath = nextPath // Capture for concurrent access
-            sizePrecalculationTasks[capturedNextPath] = Task { [weak self] in
-                let size = await DiskAnalyzer.getDirectoryTotalSizeFast(path: capturedNextPath)
-                await MainActor.run { [weak self] in
-                    self?.sizeCache[capturedNextPath] = size
-                    self?.sizePrecalculationTasks[capturedNextPath] = nil
-                }
-                return size
-            }
-        }
-        
+
         // STEP 3: Detailed analysis with accurate progress bar using allocated size and URL prefetch
         let keys: Set<URLResourceKey> = [
             .isRegularFileKey, .isSymbolicLinkKey,
@@ -395,17 +336,11 @@ class DiskAnalyzer: ObservableObject {
                             let capturedCumulative = await self.cumulativeCounter.getValue()
 
                             await MainActor.run {
-                                // Update per-directory progress
-                                self.currentDirScannedBytes = capturedSize
-                                self.currentDirTotalBytes = capturedTotal
-                                self.currentDirPercent = capturedPercent
+                                // Update progress
                                 self.scanProgressPercentage = capturedPercent
 
                                 // Update real-time cumulative progress
                                 self.totalDiskScannedBytes = capturedCumulative
-
-                                // Update legacy properties for backward compatibility
-                                self.scannedBytes = capturedSize
                             }
                         }
                     }
@@ -421,16 +356,10 @@ class DiskAnalyzer: ObservableObject {
             let finalTotalSize = max(totalDirectorySize, processedSize)
             let finalCumulative = await self.cumulativeCounter.getValue()
             await MainActor.run {
-                self.currentDirScannedBytes = finalProcessedSize
-                self.currentDirTotalBytes = finalTotalSize
-                self.currentDirPercent = 100.0
                 self.scanProgressPercentage = 100.0
-                
+
                 // Update final cumulative progress
                 self.totalDiskScannedBytes = finalCumulative
-                
-                // Update legacy properties
-                self.scannedBytes = finalProcessedSize
             }
             
             return max(totalDirectorySize, finalProcessedSize) // Return the larger of estimate vs actual
@@ -568,7 +497,7 @@ class DiskAnalyzer: ObservableObject {
     
     // MARK: - External Volumes
     
-    func scanExternalVolumes() async {
+    func scanExternalVolumes() async -> [FolderItem] {
         let volumes = await Task.detached {
             var externalVolumes: [FolderItem] = []
             
@@ -579,11 +508,9 @@ class DiskAnalyzer: ObservableObject {
                 
                 for volumeName in volumeList {
                     let volumePath = volumesPath + "/" + volumeName
-                    
+
                     // Skip system volumes and hidden volumes
-                    if volumeName.hasPrefix(".") ||
-                       volumeName == "Macintosh HD" ||
-                       volumeName.contains("com.apple.TimeMachine") {
+                    if PathFilter.shouldSkipVolume(volumeName) {
                         continue
                     }
                     
@@ -634,72 +561,10 @@ class DiskAnalyzer: ObservableObject {
             
             return externalVolumes.sorted()
         }.value
-        
-        await MainActor.run {
-            self.externalVolumes = volumes
-        }
+
+        return volumes
     }
-    
     // MARK: - Helper Functions
-
-    private nonisolated func isGeneratedDirectory(dirName: String, itemCount: Int) -> Bool {
-        // Performance-based detection - not name based!
-        // Large directories with many items are likely generated
-        if itemCount > 5000 {
-            return true
-        }
-
-        // Common patterns that indicate generated content (but also check item count)
-        let patterns = [
-            "node_modules", ".git", "venv", ".venv", "vendor",
-            "target", "build", "dist", ".next", "Pods", "packages",
-            "bower_components", ".gradle", ".m2", "cargo",
-            "__pycache__", ".pytest_cache", ".tox", "htmlcov",
-            "DerivedData", ".build", ".swiftpm"
-        ]
-
-        // Only treat as generated if it matches pattern AND has many items
-        if patterns.contains(dirName) && itemCount > 100 {
-            return true
-        }
-
-        // Directories starting with . and having many items
-        if dirName.hasPrefix(".") && itemCount > 500 {
-            return true
-        }
-
-        return false
-    }
-
-    private nonisolated func getSmartAggregatedName(dirName: String, itemCount: Int) -> String {
-        let formattedCount = itemCount.formatted()
-
-        // Pattern-based naming for known directories
-        switch dirName {
-        case "node_modules":
-            return "📦 node_modules (\(formattedCount) items)"
-        case ".git":
-            return "🔧 .git (\(formattedCount) objects)"
-        case "venv", ".venv":
-            return "🐍 Python venv (\(formattedCount) files)"
-        case "vendor":
-            return "📚 vendor (\(formattedCount) files)"
-        case "Pods":
-            return "🎯 CocoaPods (\(formattedCount) files)"
-        case "DerivedData":
-            return "🔨 DerivedData (\(formattedCount) files)"
-        case ".build", ".swiftpm":
-            return "🔨 Swift Build (\(formattedCount) files)"
-        default:
-            if dirName.hasPrefix(".") {
-                return "🔒 \(dirName) (\(formattedCount) items)"
-            } else if itemCount > 5000 {
-                return "📊 \(dirName) (\(formattedCount) items - aggregated)"
-            } else {
-                return "\(dirName) (\(formattedCount) items)"
-            }
-        }
-    }
 
     private func hasFullDiskAccess() -> Bool {
         let testPaths = [
@@ -761,11 +626,6 @@ class DiskAnalyzer: ObservableObject {
     func clearAllCaches() {
         folderTree.removeAll()
         sizeCache.removeAll()
-        // Cancel any pending size precalculation tasks
-        for (_, task) in sizePrecalculationTasks {
-            task.cancel()
-        }
-        sizePrecalculationTasks.removeAll()
     }
 
     // Helper function for formatting time intervals

@@ -27,8 +27,7 @@ class DiskSpaceUtility: ObservableObject {
             }
             
             // Scan for external volumes
-            await diskAnalyzer.scanExternalVolumes()
-            let externalVolumes = diskAnalyzer.externalVolumes
+            let externalVolumes = await diskAnalyzer.scanExternalVolumes()
             
             let externalDevices = await withTaskGroup(of: DeviceInfo?.self) { group in
                 var devices: [DeviceInfo] = []
