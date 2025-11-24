@@ -12,6 +12,8 @@ final class DiskAnalyzer: ObservableObject {
 
     // Keep the complete tree structure for instant navigation
     private var completeTree: [FolderItem] = []
+    // V24: Store raw scan data for on-demand conversion
+    private var rawScanData: HyperScanItem?
 
     // MARK: - Published Properties for Progress (for UI compatibility)
     @Published var isScanning: Bool = false
@@ -62,17 +64,34 @@ final class DiskAnalyzer: ObservableObject {
         // Perform scan
         let hyperResult = await performHyperScan(path: path)
 
-        // Process results
-        var items = ScanResultProcessor.convertToFolderItems(hyperResult)
-        items = ScanResultProcessor.filterAndSort(items)
+        // V24: Store raw data for on-demand conversion
+        rawScanData = hyperResult
+
+        // Fast conversion - only convert visible items immediately
+        // Use the optimized toFolderItem() that only processes top 100 items
+        var items = hyperResult.children?.map { $0.toFolderItem() } ?? []
+
+        // Quick filter and sort of just root level
+        items = items.filter { $0.size > 1024 }.sorted { $0.size > $1.size }
         ScanResultProcessor.calculatePercentages(for: &items)
 
-        // Store complete tree for instant navigation
+        // Display immediately (no freeze!)
+        updateUI(with: items, path: path)
+
+        // Store for navigation (lightweight now with only top 100 items per folder)
         completeTree = items
 
-        // Cache and display
-        await cacheResults(items, for: path)
-        updateUI(with: items, path: path)
+        // Optional: Background conversion of full tree (low priority)
+        Task.detached(priority: .utility) {
+            // Convert more data in background for smoother navigation
+            // This happens after UI is already responsive
+            if let fullItems = hyperResult.children {
+                for item in fullItems where item.children?.count ?? 0 > 100 {
+                    // Pre-convert folders with many items
+                    _ = item.toFolderItem()
+                }
+            }
+        }
 
         // Complete scan
         isScanning = false
@@ -117,8 +136,17 @@ final class DiskAnalyzer: ObservableObject {
         func searchItems(_ items: [FolderItem]) -> [FolderItem]? {
             for item in items {
                 if item.path == targetPath && item.isDirectory {
+                    // V24: If children are empty (lazy loading), need to scan that path
+                    if item.children.isEmpty && item.itemCount > 0 {
+                        // Trigger background scan for this specific folder
+                        Task {
+                            await self.scanDirectory(targetPath)
+                        }
+                        return nil // Will be loaded async
+                    }
                     return item.children
                 }
+                // Don't recurse into empty children (they're lazy-loaded)
                 if item.isDirectory && !item.children.isEmpty {
                     if let found = searchItems(item.children) {
                         return found
@@ -233,17 +261,12 @@ final class DiskAnalyzer: ObservableObject {
     }
 
     private func cacheResults(_ items: [FolderItem], for path: String) async {
+        // V24: Only cache top-level items, not the entire tree
+        // This prevents memory bloat and speeds up caching
         await cacheManager.cacheChildren(items, for: path)
 
-        // Also cache all subdirectory children for navigation
-        func cacheRecursively(_ items: [FolderItem]) async {
-            for item in items where item.isDirectory && !item.children.isEmpty {
-                await cacheManager.cacheChildren(item.children, for: item.path)
-                await cacheRecursively(item.children)
-            }
-        }
-
-        await cacheRecursively(items)
+        // Don't recursively cache - items are lazy-loaded now
+        // Deep caching happens on-demand when user navigates
     }
 
     private func hasFullDiskAccess() -> Bool {

@@ -85,7 +85,7 @@ final class HighPerformanceScanEngine {
         self.onProgress = onProgress
     }
 
-    func scan(path: String, name: String) async -> HyperScanItem {
+    func scan(path: String, name: String, parentDevice: dev_t? = nil) async -> HyperScanItem {
         // Check exclusions
         for excluded in excludedPaths {
             if path == excluded || path.hasPrefix(excluded + "/") {
@@ -126,10 +126,15 @@ final class HighPerformanceScanEngine {
         var directFilesSize: Int64 = 0
         var subDirsToScan: [(path: String, name: String)] = []
 
-        // Capture device for inode generation
-        var dirStat = stat()
-        fstat(fd, &dirStat)
-        let device = dirStat.st_dev
+        // V23: Use parent device if provided, else get it once
+        let device: dev_t
+        if let parentDev = parentDevice {
+            device = parentDev
+        } else {
+            var dirStat = stat()
+            fstat(fd, &dirStat)
+            device = dirStat.st_dev
+        }
 
         let isDataVolumeRoot = (path == "/System/Volumes/Data")
 
@@ -188,8 +193,8 @@ final class HighPerformanceScanEngine {
             await withTaskGroup(of: HyperScanItem.self) { group in
                 for (subPath, subName) in subDirsToScan {
                     group.addTask(priority: .high) {
-                        // Recursive call - completely independent!
-                        return await self.scan(path: subPath, name: subName)
+                        // V23: Pass device down to avoid repeated fstat calls
+                        return await self.scan(path: subPath, name: subName, parentDevice: device)
                     }
                 }
 
@@ -205,8 +210,7 @@ final class HighPerformanceScanEngine {
             path: path,
             size: localSize,
             isDirectory: true,
-            children: localItems.sorted { $0.size > $1.size }
-        )
+            children: localItems        )
     }
 
     // Special root scan
@@ -221,6 +225,11 @@ final class HighPerformanceScanEngine {
 
         let skipPaths = Set(["Volumes", ".VolumeIcon.icns", ".file"])
         var directoriesToScan: [(name: String, path: String)] = []
+
+        // V23: Get root device once
+        var rootStat = stat()
+        stat("/", &rootStat)
+        let rootDevice = rootStat.st_dev
 
         for itemName in allRootContents {
             if skipPaths.contains(itemName) { continue }
@@ -240,7 +249,8 @@ final class HighPerformanceScanEngine {
                     if name == "System" {
                         return await self.scanSystemWithoutData()
                     } else {
-                        return await self.scan(path: path, name: name)
+                        // V23: Pass root device down
+                        return await self.scan(path: path, name: name, parentDevice: rootDevice)
                     }
                 }
             }
@@ -258,8 +268,7 @@ final class HighPerformanceScanEngine {
             path: "/",
             size: totalSize,
             isDirectory: true,
-            children: rootChildren.sorted { $0.size > $1.size }
-        )
+            children: rootChildren        )
     }
 
     // Special handler for /System to avoid /System/Volumes/Data
@@ -270,6 +279,11 @@ final class HighPerformanceScanEngine {
         guard let systemContents = try? FileManager.default.contentsOfDirectory(atPath: "/System") else {
             return HyperScanItem(name: "System", path: "/System", size: 0, isDirectory: true, children: [])
         }
+
+        // V23: Get device once for /System
+        var rootStat = stat()
+        stat("/System", &rootStat)
+        let rootDevice = rootStat.st_dev
 
         await withTaskGroup(of: HyperScanItem.self) { group in
             for itemName in systemContents {
@@ -288,7 +302,8 @@ final class HighPerformanceScanEngine {
 
                                     let volumePath = "\(fullPath)/\(volumeName)"
                                     volumeGroup.addTask(priority: .high) {
-                                        return await self.scan(path: volumePath, name: volumeName)
+                                        // V23: Pass device down
+                                        return await self.scan(path: volumePath, name: volumeName, parentDevice: rootDevice)
                                     }
                                 }
 
@@ -306,12 +321,12 @@ final class HighPerformanceScanEngine {
                             path: fullPath,
                             size: volumesSize,
                             isDirectory: true,
-                            children: volumesChildren.sorted { $0.size > $1.size }
-                        )
+                            children: volumesChildren                        )
                     }
                 } else {
                     group.addTask(priority: .high) {
-                        return await self.scan(path: fullPath, name: itemName)
+                        // V23: Pass device down
+                        return await self.scan(path: fullPath, name: itemName, parentDevice: rootDevice)
                     }
                 }
             }
@@ -327,8 +342,7 @@ final class HighPerformanceScanEngine {
             path: "/System",
             size: totalSize,
             isDirectory: true,
-            children: systemChildren.sorted { $0.size > $1.size }
-        )
+            children: systemChildren        )
     }
 
     // Optimized buffer parser - Inline capable
@@ -340,7 +354,7 @@ final class HighPerformanceScanEngine {
         size: Int64,
         fileID: FileSystemID?
     ) {
-        // Use memcpy for unaligned access to avoid crashes
+        // IMPORTANT: Use memcpy for safe unaligned access from getattrlistbulk
         var length: UInt32 = 0
         memcpy(&length, ptr, MemoryLayout<UInt32>.size)
 
@@ -363,7 +377,7 @@ final class HighPerformanceScanEngine {
             let nameLen = Int(nameRef.attr_length) - 1
 
             if nameLen > 0 && nameLen < 1024 { // Sanity check
-                // V22 Optimization: Direct decoding from buffer without Data allocation
+                // Direct decoding from buffer without Data allocation
                 name = String(decoding: UnsafeRawBufferPointer(start: nameDataPtr, count: nameLen), as: UTF8.self)
             }
         }
@@ -467,7 +481,8 @@ final class HighPerformanceScanEngine {
                 await withTaskGroup(of: HyperScanItem.self) { group in
                     for (subPath, subName) in subDirs {
                         group.addTask(priority: .high) {
-                            return await self.scan(path: subPath, name: subName)
+                            // V23: Pass nil for device since FileManager fallback doesn't have it
+                            return await self.scan(path: subPath, name: subName, parentDevice: nil)
                         }
                     }
 
@@ -486,7 +501,6 @@ final class HighPerformanceScanEngine {
             path: path,
             size: localSize,
             isDirectory: true,
-            children: localItems.sorted { $0.size > $1.size }
-        )
+            children: localItems        )
     }
 }
