@@ -99,33 +99,46 @@ actor HyperScanner {
     }
 
     func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
-        // 1. Resource Optimization (V20 - back to working ParallelScanner)
+        // V22: Ultimate performance with OSAllocatedUnfairLock
         optimizeSystemLimits()
 
-        self.onProgress = onProgress
-        self.totalUsedBytes = getVolumeUsedSize(for: url)
-        self.scannedBytes = 0
-        self.itemsScanned = 0
-        self.startTime = Date()
-        self.lastProgressUpdate = Date()
-        self.lastConsolePrint = Date()
-        self.startPath = url.resolvingSymlinksInPath().path
+        // Setup context
+        let context = HPScanContext()
+        context.setTotalBytes(getVolumeUsedSize(for: url))
+        context.reset()
 
-        // Reset parallel scanner
-        parallelScanner.reset()
+        // Create the ENGINE (Non-actor class for maximum parallelization)
+        let engine = HighPerformanceScanEngine(context: context)
 
-        if url.path == "/" {
-            return await scanRootMaxParallel(url: url)
+        // Start a UI update timer loop separately
+        let progressTask = Task { [weak self] in
+            let lastPath = ""
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+                let progress = context.getProgress(currentPath: lastPath)
+                onProgress(progress)
+
+                // Update internal state for compatibility
+                await self?.updateInternalState(bytes: progress.scannedBytes, items: progress.itemsScanned)
+            }
         }
 
-        // Use parallel scanner for non-root paths too
-        return await parallelScanner.parallelScanDirectory(
-            path: url.path,
-            name: url.lastPathComponent,
-            progressCallback: { [weak self] bytes, path in
-                await self?.updateProgress(bytesAdded: bytes, path: path)
-            }
-        )
+        // Run the scan - this runs OFF the actor!
+        let result: HyperScanItem
+        if url.path == "/" {
+            result = await engine.scanRoot()
+        } else {
+            result = await engine.scan(path: url.path, name: url.lastPathComponent)
+        }
+
+        // Stop progress updates
+        progressTask.cancel()
+
+        // Final progress update
+        let finalProgress = context.getProgress(currentPath: url.path)
+        onProgress(finalProgress)
+
+        return result
     }
     
     // V19: Maximize file descriptors and calculate CPU-optimized concurrency
@@ -398,6 +411,12 @@ actor HyperScanner {
                 itemsScanned: itemsScanned
             ))
         }
+    }
+
+    // Update internal state from progress timer
+    private func updateInternalState(bytes: Int64, items: Int) async {
+        self.scannedBytes = bytes
+        self.itemsScanned = items
     }
 
     private func scanWithFileManager(path: String, name: String) async -> HyperScanItem {
