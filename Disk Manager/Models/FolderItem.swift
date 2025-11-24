@@ -15,15 +15,7 @@ struct FolderItem: Identifiable, Comparable, Codable {
     var children: [FolderItem] = []
     
     var formattedSize: String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        formatter.allowsNonnumericFormatting = false
-        formatter.includesUnit = true
-        formatter.includesCount = true
-        formatter.allowedUnits = [.useAll]
-        formatter.formattingContext = .standalone
-        formatter.zeroPadsFractionDigits = false
-        return formatter.string(fromByteCount: size).replacingOccurrences(of: ",", with: "")
+        ByteFormatter.formatFileSize(size).replacingOccurrences(of: ",", with: "")
     }
     
     var formattedItemCount: String {

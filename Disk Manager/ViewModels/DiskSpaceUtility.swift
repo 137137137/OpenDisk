@@ -21,7 +21,7 @@ class DiskSpaceUtility: ObservableObject {
                     path: "/",
                     totalStorage: mainDiskInfo.totalSpace,
                     availableStorage: mainDiskInfo.availableSpace,
-                    subtitle: formatBytes(mainDiskInfo.totalSpace) + " Total"
+                    subtitle: ByteFormatter.formatDecimal(Int64(mainDiskInfo.totalSpace)) + " Total"
                 )
                 deviceList.append(computerDevice)
             }
@@ -37,7 +37,7 @@ class DiskSpaceUtility: ObservableObject {
                     group.addTask {
                         guard let volumeInfo = await self.getDiskSpace(for: volume.path) else { return nil }
                         let subtitle = await MainActor.run {
-                            self.formatBytes(volumeInfo.totalSpace) + " Total"
+                            ByteFormatter.formatDecimal(Int64(volumeInfo.totalSpace)) + " Total"
                         }
                         return DeviceInfo(
                             name: volume.name,
@@ -156,11 +156,5 @@ class DiskSpaceUtility: ObservableObject {
             
             return nil
         }
-    }
-    
-    private func formatBytes(_ bytes: Double) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .decimal
-        return formatter.string(fromByteCount: Int64(bytes))
     }
 }

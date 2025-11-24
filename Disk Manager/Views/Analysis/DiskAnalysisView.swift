@@ -70,7 +70,7 @@ struct DiskAnalysisView: View {
 
                             VStack(spacing: 12) {
                                 HStack(spacing: 8) {
-                                    Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskScannedBytes, countStyle: .file))")
+                                    Text("Scanned: \(ByteFormatter.formatFileSize(analyzer.totalDiskScannedBytes))")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
 
@@ -176,7 +176,7 @@ struct DiskAnalysisView: View {
                                 Spacer()
 
                                 let totalSize = analyzer.rootItems.reduce(0) { $0 + $1.size }
-                                Text(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))
+                                Text(ByteFormatter.formatFileSize(totalSize))
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
 

@@ -283,7 +283,6 @@ actor HyperScanner {
                             }
                         } else {
                             // Fallback to sequential if we are saturated
-                            let result = await self.scanDirectoryOptimized(path: subPath, name: subName)
                             activeTaskCount -= 1 // Since we are counting 'completed' in the group loop, adjust logic?
                             // Actually, strictly inside TaskGroup is tricky for counters.
                             // Simplified: We just add the result to items.
@@ -393,7 +392,7 @@ actor HyperScanner {
         
         if now.timeIntervalSince(lastConsolePrint) >= consolePrintInterval {
             lastConsolePrint = now
-            let sizeStr = ByteCountFormatter.string(fromByteCount: scannedBytes, countStyle: .file)
+            let sizeStr = ByteFormatter.formatFileSize(scannedBytes)
             let elapsed = abs(startTime.timeIntervalSinceNow)
             let speed = elapsed > 0 ? Double(itemsScanned) / elapsed : 0
             print("[STATUS] Total: \(sizeStr) | Files: \(itemsScanned) | Speed: \(Int(speed))/s | Current: \(path)")

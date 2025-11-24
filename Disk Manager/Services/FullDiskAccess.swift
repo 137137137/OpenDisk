@@ -18,17 +18,19 @@ public enum FullDiskAccess {
     }
 
     private static var currentOS: MacOS {
-        if #available(macOS 14, *) {
+        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        switch major {
+        case let v where v >= 14:
             return .sonoma
-        } else if #available(macOS 13, *) {
+        case 13:
             return .ventura
-        } else if #available(macOS 12, *) {
+        case 12:
             return .monterey
-        } else if #available(macOS 11, *) {
+        case 11:
             return .bigSur
-        } else if #available(macOS 10.15, *) {
+        case 10:
             return .catalina
-        } else {
+        default:
             return .mojave
         }
     }

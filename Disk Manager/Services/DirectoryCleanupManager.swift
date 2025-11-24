@@ -49,11 +49,11 @@ class DirectoryCleanupManager: ObservableObject {
     }
     
     var formattedScannedBytes: String {
-        return ByteCountFormatter.string(fromByteCount: scannedBytes, countStyle: .file)
+        return ByteFormatter.formatFileSize(scannedBytes)
     }
-    
+
     var formattedTotalBytes: String {
-        return ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
+        return ByteFormatter.formatFileSize(totalBytes)
     }
     
     func resetScan() {
@@ -179,22 +179,7 @@ class DirectoryCleanupManager: ObservableObject {
     }
     
     private func shouldSkipDirectory(_ name: String) -> Bool {
-        // Skip system directories and large directories that are unlikely to have our target files
-        let skipList = [
-            "System", "Library", "usr", "bin", "sbin", "private", "cores", "dev", "etc", "var", "tmp",
-            "Applications", ".app", "node_modules", ".git", ".svn", ".hg"
-        ]
-        
-        return skipList.contains { skip in
-            name == skip || name.hasSuffix(skip)
-        }
-    }
-    
-    private func isSystemVolume(_ path: String) -> Bool {
-        // Check if this is a system volume where we shouldn't remove .fseventsd
-        return path.hasPrefix("/System") || 
-               path.hasPrefix("/") && !path.hasPrefix("/Volumes/") && 
-               !path.contains("/Users/")
+        return PathFilter.shouldSkipDirectoryForCleanup(name)
     }
     
     func performCleanup(_ path: String, totalUsedSpace: Int64) async {
