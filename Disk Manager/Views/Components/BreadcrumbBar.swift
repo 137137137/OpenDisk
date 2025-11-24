@@ -42,29 +42,6 @@ struct BreadcrumbBar: View {
 
     var body: some View {
         HStack {
-            // Back button
-            Button {
-                onBack()
-            } label: {
-                Label("Back", systemImage: "chevron.left")
-                    .labelStyle(.iconOnly)
-            }
-            .disabled(currentPath == rootPath)
-
-            // Up button
-            Button {
-                let parentPath = URL(fileURLWithPath: currentPath).deletingLastPathComponent().path
-                if parentPath != currentPath {
-                    onNavigate(parentPath)
-                }
-            } label: {
-                Label("Up", systemImage: "arrow.up")
-                    .labelStyle(.iconOnly)
-            }
-            .disabled(currentPath == rootPath || currentPath == "/")
-
-            Divider()
-
             // Breadcrumb path
             HStack {
                 ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
