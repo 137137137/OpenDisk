@@ -34,22 +34,17 @@ final class DiskAnalyzer: ObservableObject {
 
     /// Navigate to a path, using cache if available (synchronous for UI)
     func navigateToPath(_ path: String) -> Bool {
-        // Run async work synchronously for compatibility
-        let task = Task { @MainActor in
-            await navigateToPathAsync(path)
-        }
-
-        // For UI compatibility, return immediate result
+        // If already showing this path, return immediately
         if path == currentPath && !rootItems.isEmpty {
             return true
         }
 
-        // Check cache synchronously
-        let hasCachedData = Task.detached {
-            await self.cacheManager.hasCachedData(for: path)
+        // Start async navigation in background
+        Task { @MainActor in
+            await navigateToPathAsync(path)
         }
 
-        return true // Assume success, UI will update when ready
+        return true // Always return true for UI compatibility
     }
 
     /// Navigate to a path asynchronously
@@ -65,8 +60,11 @@ final class DiskAnalyzer: ObservableObject {
             return true
         }
 
-        // Need fresh scan
-        let items = await scanDirectoryRecursive(path)
+        // Need fresh scan - do a shallow scan for navigation
+        let hyperResult = await performHyperScan(path: path)
+        var items = ScanResultProcessor.convertToFolderItems(hyperResult)
+        items = ScanResultProcessor.filterAndSort(items)
+
         if !items.isEmpty {
             await cacheResults(items, for: path)
             updateUI(with: items, path: path)
@@ -203,50 +201,6 @@ final class DiskAnalyzer: ObservableObject {
         }
     }
 
-    private func scanDirectoryRecursive(_ path: String) async -> [FolderItem] {
-        await Task.detached {
-            var items: [FolderItem] = []
-
-            guard let contents = try? FileManager.default.contentsOfDirectory(
-                at: URL(fileURLWithPath: path),
-                includingPropertiesForKeys: [.isDirectoryKey, .fileAllocatedSizeKey, .contentModificationDateKey],
-                options: [.skipsPackageDescendants]
-            ) else {
-                return []
-            }
-
-            for url in contents {
-                guard let rv = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileAllocatedSizeKey, .contentModificationDateKey]) else {
-                    continue
-                }
-
-                let isDir = rv.isDirectory ?? false
-                var size: Int64 = 0
-                var children: [FolderItem] = []
-
-                if isDir {
-                    children = await self.scanDirectoryRecursive(url.path)
-                    size = children.isEmpty ? 0 : children.reduce(0) { $0 + $1.size }
-                } else {
-                    size = Int64(rv.fileAllocatedSize ?? 0)
-                }
-
-                var item = FolderItem(
-                    name: url.lastPathComponent,
-                    path: url.path,
-                    size: size,
-                    isDirectory: isDir,
-                    itemCount: children.isEmpty ? 1 : children.count,
-                    lastModified: rv.contentModificationDate ?? Date()
-                )
-                item.children = children
-                items.append(item)
-            }
-
-            return items.sorted()
-        }.value
-    }
-
     private func updateUI(with items: [FolderItem], path: String) {
         rootItems = items
         currentPath = path
@@ -260,10 +214,15 @@ final class DiskAnalyzer: ObservableObject {
     private func cacheResults(_ items: [FolderItem], for path: String) async {
         await cacheManager.cacheChildren(items, for: path)
 
-        // Cache subdirectories
-        for item in items where item.isDirectory && !item.children.isEmpty {
-            await cacheManager.cacheChildren(item.children, for: item.path)
+        // Also cache all subdirectory children for navigation
+        func cacheRecursively(_ items: [FolderItem]) async {
+            for item in items where item.isDirectory && !item.children.isEmpty {
+                await cacheManager.cacheChildren(item.children, for: item.path)
+                await cacheRecursively(item.children)
+            }
         }
+
+        await cacheRecursively(items)
     }
 
     private func hasFullDiskAccess() -> Bool {

@@ -66,7 +66,9 @@ struct DiskAnalysisView: View {
                         
                         // Show simple cumulative scanning progress as percentage of used disk space
                         if analyzer.totalDiskScannedBytes > 0 && totalUsedDiskSpace > 0 {
-                            let scannedPercentage = Double(analyzer.totalDiskScannedBytes) / Double(totalUsedDiskSpace) * 100
+                            let rawPercentage = Double(analyzer.totalDiskScannedBytes) / Double(totalUsedDiskSpace) * 100
+                            // Clamp percentage between 0 and 100 to avoid ProgressView warnings
+                            let scannedPercentage = min(100.0, max(0.0, rawPercentage))
 
                             VStack(spacing: 12) {
                                 HStack(spacing: 8) {
@@ -234,10 +236,12 @@ struct DiskAnalysisView: View {
             if self.isNavigatingBack {
                 return
             }
-            
+
             // Only scan if we haven't scanned yet or if there's no data for current path
             if !hasInitiallyScanned {
                 hasInitiallyScanned = true
+                // Clear cache to ensure fresh data
+                analyzer.clearAllCaches()
                 Task {
                     await analyzer.scanDirectory(currentPath)
                 }
