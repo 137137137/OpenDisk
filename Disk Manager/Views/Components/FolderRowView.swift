@@ -33,6 +33,7 @@ struct FolderRowView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .opacity(item.isDirectory ? 1 : 0)
+                    .padding(.trailing, 8)
             }
             .contentShape(Rectangle())
         }
