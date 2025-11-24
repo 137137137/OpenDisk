@@ -29,11 +29,10 @@ struct FolderRowView: View {
                     Image(systemName: item.isDirectory ? "folder" : "doc")
                 }
 
-                if item.isDirectory {
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .opacity(item.isDirectory ? 1 : 0)
             }
         }
         .buttonStyle(.plain)

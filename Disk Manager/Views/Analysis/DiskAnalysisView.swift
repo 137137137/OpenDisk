@@ -169,18 +169,19 @@ struct DiskAnalysisView: View {
 
                             HStack(spacing: 12) {
                                 Text("Total")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
                                     .foregroundStyle(.secondary)
 
                                 Spacer()
 
                                 let totalSize = analyzer.rootItems.reduce(0) { $0 + $1.size }
                                 Text(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.primary)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
 
                                 Text("(\(analyzer.rootItems.count) items)")
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 16)

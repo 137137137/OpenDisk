@@ -15,7 +15,5 @@ struct StorageProgressBar: View {
     
     var body: some View {
         ProgressView(value: usagePercentage)
-            .progressViewStyle(LinearProgressViewStyle())
-            .tint(.primary)
     }
 }
