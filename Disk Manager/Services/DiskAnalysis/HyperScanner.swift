@@ -84,7 +84,8 @@ actor HyperScanner {
 
     func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
         print("[HyperScanner] ===== STARTING SCAN (v18 - Dynamic Resource Limits) =====")
-        
+        print("[HyperScanner] Scanning path: \(url.path)")
+
         // 1. Permission Check
         let currentUser = getuid()
         if currentUser != 0 {
@@ -93,10 +94,10 @@ actor HyperScanner {
         } else {
             print("✅ [INFO] Running as Root. Full access enabled.")
         }
-        
+
         // 2. Resource Optimization (V18 Feature)
         optimizeSystemLimits()
-        
+
         self.onProgress = onProgress
         self.totalUsedBytes = getVolumeUsedSize(for: url)
         self.scannedBytes = 0
@@ -108,11 +109,19 @@ actor HyperScanner {
         self.startPath = url.resolvingSymlinksInPath().path
         self.activeTaskCount = 0
 
+        print("[HyperScanner] Volume used bytes: \(ByteFormatter.formatFileSize(totalUsedBytes))")
+
         if url.path == "/" {
-            return await scanRootWithFileManager(url: url)
+            let result = await scanRootWithFileManager(url: url)
+            print("[HyperScanner] SCAN COMPLETE - Final size: \(ByteFormatter.formatFileSize(result.size))")
+            print("[HyperScanner] Files scanned: \(itemsScanned), Hard links detected: \(visitedInodes.count)")
+            return result
         }
 
-        return await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent)
+        let result = await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent)
+        print("[HyperScanner] SCAN COMPLETE - Final size: \(ByteFormatter.formatFileSize(result.size))")
+        print("[HyperScanner] Files scanned: \(itemsScanned), Hard links detected: \(visitedInodes.count)")
+        return result
     }
     
     // V18: Maximize file descriptors and calculate safe concurrency
@@ -243,21 +252,25 @@ actor HyperScanner {
                     } else {
                         // Check for hard links - only count files we haven't seen before
                         var shouldCount = true
+                        var actualSize = entry.size
+
                         if let fileID = entry.fileID {
                             let actualFileID = FileSystemID(device: dirDevice, inode: fileID.inode)
                             if visitedInodes.contains(actualFileID) {
                                 shouldCount = false
+                                actualSize = 0  // Don't count size for hard links we've seen
                             } else {
                                 visitedInodes.insert(actualFileID)
                             }
                         }
 
-                        localItems.append(HyperScanItem(name: entry.name, path: fullPath, size: entry.size, isDirectory: false, children: nil))
-                        if shouldCount && entry.size > 0 {
-                            localSize += entry.size
-                            directFilesSize += entry.size
-                        }
+                        // Only add to items if we should count it
                         if shouldCount {
+                            localItems.append(HyperScanItem(name: entry.name, path: fullPath, size: actualSize, isDirectory: false, children: nil))
+                            if actualSize > 0 {
+                                localSize += actualSize
+                                directFilesSize += actualSize
+                            }
                             itemsScanned += 1
                         }
                     }
@@ -319,6 +332,12 @@ actor HyperScanner {
         }
 
         await updateProgress(bytesAdded: directFilesSize, path: path)
+
+        // Debug logging for large directories
+        if localSize > 10_000_000_000 { // > 10GB
+            print("[DEBUG] Large directory: \(path) = \(ByteFormatter.formatFileSize(localSize))")
+        }
+
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems.sorted { $0.size > $1.size })
     }
 
@@ -434,20 +453,23 @@ actor HyperScanner {
                          if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath), let s = attrs[.size] as? Int64 {
                              // Check for hard links
                              var shouldCount = true
+                             var actualSize = s
                              var fileStat = stat()
                              if stat(fullPath, &fileStat) == 0 {
                                  let fileID = FileSystemID(device: fileStat.st_dev, inode: fileStat.st_ino)
                                  if visitedInodes.contains(fileID) {
                                      shouldCount = false
+                                     actualSize = 0  // Don't count size for hard links we've seen
                                  } else {
                                      visitedInodes.insert(fileID)
                                  }
                              }
 
-                             children.append(HyperScanItem(name: itemName, path: fullPath, size: s, isDirectory: false, children: nil))
+                             // Only add to items if we should count it
                              if shouldCount {
-                                 totalSize += s
-                                 directFilesSize += s
+                                 children.append(HyperScanItem(name: itemName, path: fullPath, size: actualSize, isDirectory: false, children: nil))
+                                 totalSize += actualSize
+                                 directFilesSize += actualSize
                                  itemsScanned += 1
                              }
                          }
@@ -463,14 +485,18 @@ actor HyperScanner {
     private func scanRootWithFileManager(url: URL) async -> HyperScanItem {
         var rootChildren: [HyperScanItem] = []
         var totalSize: Int64 = 0
-        let rootPaths = ["/Applications", "/Library", "/System", "/Users", "/usr", "/opt", "/private", "/var"]
+        // Don't include /var since it's a symlink to /private/var (would cause double counting)
+        let rootPaths = ["/Applications", "/Library", "/System", "/Users", "/usr", "/opt", "/private"]
+
+        print("[HyperScanner] Scanning root with paths: \(rootPaths)")
 
         for path in rootPaths {
             guard FileManager.default.fileExists(atPath: path) else { continue }
-            
+
             if path.contains("Volumes") { continue }
-            
+
             let item = await scanDirectoryOptimized(path: path, name: URL(fileURLWithPath: path).lastPathComponent)
+            print("[HyperScanner] Root path \(path): \(ByteFormatter.formatFileSize(item.size))")
             rootChildren.append(item)
             totalSize += item.size
         }
