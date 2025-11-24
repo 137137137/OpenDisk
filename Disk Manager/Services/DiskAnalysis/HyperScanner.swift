@@ -114,13 +114,13 @@ actor HyperScanner {
         if url.path == "/" {
             let result = await scanRootWithFileManager(url: url)
             print("[HyperScanner] SCAN COMPLETE - Final size: \(ByteFormatter.formatFileSize(result.size))")
-            print("[HyperScanner] Files scanned: \(itemsScanned), Hard links detected: \(visitedInodes.count)")
+            print("[HyperScanner] Files scanned: \(itemsScanned), Unique inodes: \(visitedInodes.count)")
             return result
         }
 
         let result = await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent)
         print("[HyperScanner] SCAN COMPLETE - Final size: \(ByteFormatter.formatFileSize(result.size))")
-        print("[HyperScanner] Files scanned: \(itemsScanned), Hard links detected: \(visitedInodes.count)")
+        print("[HyperScanner] Files scanned: \(itemsScanned), Unique inodes: \(visitedInodes.count)")
         return result
     }
     
@@ -222,7 +222,7 @@ actor HyperScanner {
             var attrList = attrlist()
             attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
             attrList.commonattr = attrgroup_t(UInt32(ATTR_CMN_RETURNED_ATTRS) | UInt32(ATTR_CMN_NAME) | UInt32(ATTR_CMN_OBJTYPE) | UInt32(ATTR_CMN_FILEID))
-            attrList.fileattr = attrgroup_t(UInt32(ATTR_FILE_TOTALSIZE))
+            attrList.fileattr = attrgroup_t(UInt32(ATTR_FILE_ALLOCSIZE))  // Use allocated size for sparse file support
             attrList.dirattr = 0
 
             let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 8)
@@ -387,7 +387,7 @@ actor HyperScanner {
         }
 
         var size: Int64 = 0
-        if isRegularFile && (returnedFile & UInt32(ATTR_FILE_TOTALSIZE)) != 0 {
+        if isRegularFile && (returnedFile & UInt32(ATTR_FILE_ALLOCSIZE)) != 0 {
             if currentOffset + 8 <= Int(length) {
                 var rawSize: Int64 = 0
                 withUnsafeMutableBytes(of: &rawSize) { sizeBuf in
@@ -450,10 +450,27 @@ actor HyperScanner {
                          children.append(sub)
                          totalSize += sub.size
                     } else {
-                         if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath), let s = attrs[.size] as? Int64 {
+                         if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath) {
+                             // Use actual allocated size for sparse files (Docker, VMs, etc)
+                             // First try to get the allocated size, fall back to regular size
+                             let allocatedSize: Int64
+                             let logicalSize = attrs[.size] as? Int64 ?? 0
+
+                             if let allocSize = attrs[FileAttributeKey(rawValue: "NSFileAllocatedSize")] as? NSNumber {
+                                 allocatedSize = allocSize.int64Value
+
+                                 // Log sparse files (where allocated is much less than logical size)
+                                 if logicalSize > 0 && allocatedSize > 0 && logicalSize > allocatedSize * 2 {
+                                     let savedSpace = logicalSize - allocatedSize
+                                     print("[SPARSE FILE] \(itemName): Logical=\(ByteFormatter.formatFileSize(logicalSize)), Allocated=\(ByteFormatter.formatFileSize(allocatedSize)), Saved=\(ByteFormatter.formatFileSize(savedSpace))")
+                                 }
+                             } else {
+                                 allocatedSize = logicalSize
+                             }
+
                              // Check for hard links
                              var shouldCount = true
-                             var actualSize = s
+                             var actualSize = allocatedSize
                              var fileStat = stat()
                              if stat(fullPath, &fileStat) == 0 {
                                  let fileID = FileSystemID(device: fileStat.st_dev, inode: fileStat.st_ino)
