@@ -42,11 +42,6 @@ class DiskAnalyzer: ObservableObject {
     @Published var totalDiskScannedBytes: Int64 = 0
     @Published var overallProgressPercentage: Double = 0.0
 
-    // DEBUG: Live file scanning progress (scrollable log)
-    @Published var debugScanLog: [String] = []
-    @Published var debugFilesScannedCount: Int = 0
-    @Published var debugEnabled: Bool = false
-    
     // Real-time cumulative progress tracking (actor for thread safety)
     private let cumulativeCounter = CumulativeCounter()
     
@@ -152,10 +147,6 @@ class DiskAnalyzer: ObservableObject {
         totalDiskScannedBytes = 0
         await cumulativeCounter.reset()
         overallProgressPercentage = 0.0
-
-        // Reset debug fields
-        debugScanLog = []
-        debugFilesScannedCount = 0
 
         // Get total USED disk space for accurate progress tracking
         // This matches the sidebar display and what we're actually scanning
@@ -882,18 +873,6 @@ class DiskAnalyzer: ObservableObject {
 
                                 // Update legacy properties for backward compatibility
                                 self.scannedBytes = capturedSize
-
-                                // DEBUG: Add to log if enabled
-                                self.debugFilesScannedCount = capturedCount
-                                if self.debugEnabled {
-                                    let sizeStr = ByteCountFormatter.string(fromByteCount: capturedFileSize, countStyle: .file)
-                                    let logEntry = "[\(capturedCount)] \(capturedPath) (\(sizeStr))"
-                                    self.debugScanLog.append(logEntry)
-                                    // Keep only last 100 entries
-                                    if self.debugScanLog.count > 100 {
-                                        self.debugScanLog.removeFirst(self.debugScanLog.count - 100)
-                                    }
-                                }
                             }
                         }
                     }
