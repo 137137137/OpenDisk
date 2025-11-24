@@ -27,57 +27,24 @@ struct ContentView: View {
     }
     
     var body: some View {
-        HStack(spacing: 0) {
-            // Fixed non-resizable sidebar
-            VStack(alignment: .leading, spacing: 0) {
-                // Header
-                HStack {
-                    Text("Devices & Locations")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                
-                Divider()
-                
+        NavigationSplitView(sidebar: {
+            VStack(spacing: 0) {
                 // Device list
                 List(diskUtility.devices, selection: $selectedDevice) { device in
                     DeviceRow(device: device) {
                         selectedDevice = device
                     }
                 }
-                .listStyle(SidebarListStyle())
-                
+                .navigationTitle("Devices & Locations")
+
                 Divider()
-                
+
                 // Tab selector
-                VStack(spacing: 8) {
-                    ForEach(Tab.allCases, id: \.self) { tab in
-                        Button(action: {
-                            selectedTab = tab
-                        }) {
-                            HStack(spacing: 8) {
-                                Image(systemName: tab.icon)
-                                Text(tab.rawValue)
-                                Spacer()
-                            }
-                            .foregroundStyle(selectedTab == tab ? .primary : .secondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                List(Tab.allCases, id: \.self, selection: $selectedTab) { tab in
+                    Label(tab.rawValue, systemImage: tab.icon)
                 }
-                .padding()
             }
-            .frame(width: 350) // Fixed width - cannot be resized
-            
-            // Separator line (non-draggable)
-            Divider()
-            
-            // Detail view based on selected tab
+        }, detail: {
             Group {
                 switch selectedTab {
                 case .analysis:
@@ -86,16 +53,11 @@ struct ContentView: View {
                             self.selectedDevice = nil
                         }
                     } else {
-                        VStack(spacing: 16) {
-                            Image(systemName: "externaldrive")
-                                .font(.system(size: 48))
-                                .foregroundStyle(.secondary)
-
-                            Text("Select a device to analyze")
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        ContentUnavailableView(
+                            "Select a device to analyze",
+                            systemImage: "externaldrive",
+                            description: Text("Choose a device from the sidebar to view its disk usage")
+                        )
                     }
 
                 case .cleanup:
@@ -105,8 +67,8 @@ struct ContentView: View {
                     SettingsView()
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        })
+        .navigationSplitViewStyle(.balanced)
         .onAppear {
             // Auto-select Computer device
             if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {

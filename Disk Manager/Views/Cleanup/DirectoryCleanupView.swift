@@ -135,7 +135,7 @@ struct DirectoryCleanupView: View {
                                         Text("\(cleanupManager.scanResults.dsStoreCount)")
                                             .font(.title2)
                                             .fontWeight(.bold)
-                                            .foregroundStyle(cleanupManager.scanResults.dsStoreCount > 0 ? .accent : .secondary)
+                                            .foregroundStyle(cleanupManager.scanResults.dsStoreCount > 0 ? .primary : .secondary)
 
                                         Text("files found")
                                             .font(.body)

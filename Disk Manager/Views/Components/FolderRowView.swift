@@ -12,67 +12,43 @@ struct FolderRowView: View {
     let onTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Icon and progress indicator
-            HStack(spacing: 4) {
-                Text(String(format: "%.1f%%", item.percentage))
-                    .font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
+        Button(action: onTap) {
+            HStack {
+                Label {
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text(item.name)
+                                .lineLimit(1)
 
-                Image(systemName: item.isDirectory ? "folder" : "doc")
-                    .font(.title3)
-                    .frame(width: 20)
-            }
+                            Spacer()
 
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(item.name)
-                        .font(.system(size: 14, weight: .medium))
-                        .lineLimit(1)
+                            Text(item.formattedSize)
 
-                    Spacer()
+                            Text(item.formattedItemCount + " items")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(item.formattedSize)
-                            .font(.system(size: 12, weight: .medium))
+                            Text(item.relativeModified)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
 
-                        Text(item.formattedItemCount + " items")
-                            .font(.system(size: 10))
-                    }
-
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(item.relativeModified)
-                            .font(.system(size: 10))
-                    }
-                    .frame(minWidth: 60)
-
-                    if item.isDirectory {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                }
-
-                // Progress bar for large items
-                if item.percentage >= 1.0 {
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 1)
-                                .frame(height: 2)
-
-                            RoundedRectangle(cornerRadius: 1)
-                                .frame(width: geometry.size.width * (item.percentage / 100), height: 2)
+                        if item.percentage >= 1.0 {
+                            ProgressView(value: item.percentage, total: 100)
                         }
                     }
-                    .frame(height: 2)
-                    .padding(.top, 4)
+                } icon: {
+                    Image(systemName: item.isDirectory ? "folder" : "doc")
+                }
+
+                if item.isDirectory {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap()
-        }
+        .buttonStyle(.plain)
     }
 }
 

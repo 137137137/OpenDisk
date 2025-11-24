@@ -44,7 +44,6 @@ struct SetDefaultsGuideView: View {
                             HStack {
                                 Image(systemName: "1.circle.fill")
                                     .font(.title2)
-                                    .foregroundStyle(.accent)
 
                                 Text("Open Finder")
                                     .font(.headline)
@@ -73,7 +72,6 @@ struct SetDefaultsGuideView: View {
                             HStack {
                                 Image(systemName: "2.circle.fill")
                                     .font(.title2)
-                                    .foregroundStyle(.accent)
 
                                 Text("Navigate to a Folder")
                                     .font(.headline)
@@ -92,7 +90,6 @@ struct SetDefaultsGuideView: View {
                             HStack {
                                 Image(systemName: "3.circle.fill")
                                     .font(.title2)
-                                    .foregroundStyle(.accent)
 
                                 Text("Customize the View")
                                     .font(.headline)
@@ -135,7 +132,6 @@ struct SetDefaultsGuideView: View {
                             HStack {
                                 Image(systemName: "4.circle.fill")
                                     .font(.title2)
-                                    .foregroundStyle(.accent)
 
                                 Text("Set as Default")
                                     .font(.headline)
@@ -162,7 +158,6 @@ struct SetDefaultsGuideView: View {
                                         Text("Then click")
                                         Text("\"Use as Defaults\"")
                                             .fontWeight(.semibold)
-                                            .foregroundStyle(.accent)
                                         Text("at the bottom of the panel")
                                     }
                                 }
