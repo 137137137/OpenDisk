@@ -180,7 +180,7 @@ actor HyperScanner {
         setenv("LIBDISPATCH_COOPERATIVE_POOL_SIZE", "0", 1)  // Unlimited cooperative pool
 
         // V25: Tell macOS we're doing heavy I/O (request no throttling)
-        var policy = IOPOL_IMPORTANT  // Request highest I/O priority
+        let policy = IOPOL_IMPORTANT  // Request highest I/O priority
         setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, policy)
     }
 
@@ -580,60 +580,6 @@ actor HyperScanner {
 
         await updateProgress(bytesAdded: directFilesSize, path: path)
         return HyperScanItem(name: name, path: path, size: totalSize, isDirectory: true, children: children.sorted { $0.size > $1.size })
-    }
-
-    private func scanRootMaxParallel(url: URL) async -> HyperScanItem {
-        // Scan root directories with MAXIMUM parallelization
-        // All work done OUTSIDE actor for true parallel execution
-
-        var rootChildren: [HyperScanItem] = []
-        var totalSize: Int64 = 0
-
-        // Get root directory listing
-        guard let allRootContents = try? FileManager.default.contentsOfDirectory(atPath: "/") else {
-            return HyperScanItem(name: "/", path: "/", size: 0, isDirectory: true, children: [])
-        }
-
-        let skipPaths = Set(["Volumes", ".VolumeIcon.icns", ".file"])
-        var directoriesToScan: [(name: String, path: String)] = []
-
-        for itemName in allRootContents {
-            if skipPaths.contains(itemName) { continue }
-
-            let fullPath = "/\(itemName)"
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue {
-                directoriesToScan.append((name: itemName, path: fullPath))
-            }
-        }
-
-        // Scan ALL root directories in parallel OUTSIDE the actor
-        await withTaskGroup(of: HyperScanItem.self) { group in
-            // Launch ALL scans immediately with HIGH priority!
-            for (name, path) in directoriesToScan {
-                group.addTask(priority: .high) {  // HIGH priority for maximum CPU usage
-                    // This runs OUTSIDE actor isolation - true parallel!
-                    await self.parallelScanner.parallelScanDirectory(
-                        path: path,
-                        name: name,
-                        progressCallback: { [weak self] bytes, path in
-                            await self?.updateProgress(bytesAdded: bytes, path: path)
-                        }
-                    )
-                }
-            }
-
-            // Collect results
-            for await item in group {
-                if item.size > 0 {
-                    rootChildren.append(item)
-                    totalSize += item.size
-                }
-            }
-        }
-
-        return HyperScanItem(name: "/", path: "/", size: totalSize, isDirectory: true,
-                           children: rootChildren.sorted { $0.size > $1.size })
     }
 
     private func scanRootWithFileManager(url: URL) async -> HyperScanItem {
