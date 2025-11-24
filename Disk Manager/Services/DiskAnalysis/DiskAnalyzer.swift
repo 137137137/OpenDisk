@@ -8,6 +8,7 @@ final class DiskAnalyzer: ObservableObject {
     @Published var rootItems: [FolderItem] = []
     @Published var totalSize: Int64 = 0
     @Published var totalDiskScannedBytes: Int64 = 0
+    @Published var scanDuration: TimeInterval = 0
 
     // Keep the complete tree structure for instant navigation
     private var completeTree: [FolderItem] = []
@@ -28,6 +29,7 @@ final class DiskAnalyzer: ObservableObject {
     private var currentPath: String = ""
     private var initialScanPath: String = ""
     private var scanTask: Task<Void, Never>?
+    private var scanStartTime: Date?
 
     // MARK: - Public Methods
 
@@ -46,6 +48,8 @@ final class DiskAnalyzer: ObservableObject {
         estimatedTimeRemaining = ""
         filesPerSecond = ""
         currentScanPath = ""
+        scanStartTime = Date()
+        scanDuration = 0
 
         // Check Full Disk Access
         if path == "/" && !hasFullDiskAccess() {
@@ -73,6 +77,11 @@ final class DiskAnalyzer: ObservableObject {
         // Complete scan
         isScanning = false
         scanProgressPercentage = 100.0
+
+        // Calculate scan duration
+        if let startTime = scanStartTime {
+            scanDuration = Date().timeIntervalSince(startTime)
+        }
     }
 
     /// Navigate to a path, using cache if available (synchronous for UI)

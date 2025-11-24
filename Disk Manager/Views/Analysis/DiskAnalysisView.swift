@@ -205,6 +205,18 @@ struct DiskAnalysisView: View {
                                     .fontWeight(.semibold)
                                     .foregroundStyle(.secondary)
 
+                                // Show scan duration if scan completed
+                                if analyzer.scanDuration > 0 && !analyzer.isScanning {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "clock.badge.checkmark")
+                                            .font(.caption)
+                                            .foregroundStyle(.green)
+                                        Text(formatScanDuration(analyzer.scanDuration))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
                                 Spacer()
 
                                 let totalSize = analyzer.rootItems.reduce(0) { $0 + $1.size }
@@ -315,6 +327,18 @@ struct DiskAnalysisView: View {
     private func openFullDiskAccessSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func formatScanDuration(_ duration: TimeInterval) -> String {
+        if duration < 1 {
+            return String(format: "Scanned in %.1f ms", duration * 1000)
+        } else if duration < 60 {
+            return String(format: "Scanned in %.1f seconds", duration)
+        } else {
+            let minutes = Int(duration / 60)
+            let seconds = Int(duration.truncatingRemainder(dividingBy: 60))
+            return String(format: "Scanned in %d:%02d", minutes, seconds)
         }
     }
 }
