@@ -1,490 +1,300 @@
 import Foundation
 import Darwin
 
-// Thread-safe counter for cumulative progress tracking
-actor CumulativeCounter {
-    private var value: Int64 = 0
-    
-    func reset() {
-        value = 0
-    }
-    
-    func add(_ amount: Int64) {
-        value += amount
-    }
-    
-    func getValue() -> Int64 {
-        return value
-    }
-}
-
+/// Simplified disk analyzer that delegates to specialized services
 @MainActor
-class DiskAnalyzer: ObservableObject {
+final class DiskAnalyzer: ObservableObject {
+    // MARK: - Published Properties (UI State)
     @Published var rootItems: [FolderItem] = []
+    @Published var totalSize: Int64 = 0
+    @Published var totalDiskScannedBytes: Int64 = 0
+
+    // MARK: - Published Properties for Progress (for UI compatibility)
     @Published var isScanning: Bool = false
     @Published var scanProgress: String = ""
     @Published var scanProgressPercentage: Double = 0.0
-    @Published var estimatedTimeRemaining: String = ""
-    @Published var totalSize: Int64 = 0
     @Published var currentScanPath: String = ""
+    @Published var estimatedTimeRemaining: String = ""
     @Published var filesPerSecond: String = ""
 
-    // Track what path the current rootItems represent
-    private var currentRootItemsPath: String = ""
-
-    // Whole-disk progress model
-    @Published var totalDiskBytes: Int64 = 0
-    @Published var totalDiskScannedBytes: Int64 = 0
-
-    // Real-time cumulative progress tracking (actor for thread safety)
-    private let cumulativeCounter = CumulativeCounter()
-
-    private var scanTask: Task<Void, Never>?
-    private var scanStartTime: Date?
-    
-    // HYPER: Ultra-fast scanner using getattrlistbulk
+    // MARK: - Services (Single Responsibility)
+    private let cacheManager = CacheManager()
     private let hyperScanner = HyperScanner()
-    private let fileSystemMonitor = FileSystemMonitor()
 
-    // Complete folder tree for instant navigation
-    private var folderTree: [String: [FolderItem]] = [:]
+    // MARK: - State
+    private var currentPath: String = ""
+    private var scanTask: Task<Void, Never>?
 
-    // Pre-calculated directory sizes for instant progress bars
-    private var sizeCache: [String: Int64] = [:]
+    // MARK: - Public Methods
 
-    
-    
-    // Navigate to a path using pre-calculated data or scan if needed
-    // Returns true if data was loaded (either from cache or fresh scan), false if scan failed
-    func navigateToPath(_ path: String) -> Bool {
-        print("DEBUG: navigateToPath called for: \(path)")
-        
-        // Check if we already have data loaded for this exact path
-        if path == currentRootItemsPath && !rootItems.isEmpty && !isScanning {
-            print("DEBUG: Already showing data for \(path)")
-            calculatePercentages()
-            return true
-        }
-        
-        // Check folder tree cache
-        if let cachedItems = folderTree[path], !cachedItems.isEmpty {
-            print("DEBUG: Found cached data for \(path) with \(cachedItems.count) items")
-            
-            // Use the cached data directly - trust that it's complete from the initial scan
-            rootItems = cachedItems
-            currentRootItemsPath = path
-            totalSize = cachedItems.reduce(0) { $0 + $1.size }
-            calculatePercentages()
-            return true
-        }
-        
-        print("DEBUG: No cached data for \(path) - performing deep scan")
-
-        // No cached data - perform a full recursive scan
-        Task { @MainActor in
-            let scannedItems = await scanDirectoryRecursive(path)
-
-            if !scannedItems.isEmpty {
-                print("DEBUG: Deep scan complete for \(path) with \(scannedItems.count) items")
-
-                // Cache the results
-                folderTree[path] = scannedItems
-
-                // Also cache all subdirectory contents from the scan
-                for item in scannedItems where item.isDirectory {
-                    if !item.children.isEmpty {
-                        folderTree[item.path] = item.children
-                    }
-                }
-
-                // Update UI
-                rootItems = scannedItems
-                currentRootItemsPath = path
-                totalSize = scannedItems.reduce(0) { $0 + $1.size }
-                calculatePercentages()
-            }
-        }
-        
-        return true
-    }
-    
+    /// Scan a directory (compatibility method)
     func scanDirectory(_ path: String) async {
-        scanTask?.cancel()
+        scanDisk(path: path)
+    }
 
-        // Stop any existing monitoring
-        fileSystemMonitor.stopMonitoring()
-
-        isScanning = true
-        scanProgress = "Preparing high-performance scan..."
-        rootItems = []
-        currentRootItemsPath = ""
-        scanProgressPercentage = 0.0
-        estimatedTimeRemaining = ""
-        scanStartTime = Date()
-        currentScanPath = ""
-        filesPerSecond = ""
-        totalDiskScannedBytes = 0
-        await cumulativeCounter.reset()
-
-        // Get total USED disk space for accurate progress tracking
-        // This matches the sidebar display and what we're actually scanning
-        if path == "/" {
-            totalDiskBytes = getTotalDiskSize(path: path) // Gets USED bytes, not total capacity
-        } else {
-            // For subdirectory scans, we could get the directory's total size
-            // but for now we'll rely on estimates
-            totalDiskBytes = 0
+    /// Navigate to a path, using cache if available (synchronous for UI)
+    func navigateToPath(_ path: String) -> Bool {
+        // Run async work synchronously for compatibility
+        let task = Task { @MainActor in
+            await navigateToPathAsync(path)
         }
-        
-        // For root directory scan, request full disk access
-        var scanPath = path
-        
-        if path == "/" {
-            if !hasFullDiskAccess() {
-                // Guide user to grant full disk access
-                scanProgress = "Full Disk Access required. Please grant in System Settings > Privacy & Security > Full Disk Access > Add your app"
+
+        // For UI compatibility, return immediate result
+        if path == currentPath && !rootItems.isEmpty {
+            return true
+        }
+
+        // Check cache synchronously
+        let hasCachedData = Task.detached {
+            await self.cacheManager.hasCachedData(for: path)
+        }
+
+        return true // Assume success, UI will update when ready
+    }
+
+    /// Navigate to a path asynchronously
+    private func navigateToPathAsync(_ path: String) async -> Bool {
+        // Check if already showing this path
+        if path == currentPath && !rootItems.isEmpty {
+            return true
+        }
+
+        // Try cache first
+        if let cachedItems = await cacheManager.getCachedChildren(for: path), !cachedItems.isEmpty {
+            updateUI(with: cachedItems, path: path)
+            return true
+        }
+
+        // Need fresh scan
+        let items = await scanDirectoryRecursive(path)
+        if !items.isEmpty {
+            await cacheResults(items, for: path)
+            updateUI(with: items, path: path)
+            return true
+        }
+
+        return false
+    }
+
+    /// Perform a full disk scan
+    func scanDisk(path: String = "/") {
+        cancelCurrentScan()
+
+        scanTask = Task {
+            // Start scan
+            isScanning = true
+            scanProgress = "Preparing high-performance scan..."
+            scanProgressPercentage = 0.0
+            estimatedTimeRemaining = ""
+            filesPerSecond = ""
+            currentScanPath = ""
+
+            // Check Full Disk Access
+            if path == "/" && !hasFullDiskAccess() {
+                scanProgress = "Full Disk Access required. Grant in System Settings > Privacy & Security."
+                scanProgressPercentage = 0
                 isScanning = false
                 return
             }
-            scanPath = "/"
-        }
-        
-        // Reset dedupe set for this scan
-        
-        scanTask = Task { [weak self] in
-            guard let self = self else { return }
 
-            // Create local copies of captured variables to avoid concurrency issues
-            let pathToScan = scanPath
+            // Perform scan
+            let hyperResult = await performHyperScan(path: path)
 
-            // HYPER MODE: Use getattrlistbulk for maximum performance
-            // This matches DaisyDisk speed
-            await MainActor.run {
-                self.scanProgress = "Initializing hyper-fast scan..."
-                self.scanProgressPercentage = 0
-            }
+            // Process results
+            var items = ScanResultProcessor.convertToFolderItems(hyperResult)
+            items = ScanResultProcessor.filterAndSort(items)
+            ScanResultProcessor.calculatePercentages(for: &items)
 
-            let hyperResult = await self.hyperScanner.scan(
-                url: URL(fileURLWithPath: pathToScan)
-            ) { progress in
-                Task { @MainActor in
-                    self.scanProgressPercentage = progress.fractionCompleted * 100.0
+            // Cache and display
+            await cacheResults(items, for: path)
+            updateUI(with: items, path: path)
 
-                    let sizeStr = ByteFormatter.formatFileSize(progress.scannedBytes)
-                    self.scanProgress = "Scanning: \(sizeStr) (\(progress.itemsScanned.formatted()) items)"
-                    self.currentScanPath = progress.currentPath
-
-                    // Update files per second
-                    if let startTime = self.scanStartTime {
-                        let elapsed = Date().timeIntervalSince(startTime)
-                        if elapsed > 0 {
-                            let rate = Double(progress.itemsScanned) / elapsed
-                            self.filesPerSecond = String(format: "%.0f files/sec", rate)
-
-                            // Estimate time remaining
-                            if progress.fractionCompleted > 0 {
-                                let estimatedTotal = elapsed / progress.fractionCompleted
-                                let remaining = estimatedTotal - elapsed
-                                if remaining > 0 {
-                                    self.estimatedTimeRemaining = self.formatTimeInterval(remaining)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Convert to FolderItems
-            let rootItem = hyperResult.toFolderItem()
-            let items = rootItem.children
-
-            await MainActor.run {
-                self.rootItems = items.sorted()
-                self.currentRootItemsPath = path
-                // Cache the scan results for navigation
-                self.folderTree[path] = items.sorted()
-
-                // IMPORTANT: Cache ALL nested folder contents from HyperScanner
-                // This prevents re-scanning when navigating into folders
-                self.cacheNestedFolderTree(children: items)
-
-                self.totalSize = items.reduce(0) { $0 + $1.size }
-                self.calculatePercentages()
-
-                self.isScanning = false
-                self.scanProgress = "Scan complete (hyper-speed)"
-                self.scanProgressPercentage = 100.0
-                self.estimatedTimeRemaining = ""
-
-                if let startTime = self.scanStartTime {
-                    let elapsed = Date().timeIntervalSince(startTime)
-                    print("HYPER SCAN: Completed \(items.count) items in \(String(format: "%.2f", elapsed))s")
-                }
-            }
-
-            // Start FSEvents monitoring for real-time updates
-            if pathToScan != "/" {
-                await self.startFileSystemMonitoring(for: pathToScan)
-            }
+            // Complete scan
+            isScanning = false
+            scanProgressPercentage = 100.0
         }
     }
 
-    
-    private func calculatePercentages() {
-        guard totalSize > 0 else { return }
-        
-        for i in rootItems.indices {
-            rootItems[i].percentage = Double(rootItems[i].size) / Double(totalSize) * 100.0
+    /// Cancel current scan
+    func cancelCurrentScan() {
+        scanTask?.cancel()
+        scanTask = nil
+    }
+
+    /// Clear all caches
+    func clearAllCaches() {
+        Task {
+            await cacheManager.clearAll()
         }
     }
-    
-    
-    
-    
-    // Helper method to recursively cache all nested folder structures
-    private func cacheNestedFolderTree(children: [FolderItem]) {
-        for child in children {
-            if child.isDirectory && !child.children.isEmpty {
-                // Cache this directory's children
-                folderTree[child.path] = child.children
-                // Recursively cache deeper levels
-                cacheNestedFolderTree(children: child.children)
+
+    /// Scan external volumes
+    func scanExternalVolumes() async -> [FolderItem] {
+        await Task.detached {
+            var volumes: [FolderItem] = []
+            let volumesPath = "/Volumes"
+
+            guard let volumeList = try? FileManager.default.contentsOfDirectory(atPath: volumesPath) else {
+                return []
             }
-            // Don't cache empty arrays for directories - let navigation trigger fresh scans
-        }
-    }
-    
-    
-    private func calculateDirectorySize(path: String, nextPath: String? = nil) async -> Int64 {
-        let folderName = URL(fileURLWithPath: path).lastPathComponent
-        
-        // Check if we already have the size cached
-        var totalDirectorySize: Int64 = 0
-        
-        if let cachedSize = sizeCache[path] {
-            // Use cached size instantly - no waiting!
-            totalDirectorySize = cachedSize
-            let capturedSize = totalDirectorySize
-            await MainActor.run { [weak self, capturedSize, folderName, path] in
-                self?.scanProgress = "Analyzing \(folderName)"
-                self?.currentScanPath = path
-                self?.scanProgressPercentage = 0.0
-            }
-        } else {
-            // Need to calculate size first
-            await MainActor.run { [weak self, folderName, path] in
-                self?.scanProgress = "Getting size of \(folderName)..."
-                self?.currentScanPath = path
-                self?.scanProgressPercentage = 0.0
-            }
-            
-            totalDirectorySize = await DiskAnalyzer.getDirectoryTotalSizeFast(path: path)
-            sizeCache[path] = totalDirectorySize
-            
-            await MainActor.run { [weak self, folderName] in
-                self?.scanProgress = "Analyzing \(folderName)"
-            }
-        }
 
-        // STEP 3: Detailed analysis with accurate progress bar using allocated size and URL prefetch
-        let keys: Set<URLResourceKey> = [
-            .isRegularFileKey, .isSymbolicLinkKey,
-            .totalFileAllocatedSizeKey, .fileAllocatedSizeKey,
-            .fileResourceIdentifierKey
-        ]
-        // Use Task.detached for file system operations to avoid MainActor isolation
-        return await Task.detached {
-            guard let enumerator = FileManager.default.enumerator(
-                at: URL(fileURLWithPath: path),
-                includingPropertiesForKeys: Array(keys),
-                options: [.skipsPackageDescendants],
-                errorHandler: { _, _ in true }
-            ) else {
-                return totalDirectorySize
-            }
-            
-            var processedSize: Int64 = 0
-            var itemsProcessed = 0
-            var lastProgressUpdate = 0
-            // Match fast pass deduplication behavior
-            var localSeen = Set<Data>()
+            for volumeName in volumeList {
+                let volumePath = "\(volumesPath)/\(volumeName)"
 
-            while let item = enumerator.nextObject() {
-                guard let url = item as? URL else { continue }
-                do {
-                    let rv = try url.resourceValues(forKeys: keys)
-                    if rv.isSymbolicLink == true { continue }
-                    if rv.isRegularFile == true {
-                        // Deduplicate hard-links to match fast pass behavior
-                        if let id = rv.fileResourceIdentifier as? Data {
-                            if !localSeen.insert(id).inserted { continue }
-                        }
+                if PathFilter.shouldSkipVolume(volumeName) { continue }
+                guard FileManager.default.isReadableFile(atPath: volumePath) else { continue }
 
-                        let sz = Int64(rv.totalFileAllocatedSize ?? rv.fileAllocatedSize ?? 0)
-                        processedSize += sz
-                        itemsProcessed += 1
+                let volumeURL = URL(fileURLWithPath: volumePath)
+                let size: Int64
 
-                        // Update cumulative counter immediately for real-time progress
-                        await self.cumulativeCounter.add(sz)
-
-                        if itemsProcessed - lastProgressUpdate >= 500 || (sz > 0 && processedSize % (10 * 1024 * 1024) < sz) {
-                            lastProgressUpdate = itemsProcessed
-                            // Capture values to avoid concurrency issues
-                            let capturedSize = processedSize
-                            let capturedTotal = max(totalDirectorySize, 1)
-                            let capturedPercent = min(100.0, Double(capturedSize) / Double(capturedTotal) * 100.0)
-                            let capturedCumulative = await self.cumulativeCounter.getValue()
-
-                            await MainActor.run {
-                                // Update progress
-                                self.scanProgressPercentage = capturedPercent
-
-                                // Update real-time cumulative progress
-                                self.totalDiskScannedBytes = capturedCumulative
-                            }
-                        }
-                    }
-                } catch {
-                    continue
+                if let resourceValues = try? volumeURL.resourceValues(forKeys: [.volumeTotalCapacityKey]),
+                   let capacity = resourceValues.volumeTotalCapacity {
+                    size = Int64(capacity)
+                } else {
+                    size = 0
                 }
-                if Task.isCancelled { break }
-            }
-            
-            // Final update - use actual processed size, not precalculated estimate
-            // Capture final values to avoid concurrency issues
-            let finalProcessedSize = processedSize
-            let finalTotalSize = max(totalDirectorySize, processedSize)
-            let finalCumulative = await self.cumulativeCounter.getValue()
-            await MainActor.run {
-                self.scanProgressPercentage = 100.0
 
-                // Update final cumulative progress
-                self.totalDiskScannedBytes = finalCumulative
+                volumes.append(FolderItem(
+                    name: volumeName,
+                    path: volumePath,
+                    size: size,
+                    isDirectory: true,
+                    itemCount: 1,
+                    lastModified: Date()
+                ))
             }
-            
-            return max(totalDirectorySize, finalProcessedSize) // Return the larger of estimate vs actual
+
+            return volumes.sorted()
         }.value
     }
-    
-    // MARK: - Enhanced FSEvents Monitoring Integration
-    
-    private func startFileSystemMonitoring(for path: String) async {
-        // Start monitoring with optimized latency
-        fileSystemMonitor.startMonitoring(
-            paths: [path],
-            latency: 0.5 // More responsive updates
-        ) { [weak self] change in
+
+    // MARK: - Private Methods
+
+    private func performHyperScan(path: String) async -> HyperScanItem {
+        let startTime = Date()
+
+        return await hyperScanner.scan(
+            url: URL(fileURLWithPath: path)
+        ) { [weak self] progress in
             Task { @MainActor in
-                self?.handleFileSystemChange(change)
-            }
-        }
-    }
-    
-    private func handleFileSystemChange(_ change: FileSystemMonitor.FileSystemChange) {
-        print("File system change detected: \(change.path)")
-        
-        // Invalidate caches for affected paths
-        let affectedPath = change.path
-        let parentPath = URL(fileURLWithPath: affectedPath).deletingLastPathComponent().path
-        
-        // Remove from various caches
-        sizeCache.removeValue(forKey: affectedPath)
-        sizeCache.removeValue(forKey: parentPath)
-        folderTree.removeValue(forKey: affectedPath)
-        folderTree.removeValue(forKey: parentPath)
-        
-        // For significant changes, trigger a partial rescan
-        if change.isCreated || change.isRemoved {
-            // Could implement incremental updates here
-            print("Significant change detected, consider partial rescan for: \(parentPath)")
-        }
-    }
-    
-    // MARK: - Recursive Scanning
-    
-    private func scanDirectoryRecursive(_ path: String) async -> [FolderItem] {
-        return await Task.detached {
-            var items: [FolderItem] = []
-            
-            do {
-                let resourceKeys: Set<URLResourceKey> = [
-                    .isDirectoryKey,
-                    .isRegularFileKey,
-                    .isSymbolicLinkKey,
-                    .fileAllocatedSizeKey,
-                    .totalFileAllocatedSizeKey,
-                    .contentModificationDateKey
-                ]
-                
-                let contents = try FileManager.default.contentsOfDirectory(
-                    at: URL(fileURLWithPath: path),
-                    includingPropertiesForKeys: Array(resourceKeys),
-                    options: [.skipsPackageDescendants]
-                )
-                
-                for url in contents {
-                    do {
-                        let rv = try url.resourceValues(forKeys: resourceKeys)
-                        if rv.isSymbolicLink == true { continue }
-                        
-                        let isDir = rv.isDirectory ?? false
-                        let name = url.lastPathComponent
-                        let modDate = rv.contentModificationDate ?? Date()
-                        
-                        if isDir {
-                            // Recursively build the complete subtree
-                            let children = await self.scanDirectoryRecursive(url.path)
-                            let dirSize = children.reduce(0) { $0 + $1.size }
-                            
-                            var item = FolderItem(
-                                name: name,
-                                path: url.path,
-                                size: dirSize,
-                                isDirectory: true,
-                                itemCount: children.count,
-                                lastModified: modDate
-                            )
-                            item.children = children
-                            items.append(item)
-                            
-                        } else if rv.isRegularFile == true {
-                            let size = Int64(rv.totalFileAllocatedSize ?? rv.fileAllocatedSize ?? 0)
-                            items.append(FolderItem(
-                                name: name,
-                                path: url.path,
-                                size: size,
-                                isDirectory: false,
-                                itemCount: 1,
-                                lastModified: modDate
-                            ))
-                        }
-                    } catch {
-                        // Skip inaccessible items
-                        continue
-                    }
+                guard let self = self else { return }
+
+                self.scanProgress = "Scanning: \(ByteFormatter.formatFileSize(progress.scannedBytes)) (\(progress.itemsScanned.formatted()) items)"
+                self.scanProgressPercentage = progress.fractionCompleted * 100.0
+                self.currentScanPath = progress.currentPath
+                self.totalDiskScannedBytes = progress.scannedBytes
+
+                // Update files per second
+                let elapsed = Date().timeIntervalSince(startTime)
+                if elapsed > 0 {
+                    let rate = Double(progress.itemsScanned) / elapsed
+                    self.filesPerSecond = "\(Int(rate)) files/sec"
                 }
-            } catch {
-                print("Error scanning \(path): \(error)")
+
+                // Update time remaining
+                if progress.fractionCompleted > 0.05 {
+                    let totalEstimated = elapsed / progress.fractionCompleted
+                    let remaining = totalEstimated - elapsed
+                    self.estimatedTimeRemaining = self.formatTimeInterval(remaining)
+                } else {
+                    self.estimatedTimeRemaining = "Calculating..."
+                }
             }
-            
+        }
+    }
+
+    private func scanDirectoryRecursive(_ path: String) async -> [FolderItem] {
+        await Task.detached {
+            var items: [FolderItem] = []
+
+            guard let contents = try? FileManager.default.contentsOfDirectory(
+                at: URL(fileURLWithPath: path),
+                includingPropertiesForKeys: [.isDirectoryKey, .fileAllocatedSizeKey, .contentModificationDateKey],
+                options: [.skipsPackageDescendants]
+            ) else {
+                return []
+            }
+
+            for url in contents {
+                guard let rv = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileAllocatedSizeKey, .contentModificationDateKey]) else {
+                    continue
+                }
+
+                let isDir = rv.isDirectory ?? false
+                var size: Int64 = 0
+                var children: [FolderItem] = []
+
+                if isDir {
+                    children = await self.scanDirectoryRecursive(url.path)
+                    size = children.isEmpty ? 0 : children.reduce(0) { $0 + $1.size }
+                } else {
+                    size = Int64(rv.fileAllocatedSize ?? 0)
+                }
+
+                var item = FolderItem(
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: size,
+                    isDirectory: isDir,
+                    itemCount: children.isEmpty ? 1 : children.count,
+                    lastModified: rv.contentModificationDate ?? Date()
+                )
+                item.children = children
+                items.append(item)
+            }
+
             return items.sorted()
         }.value
     }
-    
-    // MARK: - Enhanced Memory Management
-    
-    public nonisolated static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
-        return await Task.detached {
+
+    private func updateUI(with items: [FolderItem], path: String) {
+        rootItems = items
+        currentPath = path
+        totalSize = items.reduce(0) { $0 + $1.size }
+
+        var mutableItems = items
+        ScanResultProcessor.calculatePercentages(for: &mutableItems)
+        rootItems = mutableItems
+    }
+
+    private func cacheResults(_ items: [FolderItem], for path: String) async {
+        await cacheManager.cacheChildren(items, for: path)
+
+        // Cache subdirectories
+        for item in items where item.isDirectory && !item.children.isEmpty {
+            await cacheManager.cacheChildren(item.children, for: item.path)
+        }
+    }
+
+    private func hasFullDiskAccess() -> Bool {
+        FileManager.default.isReadableFile(atPath: "/Library/Application Support")
+    }
+
+    private func formatTimeInterval(_ interval: TimeInterval) -> String {
+        if interval < 60 {
+            return String(format: "%.0f seconds", interval)
+        } else if interval < 3600 {
+            return String(format: "%.1f minutes", interval / 60)
+        } else {
+            return String(format: "%.1f hours", interval / 3600)
+        }
+    }
+
+    // MARK: - Static Helper
+
+    static func getDirectoryTotalSizeFast(path: String) async -> Int64 {
+        await Task.detached {
             var totalSize: Int64 = 0
 
-            // Simple FileManager enumeration for total size
-            let enumerator = FileManager.default.enumerator(
+            guard let enumerator = FileManager.default.enumerator(
                 at: URL(fileURLWithPath: path),
                 includingPropertiesForKeys: [.totalFileAllocatedSizeKey],
-                options: [.skipsPackageDescendants, .skipsHiddenFiles]
-            )
+                options: [.skipsPackageDescendants]
+            ) else {
+                return 0
+            }
 
-            while let url = enumerator?.nextObject() as? URL {
+            while let url = enumerator.nextObject() as? URL {
                 if let resourceValues = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey]),
                    let size = resourceValues.totalFileAllocatedSize {
                     totalSize += Int64(size)
@@ -494,153 +304,4 @@ class DiskAnalyzer: ObservableObject {
             return totalSize
         }.value
     }
-    
-    // MARK: - External Volumes
-    
-    func scanExternalVolumes() async -> [FolderItem] {
-        let volumes = await Task.detached {
-            var externalVolumes: [FolderItem] = []
-            
-            // Scan /Volumes for external drives and networks
-            let volumesPath = "/Volumes"
-            do {
-                let volumeList = try FileManager.default.contentsOfDirectory(atPath: volumesPath)
-                
-                for volumeName in volumeList {
-                    let volumePath = volumesPath + "/" + volumeName
-
-                    // Skip system volumes and hidden volumes
-                    if PathFilter.shouldSkipVolume(volumeName) {
-                        continue
-                    }
-                    
-                    // Check if it's accessible
-                    guard FileManager.default.isReadableFile(atPath: volumePath) else {
-                        continue
-                    }
-                    
-                    let volumeURL = URL(fileURLWithPath: volumePath)
-                    do {
-                        let resourceValues = try volumeURL.resourceValues(forKeys: [
-                            .volumeNameKey,
-                            .volumeTotalCapacityKey,
-                            .volumeAvailableCapacityKey
-                        ])
-                        
-                        let size = Int64(resourceValues.volumeTotalCapacity ?? 0)
-                        
-                        let volume = FolderItem(
-                            name: volumeName,
-                            path: volumePath,
-                            size: size,
-                            isDirectory: true,
-                            itemCount: 1,
-                            lastModified: Date()
-                        )
-                        
-                        externalVolumes.append(volume)
-                        
-                    } catch {
-                        // If we can't get volume info, create a basic item
-                        let volume = FolderItem(
-                            name: volumeName,
-                            path: volumePath,
-                            size: 0,
-                            isDirectory: true,
-                            itemCount: 1,
-                            lastModified: Date()
-                        )
-                        
-                        externalVolumes.append(volume)
-                    }
-                }
-                
-            } catch {
-                print("Error scanning /Volumes: \(error)")
-            }
-            
-            return externalVolumes.sorted()
-        }.value
-
-        return volumes
-    }
-    // MARK: - Helper Functions
-
-    private func hasFullDiskAccess() -> Bool {
-        let testPaths = [
-            "/Library/Application Support",
-            "/Library/Preferences",
-            "/private/var/db"
-        ]
-        
-        for path in testPaths {
-            if !FileManager.default.isReadableFile(atPath: path) {
-                return false
-            }
-            
-            do {
-                _ = try FileManager.default.contentsOfDirectory(atPath: path)
-                return true
-            } catch {
-                return false
-            }
-        }
-        return true
-    }
-    
-    private func getTotalDiskSize(path: String) -> Int64 {
-        // Get the USED capacity, not total capacity
-        // This matches what we show in the sidebar and gives accurate progress
-        let url = URL(fileURLWithPath: path)
-
-        // Use statfs to get actual used bytes (same as HyperScanner)
-        var stat = statfs()
-        let result = url.withUnsafeFileSystemRepresentation { pathPtr in
-            statfs(pathPtr, &stat)
-        }
-
-        if result == 0 {
-            let blockSize = Int64(stat.f_bsize)
-            let totalBlocks = Int64(stat.f_blocks)
-            let freeBlocks = Int64(stat.f_bfree)
-            let usedBlocks = totalBlocks - freeBlocks
-            let usedBytes = usedBlocks * blockSize
-            print("[DiskAnalyzer] Total disk used: \(ByteFormatter.formatFileSize(usedBytes))")
-            return usedBytes
-        }
-
-        // Fallback: try to get volume capacity
-        do {
-            let resourceValues = try url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey])
-            let total = Int64(resourceValues.volumeTotalCapacity ?? 0)
-            let available = Int64(resourceValues.volumeAvailableCapacity ?? 0)
-            let used = total - available
-            print("[DiskAnalyzer] Total disk used (fallback): \(ByteFormatter.formatFileSize(used))")
-            return used
-        } catch {
-            print("[DiskAnalyzer] Error getting disk size: \(error)")
-            return 0
-        }
-    }
-    
-    func clearAllCaches() {
-        folderTree.removeAll()
-        sizeCache.removeAll()
-    }
-
-    // Helper function for formatting time intervals
-    private func formatTimeInterval(_ interval: TimeInterval) -> String {
-        if interval < 60 {
-            return String(format: "%.0fs", interval)
-        } else if interval < 3600 {
-            return String(format: "%.0fm %.0fs", interval / 60, interval.truncatingRemainder(dividingBy: 60))
-        } else {
-            let hours = Int(interval / 3600)
-            let minutes = Int((interval.truncatingRemainder(dividingBy: 3600)) / 60)
-            return "\(hours)h \(minutes)m"
-        }
-    }
 }
-
-// MARK: - Supporting Types moved to SharedTypes.swift
-
