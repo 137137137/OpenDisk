@@ -152,29 +152,6 @@ struct DiskAnalysisView: View {
                 HStack(spacing: 0) {
                     // Left side - Folder list with navigation (60% width)
                     VStack(spacing: 0) {
-                        // Breadcrumb navigation bar
-                        BreadcrumbBar(
-                            currentPath: currentPath,
-                            rootPath: rootPath,
-                            onNavigate: { path in
-                                navigateToPath(path)
-                            },
-                            onBack: {
-                                goBack()
-                            },
-                            onComputerClick: {
-                                // Handle Computer breadcrumb click - go back to device selection only when at root
-                                if currentPath == rootPath {
-                                    print("DEBUG: Computer breadcrumb clicked at root - going to device selection")
-                                    self.isNavigatingBack = true
-                                    onBack()
-                                } else {
-                                    print("DEBUG: Computer breadcrumb clicked - navigating to root: \(rootPath)")
-                                    navigateToPath(rootPath)
-                                }
-                            }
-                        )
-                        
                         // Folder list
                         List(analyzer.rootItems) { item in
                             FolderRowView(item: item) {
@@ -208,6 +185,7 @@ struct DiskAnalysisView: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 6)
+                            .background(.ultraThinMaterial)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -246,6 +224,7 @@ struct DiskAnalysisView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
 
                     if analyzer.debugEnabled {
                         ScrollViewReader { proxy in
@@ -300,6 +279,30 @@ struct DiskAnalysisView: View {
                     }
                 }
                 .keyboardShortcut("r", modifiers: .command)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                if !analyzer.rootItems.isEmpty {
+                    BreadcrumbBar(
+                        currentPath: currentPath,
+                        rootPath: rootPath,
+                        onNavigate: { path in
+                            navigateToPath(path)
+                        },
+                        onBack: {
+                            goBack()
+                        },
+                        onComputerClick: {
+                            if currentPath == rootPath {
+                                self.isNavigatingBack = true
+                                onBack()
+                            } else {
+                                navigateToPath(rootPath)
+                            }
+                        }
+                    )
+                }
             }
         }
         .onAppear {

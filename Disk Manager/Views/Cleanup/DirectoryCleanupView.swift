@@ -26,7 +26,7 @@ struct DirectoryCleanupView: View {
                             
                             Text("Remove .DS_Store files to reset all folder view preferences to their default settings.")
                                 .font(.body)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         
@@ -229,7 +229,7 @@ struct DirectoryCleanupView: View {
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
-                .background(.regularMaterial, in: Rectangle())
+                .background(.ultraThinMaterial)
             }
         }
         .sheet(isPresented: $showingDefaultsGuide) {
