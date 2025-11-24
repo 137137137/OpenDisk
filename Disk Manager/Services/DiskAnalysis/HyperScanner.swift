@@ -193,24 +193,32 @@ actor HyperScanner {
     private func scanDirectoryFull(path: String, name: String) async -> HyperScanItem {
         var localItems = [HyperScanItem]()
         var localSize: Int64 = 0
+        var directFilesSize: Int64 = 0
         var subdirectories: [(path: String, name: String)] = []
-        
+
         // V18: Scope the File Access strictly to this block.
         // This ensures FD is closed BEFORE we start recursion (waiting on children).
+        var dirDevice: dev_t = 0
         do {
             let fd = open(path, O_RDONLY | O_DIRECTORY)
             guard fd >= 0 else { return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: []) }
             defer { close(fd) } // Ensures close happens immediately when this `do` block ends
 
+            // Get device number for this directory
+            var dirStat = stat()
+            if fstat(fd, &dirStat) == 0 {
+                dirDevice = dirStat.st_dev
+            }
+
             var attrList = attrlist()
             attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-            attrList.commonattr = attrgroup_t(UInt32(ATTR_CMN_RETURNED_ATTRS) | UInt32(ATTR_CMN_NAME) | UInt32(ATTR_CMN_OBJTYPE))
-            attrList.fileattr = attrgroup_t(UInt32(ATTR_FILE_TOTALSIZE)) 
+            attrList.commonattr = attrgroup_t(UInt32(ATTR_CMN_RETURNED_ATTRS) | UInt32(ATTR_CMN_NAME) | UInt32(ATTR_CMN_OBJTYPE) | UInt32(ATTR_CMN_FILEID))
+            attrList.fileattr = attrgroup_t(UInt32(ATTR_FILE_TOTALSIZE))
             attrList.dirattr = 0
 
             let buffer = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 8)
             defer { buffer.deallocate() }
-            
+
             let isDataVolumeRoot = (path == "/System/Volumes/Data")
 
             while true {
@@ -224,18 +232,34 @@ actor HyperScanner {
                     ptr = ptr.advanced(by: Int(entry.length))
 
                     if entry.name == "." || entry.name == ".." || entry.name == "unknown" { continue }
-                    
+
                     let fullPath = path == "/" ? "/\(entry.name)" : "\(path)/\(entry.name)"
-                    
+
                     if isDataVolumeRoot && firmlinkNames.contains(entry.name) { continue }
                     if entry.name == "Volumes" && path == "/" { continue }
-                    
+
                     if entry.isDirectory {
                         subdirectories.append((path: fullPath, name: entry.name))
                     } else {
+                        // Check for hard links - only count files we haven't seen before
+                        var shouldCount = true
+                        if let fileID = entry.fileID {
+                            let actualFileID = FileSystemID(device: dirDevice, inode: fileID.inode)
+                            if visitedInodes.contains(actualFileID) {
+                                shouldCount = false
+                            } else {
+                                visitedInodes.insert(actualFileID)
+                            }
+                        }
+
                         localItems.append(HyperScanItem(name: entry.name, path: fullPath, size: entry.size, isDirectory: false, children: nil))
-                        if entry.size > 0 { localSize += entry.size }
-                        itemsScanned += 1
+                        if shouldCount && entry.size > 0 {
+                            localSize += entry.size
+                            directFilesSize += entry.size
+                        }
+                        if shouldCount {
+                            itemsScanned += 1
+                        }
                     }
                 }
             }
@@ -295,11 +319,11 @@ actor HyperScanner {
             }
         }
 
-        await updateProgress(bytesAdded: localSize, path: path)
+        await updateProgress(bytesAdded: directFilesSize, path: path)
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems.sorted { $0.size > $1.size })
     }
 
-    private func parseAttributeBuffer(ptr: UnsafeMutableRawPointer) -> (length: UInt32, name: String, isDirectory: Bool, size: Int64) {
+    private func parseAttributeBuffer(ptr: UnsafeMutableRawPointer) -> (length: UInt32, name: String, isDirectory: Bool, size: Int64, fileID: FileSystemID?) {
         let length = ptr.load(as: UInt32.self)
         var currentOffset = 4
 
@@ -311,11 +335,11 @@ actor HyperScanner {
         if (returnedCommon & UInt32(ATTR_CMN_NAME)) != 0 {
             let nameRefPtr = ptr.advanced(by: currentOffset)
             let nameRef = nameRefPtr.load(as: attrreference_t.self)
-            currentOffset += 8 
-            
+            currentOffset += 8
+
             let nameDataPtr = nameRefPtr.advanced(by: Int(nameRef.attr_dataoffset))
             let nameLen = Int(nameRef.attr_length) - 1
-            
+
             if nameLen > 0 {
                 let nameData = Data(bytes: nameDataPtr, count: nameLen)
                 name = String(data: nameData, encoding: .utf8) ?? "unknown"
@@ -331,6 +355,19 @@ actor HyperScanner {
             isRegularFile = (objType == 1)
         }
 
+        var fileID: FileSystemID? = nil
+        if (returnedCommon & UInt32(ATTR_CMN_FILEID)) != 0 {
+            var inode: UInt64 = 0
+            withUnsafeMutableBytes(of: &inode) { inodeBuf in
+                let srcPtr = ptr.advanced(by: currentOffset)
+                inodeBuf.baseAddress?.copyMemory(from: srcPtr, byteCount: 8)
+            }
+            currentOffset += 8
+            // For device, we'll get it from stat on the directory itself
+            // For now, we'll create a placeholder and update it later
+            fileID = FileSystemID(device: 0, inode: inode)
+        }
+
         var size: Int64 = 0
         if isRegularFile && (returnedFile & UInt32(ATTR_FILE_TOTALSIZE)) != 0 {
             if currentOffset + 8 <= Int(length) {
@@ -340,14 +377,14 @@ actor HyperScanner {
                     sizeBuf.baseAddress?.copyMemory(from: srcPtr, byteCount: 8)
                 }
                 currentOffset += 8
-                
+
                 if rawSize > 0 && rawSize < 1_000_000_000_000_000 {
                     size = rawSize
                 }
             }
         }
 
-        return (length, name, isDirectory, size)
+        return (length, name, isDirectory, size, fileID)
     }
 
     private func updateProgress(bytesAdded: Int64, path: String) async {
@@ -371,7 +408,8 @@ actor HyperScanner {
     private func scanWithFileManager(path: String, name: String) async -> HyperScanItem {
         var children: [HyperScanItem] = []
         var totalSize: Int64 = 0
-        
+        var directFilesSize: Int64 = 0
+
         if path != startPath {
             for excluded in excludedPathPrefixes {
                 if path.hasPrefix(excluded) { return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: []) }
@@ -383,7 +421,7 @@ actor HyperScanner {
             for itemName in contents {
                 if itemName.hasPrefix(".") { continue }
                 let fullPath = path + "/" + itemName
-                
+
                 if path == "/System/Volumes/Data" && firmlinkNames.contains(itemName) { continue }
                 if itemName == "Volumes" && path == "/" { continue }
 
@@ -395,16 +433,31 @@ actor HyperScanner {
                          totalSize += sub.size
                     } else {
                          if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath), let s = attrs[.size] as? Int64 {
+                             // Check for hard links
+                             var shouldCount = true
+                             var fileStat = stat()
+                             if stat(fullPath, &fileStat) == 0 {
+                                 let fileID = FileSystemID(device: fileStat.st_dev, inode: fileStat.st_ino)
+                                 if visitedInodes.contains(fileID) {
+                                     shouldCount = false
+                                 } else {
+                                     visitedInodes.insert(fileID)
+                                 }
+                             }
+
                              children.append(HyperScanItem(name: itemName, path: fullPath, size: s, isDirectory: false, children: nil))
-                             totalSize += s
-                             itemsScanned += 1
+                             if shouldCount {
+                                 totalSize += s
+                                 directFilesSize += s
+                                 itemsScanned += 1
+                             }
                          }
                     }
                 }
             }
         } catch { }
-        
-        await updateProgress(bytesAdded: totalSize, path: path)
+
+        await updateProgress(bytesAdded: directFilesSize, path: path)
         return HyperScanItem(name: name, path: path, size: totalSize, isDirectory: true, children: children.sorted { $0.size > $1.size })
     }
 
