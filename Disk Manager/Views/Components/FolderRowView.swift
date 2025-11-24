@@ -34,6 +34,7 @@ struct FolderRowView: View {
                     .foregroundStyle(.tertiary)
                     .opacity(item.isDirectory ? 1 : 0)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
