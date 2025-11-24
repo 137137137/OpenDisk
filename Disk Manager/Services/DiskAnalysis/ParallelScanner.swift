@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import Dispatch
 
 // MARK: - Non-actor parallel scanner for maximum performance
 // This does the heavy lifting outside actor isolation
@@ -9,6 +10,14 @@ final class ParallelScanner {
     // Thread-safe inode tracking using NSLock
     private let visitedInodesLock = NSLock()
     private var visitedInodes = Set<FileSystemID>()
+
+    // Use all available cores aggressively
+    private let concurrentQueue = DispatchQueue(
+        label: "com.diskmanager.parallel",
+        qos: .userInteractive,  // Highest priority
+        attributes: .concurrent,
+        autoreleaseFrequency: .workItem
+    )
 
     private let excludedPaths = Set([
         "/dev", "/net", "/home", "/private/var/vm", "/Volumes"
@@ -146,25 +155,31 @@ final class ParallelScanner {
             }
         }
 
-        // Report progress
-        await progressCallback(directFilesSize, path)
+        // Report all progress for accurate tracking
+        if directFilesSize > 0 {
+            await progressCallback(directFilesSize, path)
+        }
 
-        // Scan subdirectories in parallel - NOT through actor!
+        // Scan subdirectories with UNLIMITED parallelism - no restrictions!
         if !subdirectories.isEmpty {
+            // Always use maximum parallelism regardless of directory count
             await withTaskGroup(of: HyperScanItem.self) { group in
-                // Spawn ALL subdirectory scans immediately
+                // NO LIMITS - spawn ALL tasks immediately at high priority!
+                // Use detached tasks for true independence from executor
                 for (subPath, subName) in subdirectories {
-                    group.addTask {
-                        // Recursive parallel scan - NOT actor isolated!
-                        await self.parallelScanDirectory(
-                            path: subPath,
-                            name: subName,
-                            progressCallback: progressCallback
-                        )
+                    group.addTask(priority: .high) {
+                        // Use detached task for complete independence
+                        await Task.detached(priority: .high) {
+                            await self.parallelScanDirectory(
+                                path: subPath,
+                                name: subName,
+                                progressCallback: progressCallback
+                            )
+                        }.value
                     }
                 }
 
-                // Collect results
+                // Collect results as they complete
                 for await result in group {
                     localItems.append(result)
                     localSize += result.size

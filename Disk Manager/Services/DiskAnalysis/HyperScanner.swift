@@ -91,8 +91,11 @@ actor HyperScanner {
         // Match DaisyDisk's aggressive parallelization
         // Use ALL CPU cores for maximum performance
         // FileIDTreeGetVRefNumForDevice errors are warnings, not failures
-        self.optimalConcurrency = cpuCoreCount * 4  // 4 threads per core for I/O bound work
-        self.maxConcurrencyLimit = max(64, optimalConcurrency)  // At least 64 threads
+        self.optimalConcurrency = cpuCoreCount * 8  // 8 threads per core for I/O bound work
+        self.maxConcurrencyLimit = max(128, optimalConcurrency)  // At least 128 threads
+
+        // Set environment variable for Swift runtime to use more threads
+        setenv("LIBDISPATCH_WORKQUEUE_MAX_THREAD_COUNT", "0", 1)  // Unlimited threads
     }
 
     func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
@@ -477,9 +480,9 @@ actor HyperScanner {
 
         // Scan ALL root directories in parallel OUTSIDE the actor
         await withTaskGroup(of: HyperScanItem.self) { group in
-            // Launch ALL scans immediately - true parallelization!
+            // Launch ALL scans immediately with HIGH priority!
             for (name, path) in directoriesToScan {
-                group.addTask {
+                group.addTask(priority: .high) {  // HIGH priority for maximum CPU usage
                     // This runs OUTSIDE actor isolation - true parallel!
                     await self.parallelScanner.parallelScanDirectory(
                         path: path,
