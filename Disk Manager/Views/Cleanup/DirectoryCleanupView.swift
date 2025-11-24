@@ -71,7 +71,6 @@ struct DirectoryCleanupView: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "folder.badge.gearshape")
                                         .font(.largeTitle)
-                                        .foregroundStyle(.accent)
                                         .frame(width: 40, height: 40)
 
                                     VStack(alignment: .leading, spacing: 4) {
