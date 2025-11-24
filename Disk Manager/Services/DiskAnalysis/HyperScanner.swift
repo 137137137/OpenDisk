@@ -141,10 +141,7 @@ actor HyperScanner {
     private var lastConsolePrint = Date()
     private var startPath: String = ""
 
-    // V20: Use non-actor ParallelScanner for true parallelization
-    private let parallelScanner = ParallelScanner()
-
-    // Cycle Detection (kept for compatibility, but real work done in ParallelScanner)
+    // Cycle Detection (kept for compatibility)
     private var visitedInodes: Set<FileSystemID> = []
 
     // Config
