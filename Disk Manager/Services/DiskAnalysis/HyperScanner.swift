@@ -178,8 +178,13 @@ actor HyperScanner {
         self.optimalConcurrency = cpuCoreCount * 8  // 8 threads per core for I/O bound work
         self.maxConcurrencyLimit = max(128, optimalConcurrency)  // At least 128 threads
 
-        // Set environment variable for Swift runtime to use more threads
+        // V25: Aggressive thread pool configuration
         setenv("LIBDISPATCH_WORKQUEUE_MAX_THREAD_COUNT", "0", 1)  // Unlimited threads
+        setenv("LIBDISPATCH_COOPERATIVE_POOL_SIZE", "0", 1)  // Unlimited cooperative pool
+
+        // V25: Tell macOS we're doing heavy I/O (request no throttling)
+        var policy = IOPOL_IMPORTANT  // Request highest I/O priority
+        setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, policy)
     }
 
     func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
@@ -228,31 +233,35 @@ actor HyperScanner {
         return result
     }
     
-    // V19: Maximize file descriptors and calculate CPU-optimized concurrency
+    // V25: Aggressively maximize ALL system limits for peak performance
     private func optimizeSystemLimits() {
         var rlimitData = rlimit()
 
-        // Get current limits
+        // 1. File descriptors - push to absolute maximum
         if getrlimit(RLIMIT_NOFILE, &rlimitData) == 0 {
-            let currentSoft = rlimitData.rlim_cur
-            let maxHard = rlimitData.rlim_max
+            // macOS allows up to 524288 file descriptors
+            let targetLimit: rlim_t = 524288
+            rlimitData.rlim_cur = min(targetLimit, rlimitData.rlim_max)
 
-            // Try to raise the limit to the maximum allowed
-            if currentSoft < maxHard {
-                rlimitData.rlim_cur = maxHard
+            if setrlimit(RLIMIT_NOFILE, &rlimitData) != 0 {
+                // Fallback: Try 65536 (still very high)
+                rlimitData.rlim_cur = 65536
                 setrlimit(RLIMIT_NOFILE, &rlimitData)
             }
 
-            // Match DaisyDisk - use aggressive concurrency
-            // FileIDTreeGetVRefNumForDevice errors are non-fatal warnings
-            // The filesystem continues working despite these errors
-
-            // Use all available file descriptors
+            // Use all available file descriptors for maximum concurrency
             let fdLimit = Int(rlimitData.rlim_cur)
-
-            // For 16 cores, we want 64+ concurrent operations like DaisyDisk
-            self.maxConcurrencyLimit = max(optimalConcurrency, fdLimit / 8)
+            self.maxConcurrencyLimit = max(256, fdLimit / 8)
         }
+
+        // 2. Stack size - increase for deep directory trees
+        if getrlimit(RLIMIT_STACK, &rlimitData) == 0 {
+            rlimitData.rlim_cur = 64 * 1024 * 1024  // 64MB stack
+            setrlimit(RLIMIT_STACK, &rlimitData)
+        }
+
+        // 3. Process priority - request high priority scheduling
+        setpriority(PRIO_PROCESS, 0, -10)  // Higher priority (max is -20 but requires root)
     }
 
     private func scanDirectoryOptimized(path: String, name: String) async -> HyperScanItem {

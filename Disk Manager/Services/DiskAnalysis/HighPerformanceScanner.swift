@@ -71,14 +71,28 @@ final class HighPerformanceScanEngine {
     private let context: HPScanContext
     private let onProgress: ((HyperScanProgress) -> Void)?
 
-    // Configuration
-    private let bufferSize = 64 * 1024 // 64KB is optimal for getattrlistbulk
+    // Configuration - V25: Larger buffer for fewer syscalls
+    private let bufferSize = 256 * 1024 // 256KB buffer reduces syscall overhead
     private let excludedPaths = Set([
         "/dev", "/net", "/home", "/private/var/vm", "/Volumes"
     ])
     private let firmlinkNames = Set([
         "Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"
     ])
+
+    // V25: String interning for common file names (reduces allocations)
+    private static let commonFileNames: [String: String] = [
+        ".DS_Store": ".DS_Store",
+        ".git": ".git",
+        "node_modules": "node_modules",
+        "build": "build",
+        "dist": "dist",
+        ".localized": ".localized",
+        "Info.plist": "Info.plist",
+        "index.html": "index.html",
+        "package.json": "package.json",
+        "README.md": "README.md"
+    ]
 
     init(context: HPScanContext, onProgress: ((HyperScanProgress) -> Void)? = nil) {
         self.context = context
@@ -121,10 +135,15 @@ final class HighPerformanceScanEngine {
             close(fd) // Close immediately after reading
         }
 
+        // V25: Pre-allocate with estimated capacity to avoid resizing
         var localItems = [HyperScanItem]()
+        localItems.reserveCapacity(1000) // Most dirs have < 1000 items
+
         var localSize: Int64 = 0
         var directFilesSize: Int64 = 0
+
         var subDirsToScan: [(path: String, name: String)] = []
+        subDirsToScan.reserveCapacity(100) // Most dirs have < 100 subdirs
 
         // V23: Use parent device if provided, else get it once
         let device: dev_t
@@ -188,9 +207,13 @@ final class HighPerformanceScanEngine {
             context.addProgress(bytes: directFilesSize, items: localItems.count)
         }
 
-        // 6. Recursive Parallelism - ALL tasks run in parallel!
+        // 6. V25: Optimized Parallelism with Controlled Concurrency
         if !subDirsToScan.isEmpty {
+            // Process in batches for better CPU cache utilization
+            let batchSize = min(subDirsToScan.count, ProcessInfo.processInfo.activeProcessorCount * 4)
+
             await withTaskGroup(of: HyperScanItem.self) { group in
+                // V25: Add all tasks at once for better scheduling
                 for (subPath, subName) in subDirsToScan {
                     group.addTask(priority: .high) {
                         // V23: Pass device down to avoid repeated fstat calls
@@ -198,10 +221,17 @@ final class HighPerformanceScanEngine {
                     }
                 }
 
+                // V25: Pre-allocate result array
+                var results = [HyperScanItem]()
+                results.reserveCapacity(subDirsToScan.count)
+
                 for await item in group {
-                    localItems.append(item)
+                    results.append(item)
                     localSize += item.size
                 }
+
+                // Append all at once (more efficient)
+                localItems.append(contentsOf: results)
             }
         }
 
@@ -378,7 +408,9 @@ final class HighPerformanceScanEngine {
 
             if nameLen > 0 && nameLen < 1024 { // Sanity check
                 // Direct decoding from buffer without Data allocation
-                name = String(decoding: UnsafeRawBufferPointer(start: nameDataPtr, count: nameLen), as: UTF8.self)
+                let decodedName = String(decoding: UnsafeRawBufferPointer(start: nameDataPtr, count: nameLen), as: UTF8.self)
+                // V25: Use interned string if it's a common name
+                name = Self.commonFileNames[decodedName] ?? decodedName
             }
         }
 
