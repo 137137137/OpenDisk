@@ -15,27 +15,21 @@ struct FolderRowView: View {
         Button(action: onTap) {
             HStack {
                 Label {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Text(item.name)
-                                .lineLimit(1)
+                    HStack {
+                        Text(item.name)
+                            .lineLimit(1)
 
-                            Spacer()
+                        Spacer()
 
-                            Text(item.formattedSize)
+                        Text(item.formattedSize)
 
-                            Text(item.formattedItemCount + " items")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        Text(item.formattedItemCount + " items")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                            Text(item.relativeModified)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        if item.percentage >= 1.0 {
-                            ProgressView(value: item.percentage, total: 100)
-                        }
+                        Text(item.relativeModified)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 } icon: {
                     Image(systemName: item.isDirectory ? "folder" : "doc")
