@@ -502,23 +502,131 @@ actor HyperScanner {
     private func scanRootWithFileManager(url: URL) async -> HyperScanItem {
         var rootChildren: [HyperScanItem] = []
         var totalSize: Int64 = 0
-        // Don't include /var since it's a symlink to /private/var (would cause double counting)
-        let rootPaths = ["/Applications", "/Library", "/System", "/Users", "/usr", "/opt", "/private"]
 
-        print("[HyperScanner] Scanning root with paths: \(rootPaths)")
+        print("[HyperScanner] Scanning ALL root directories and files...")
 
-        for path in rootPaths {
-            guard FileManager.default.fileExists(atPath: path) else { continue }
-
-            if path.contains("Volumes") { continue }
-
-            let item = await scanDirectoryOptimized(path: path, name: URL(fileURLWithPath: path).lastPathComponent)
-            print("[HyperScanner] Root path \(path): \(ByteFormatter.formatFileSize(item.size))")
-            rootChildren.append(item)
-            totalSize += item.size
+        // Get everything in root directory including hidden files
+        let fileManager = FileManager.default
+        guard let allRootContents = try? fileManager.contentsOfDirectory(atPath: "/") else {
+            print("[HyperScanner] Failed to list root directory")
+            return HyperScanItem(name: "/", path: "/", size: 0, isDirectory: true, children: [])
         }
+
+        // Only skip these specific paths
+        let skipPaths = Set([
+            "Volumes", // External volumes, handled separately
+            ".VolumeIcon.icns", // System file
+            ".file" // System file
+        ])
+
+        for itemName in allRootContents {
+            // Skip certain system paths
+            if skipPaths.contains(itemName) {
+                continue
+            }
+
+            let fullPath = "/\(itemName)"
+
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
+
+            if isDir.boolValue {
+                // Special handling for /System to skip /System/Volumes/Data
+                if itemName == "System" {
+                    let item = await scanSystemDirectoryWithoutData()
+                    if item.size > 0 {
+                        rootChildren.append(item)
+                        totalSize += item.size
+                        print("[HyperScanner] /System (excluding /System/Volumes/Data): \(ByteFormatter.formatFileSize(item.size))")
+                    }
+                } else {
+                    // Scan ALL other directories normally (including Users, Applications, etc.)
+                    let item = await scanDirectoryOptimized(path: fullPath, name: itemName)
+                    if item.size > 0 {
+                        rootChildren.append(item)
+                        totalSize += item.size
+                        print("[HyperScanner] \(fullPath): \(ByteFormatter.formatFileSize(item.size))")
+                    }
+                }
+            } else {
+                // Handle files in root directory
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath) {
+                    let fileSize: Int64
+                    if let allocSize = attrs[FileAttributeKey(rawValue: "NSFileAllocatedSize")] as? NSNumber {
+                        fileSize = allocSize.int64Value
+                    } else if let regularSize = attrs[.size] as? Int64 {
+                        fileSize = regularSize
+                    } else {
+                        fileSize = 0
+                    }
+
+                    if fileSize > 0 {
+                        let item = HyperScanItem(name: itemName, path: fullPath, size: fileSize, isDirectory: false, children: nil)
+                        rootChildren.append(item)
+                        totalSize += fileSize
+                        print("[HyperScanner] Root file \(itemName): \(ByteFormatter.formatFileSize(fileSize))")
+                    }
+                }
+            }
+        }
+
+        print("[HyperScanner] Total from all root items: \(ByteFormatter.formatFileSize(totalSize))")
         return HyperScanItem(name: "/", path: "/", size: totalSize, isDirectory: true, children: rootChildren.sorted { $0.size > $1.size })
     }
+
+    private func scanSystemDirectoryWithoutData() async -> HyperScanItem {
+        // Scan /System but EXCLUDE /System/Volumes/Data to avoid double counting
+        var systemChildren: [HyperScanItem] = []
+        var totalSize: Int64 = 0
+
+        guard let systemContents = try? FileManager.default.contentsOfDirectory(atPath: "/System") else {
+            return HyperScanItem(name: "System", path: "/System", size: 0, isDirectory: true, children: [])
+        }
+
+        for itemName in systemContents {
+            let fullPath = "/System/\(itemName)"
+
+            if itemName == "Volumes" {
+                // Special handling for /System/Volumes - skip Data but scan other volumes
+                var volumesChildren: [HyperScanItem] = []
+                var volumesSize: Int64 = 0
+
+                if let volumeContents = try? FileManager.default.contentsOfDirectory(atPath: fullPath) {
+                    for volumeName in volumeContents {
+                        if volumeName == "Data" {
+                            // Skip /System/Volumes/Data - it's scanned via firmlinks at root
+                            print("[HyperScanner] Skipping /System/Volumes/Data (scanned via firmlinks)")
+                            continue
+                        }
+
+                        // Scan other volumes (VM, Preboot, Update, etc.)
+                        let volumePath = "\(fullPath)/\(volumeName)"
+                        let item = await scanDirectoryOptimized(path: volumePath, name: volumeName)
+                        if item.size > 0 {
+                            volumesChildren.append(item)
+                            volumesSize += item.size
+                        }
+                    }
+                }
+
+                if !volumesChildren.isEmpty {
+                    let volumesItem = HyperScanItem(name: "Volumes", path: fullPath, size: volumesSize,
+                                                   isDirectory: true, children: volumesChildren.sorted { $0.size > $1.size })
+                    systemChildren.append(volumesItem)
+                    totalSize += volumesSize
+                }
+            } else {
+                // Scan other System directories normally
+                let item = await scanDirectoryOptimized(path: fullPath, name: itemName)
+                systemChildren.append(item)
+                totalSize += item.size
+            }
+        }
+
+        return HyperScanItem(name: "System", path: "/System", size: totalSize, isDirectory: true,
+                           children: systemChildren.sorted { $0.size > $1.size })
+    }
+
 
     private func getVolumeUsedSize(for url: URL) -> Int64 {
         var stat = statfs()
