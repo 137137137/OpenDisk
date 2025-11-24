@@ -100,23 +100,6 @@ class FileSystemMonitor {
         print("Stopped file system monitoring")
     }
 
-    /// Process batch of events
-    func processBatchedEvents(_ events: [FileSystemChange]) {
-        // Group events by directory for efficient processing
-        var eventsByDirectory: [String: [FileSystemChange]] = [:]
-
-        for event in events {
-            let dirPath = URL(fileURLWithPath: event.path).deletingLastPathComponent().path
-            eventsByDirectory[dirPath, default: []].append(event)
-        }
-
-        // Process each directory's changes
-        for (directory, changes) in eventsByDirectory {
-            print("Directory \(directory) has \(changes.count) changes")
-            // Could trigger partial rescan here if needed
-        }
-    }
-
     internal var changeCallback: ((FileSystemChange) -> Void)?
 
     deinit {

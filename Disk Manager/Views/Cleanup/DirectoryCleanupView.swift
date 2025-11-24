@@ -36,23 +36,23 @@ struct DirectoryCleanupView: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "internaldrive")
                                         .font(.title2)
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                         .frame(width: 32, height: 32)
-                                    
+
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text("Target Location")
                                             .font(.headline)
-                                            .fontWeight(.medium)
-                                        
+                                            .fontWeight(.semibold)
+
                                         Text("Computer (Root Directory)")
                                             .font(.body)
-                                            .foregroundColor(.primary)
-                                        
+                                            .foregroundStyle(.primary)
+
                                         Text("Total Used Space: \(computerDevice.formattedUsedStorage)")
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
-                                    
+
                                     Spacer()
                                 }
                                 .padding(.vertical, 4)
@@ -71,48 +71,48 @@ struct DirectoryCleanupView: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "folder.badge.gearshape")
                                         .font(.largeTitle)
-                                        .foregroundColor(.accentColor)
+                                        .foregroundStyle(.accent)
                                         .frame(width: 40, height: 40)
-                                    
+
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(".DS_Store Files")
                                             .font(.title2)
                                             .fontWeight(.semibold)
-                                        
+
                                         Text("Desktop Services Store")
                                             .font(.subheadline)
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
-                                    
+
                                     Spacer()
                                 }
-                                
+
                                 Text("These hidden files store folder view preferences including:")
                                     .font(.body)
-                                    .foregroundColor(.primary)
-                                
+                                    .foregroundStyle(.primary)
+
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 8) {
                                         Text("•")
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                         Text("Icon positions and arrangement")
                                             .font(.body)
                                     }
                                     HStack(spacing: 8) {
                                         Text("•")
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                         Text("Sort order and view type (list, icon, column)")
                                             .font(.body)
                                     }
                                     HStack(spacing: 8) {
                                         Text("•")
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                         Text("Column widths and window size")
                                             .font(.body)
                                     }
                                     HStack(spacing: 8) {
                                         Text("•")
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                         Text("Background images and colors")
                                             .font(.body)
                                     }
@@ -125,22 +125,22 @@ struct DirectoryCleanupView: View {
                                     
                                     HStack {
                                         Image(systemName: "magnifyingglass")
-                                            .foregroundColor(.secondary)
-                                        
+                                            .foregroundStyle(.secondary)
+
                                         Text("Scan Results:")
                                             .font(.headline)
                                             .fontWeight(.medium)
-                                        
+
                                         Spacer()
-                                        
+
                                         Text("\(cleanupManager.scanResults.dsStoreCount)")
                                             .font(.title2)
                                             .fontWeight(.bold)
-                                            .foregroundColor(cleanupManager.scanResults.dsStoreCount > 0 ? .accentColor : .secondary)
-                                        
+                                            .foregroundStyle(cleanupManager.scanResults.dsStoreCount > 0 ? .accent : .secondary)
+
                                         Text("files found")
                                             .font(.body)
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -162,7 +162,7 @@ struct DirectoryCleanupView: View {
                                                 
                                                 Text("\(cleanupManager.formattedScannedBytes) / \(cleanupManager.formattedTotalBytes)")
                                                     .font(.body)
-                                                    .foregroundColor(.secondary)
+                                                    .foregroundStyle(.secondary)
                                                     .monospacedDigit()
                                             }
                                             
@@ -212,7 +212,7 @@ struct DirectoryCleanupView: View {
                     if cleanupManager.hasScanned && cleanupManager.scanResults.dsStoreCount > 0 {
                         Text("\(cleanupManager.scanResults.dsStoreCount) files ready to remove")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     
                     Button("Reset All View Settings") {

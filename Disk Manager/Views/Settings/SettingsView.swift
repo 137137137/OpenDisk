@@ -12,7 +12,7 @@ struct SettingsView: View {
             HStack {
                 Image(systemName: "gearshape")
                     .font(.title2)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
 
                 Text("Settings")
                     .font(.title2)
@@ -21,7 +21,6 @@ struct SettingsView: View {
                 Spacer()
             }
             .padding(20)
-            .background(Color(NSColor.controlBackgroundColor))
 
             Divider()
 
@@ -33,7 +32,7 @@ struct SettingsView: View {
                         HStack {
                             Image(systemName: "lock.shield")
                                 .font(.title3)
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
 
                             Text("Full Disk Access")
                                 .font(.headline)
@@ -43,12 +42,12 @@ struct SettingsView: View {
                             // Status indicator
                             HStack(spacing: 12) {
                                 Circle()
-                                    .fill(fdaStatus ? Color.green : Color.orange)
+                                    .fill(fdaStatus ? .green : .orange)
                                     .frame(width: 10, height: 10)
 
                                 Text(fdaStatus ? "Granted" : "Not Granted")
                                     .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(fdaStatus ? .green : .orange)
+                                    .foregroundStyle(fdaStatus ? .green : .orange)
 
                                 Spacer()
 
@@ -59,13 +58,11 @@ struct SettingsView: View {
                                 .disabled(isCheckingFDA)
                             }
                             .padding()
-                            .background(Color(NSColor.textBackgroundColor))
-                            .cornerRadius(8)
 
                             // Explanation
                             Text("Full Disk Access allows Disk Manager to analyze all files and folders on your system for accurate disk usage information.")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             // Grant access button
@@ -84,21 +81,19 @@ struct SettingsView: View {
 
                                     Text("After granting access, click 'Check Status' to verify.")
                                         .font(.caption2)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
                     }
                     .padding()
-                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                    .cornerRadius(10)
 
                     // Startup behavior
                     VStack(alignment: .leading, spacing: 16) {
                         HStack {
                             Image(systemName: "power")
                                 .font(.title3)
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
 
                             Text("Startup Behavior")
                                 .font(.headline)
@@ -111,13 +106,11 @@ struct SettingsView: View {
 
                                 Text("Shows a prompt if Full Disk Access is not granted")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                         .toggleStyle(.checkbox)
                         .padding()
-                        .background(Color(NSColor.textBackgroundColor))
-                        .cornerRadius(8)
 
                         if !FullDiskAccess.isGranted {
                             Button("Reset Prompt Suppression") {
@@ -128,15 +121,13 @@ struct SettingsView: View {
                         }
                     }
                     .padding()
-                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                    .cornerRadius(10)
 
                     // About section
                     VStack(alignment: .leading, spacing: 16) {
                         HStack {
                             Image(systemName: "info.circle")
                                 .font(.title3)
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
 
                             Text("About Permissions")
                                 .font(.headline)
@@ -153,22 +144,17 @@ struct SettingsView: View {
                             • Provide complete disk analysis results
                             """)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding()
-                        .background(Color(NSColor.textBackgroundColor))
-                        .cornerRadius(8)
                     }
                     .padding()
-                    .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-                    .cornerRadius(10)
                 }
                 .padding(20)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             checkFDAStatus()
         }

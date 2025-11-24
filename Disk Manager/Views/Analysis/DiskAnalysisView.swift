@@ -27,7 +27,7 @@ struct DiskAnalysisView: View {
                 VStack(spacing: 20) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 64))
-                        .foregroundColor(.blue)
+                        .foregroundStyle(.blue)
                     
                     VStack(spacing: 12) {
                         Text("Analyzing Disk Usage")
@@ -36,30 +36,30 @@ struct DiskAnalysisView: View {
                         
                         Text(analyzer.scanProgress)
                             .font(.headline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                         
                         // Show current scanning path and rate
                         if !analyzer.currentScanPath.isEmpty && !analyzer.filesPerSecond.isEmpty {
                             HStack(spacing: 4) {
                                 Image(systemName: "folder")
-                                    .foregroundColor(.blue)
+                                    .foregroundStyle(.blue)
                                     .font(.caption)
-                                
+
                                 Text(analyzer.currentScanPath)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
-                                
+
                                 Spacer()
-                                
+
                                 Image(systemName: "speedometer")
-                                    .foregroundColor(.green)
+                                    .foregroundStyle(.green)
                                     .font(.caption)
-                                
+
                                 Text(analyzer.filesPerSecond)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             .frame(width: 300)
                         }
@@ -72,14 +72,14 @@ struct DiskAnalysisView: View {
                                 HStack(spacing: 8) {
                                     Text("Scanned: \(ByteCountFormatter.string(fromByteCount: analyzer.totalDiskScannedBytes, countStyle: .file))")
                                         .font(.subheadline)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
 
                                     Spacer()
 
                                     Text(String(format: "%.1f%%", scannedPercentage))
                                         .font(.title3)
                                         .fontWeight(.semibold)
-                                        .foregroundColor(.blue)
+                                        .foregroundStyle(.blue)
                                 }
                                 .frame(maxWidth: 380)
 
@@ -90,14 +90,14 @@ struct DiskAnalysisView: View {
                                 HStack {
                                     Text("of total used space")
                                         .font(.caption)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
 
                                     Spacer()
 
                                     if !analyzer.estimatedTimeRemaining.isEmpty {
                                         Text(analyzer.estimatedTimeRemaining)
                                             .font(.subheadline)
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
                                 }
                                 .frame(maxWidth: 300)
@@ -115,7 +115,7 @@ struct DiskAnalysisView: View {
                     VStack(spacing: 20) {
                         Image(systemName: "exclamationmark.shield")
                             .font(.system(size: 64))
-                            .foregroundColor(.orange)
+                            .foregroundStyle(.orange)
                         
                         VStack(spacing: 12) {
                             Text("Full Disk Access Required")
@@ -124,7 +124,7 @@ struct DiskAnalysisView: View {
                             
                             Text("Disk Manager needs Full Disk Access to analyze your entire system. This allows accurate measurement of all files and directories.")
                                 .font(.body)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                                 .frame(maxWidth: 400)
                             
@@ -139,11 +139,11 @@ struct DiskAnalysisView: View {
                     VStack(spacing: 16) {
                         Image(systemName: "folder")
                             .font(.system(size: 48))
-                            .foregroundColor(.secondary)
-                        
+                            .foregroundStyle(.secondary)
+
                         Text("Ready to analyze")
                             .font(.headline)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
@@ -193,22 +193,21 @@ struct DiskAnalysisView: View {
                             HStack(spacing: 12) {
                                 Text("Total")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
 
                                 Spacer()
 
                                 let totalSize = analyzer.rootItems.reduce(0) { $0 + $1.size }
                                 Text(ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file))
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
 
                                 Text("(\(analyzer.rootItems.count) items)")
                                     .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 6)
-                            .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -225,16 +224,16 @@ struct DiskAnalysisView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "ant.fill")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
 
                             Text("Debug Log")
                                 .font(.caption)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.orange)
+                                .foregroundStyle(.orange)
 
                             Text("Files: \(analyzer.debugFilesScannedCount)")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
 
                         Spacer()
@@ -247,7 +246,6 @@ struct DiskAnalysisView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.orange.opacity(0.1))
 
                     if analyzer.debugEnabled {
                         ScrollViewReader { proxy in
@@ -256,13 +254,13 @@ struct DiskAnalysisView: View {
                                     if analyzer.debugScanLog.isEmpty {
                                         Text("Waiting for scan data...")
                                             .font(.system(.caption2, design: .monospaced))
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                             .padding(8)
                                     } else {
                                         ForEach(Array(analyzer.debugScanLog.enumerated()), id: \.offset) { index, entry in
                                             Text(entry)
                                                 .font(.system(.caption2, design: .monospaced))
-                                                .foregroundColor(.secondary)
+                                                .foregroundStyle(.secondary)
                                                 .textSelection(.enabled)
                                                 .id(index)
                                         }
@@ -272,7 +270,6 @@ struct DiskAnalysisView: View {
                                 .padding(8)
                             }
                             .frame(height: 150)
-                            .background(Color(nsColor: .textBackgroundColor))
                             .onChange(of: analyzer.debugScanLog.count) {
                                 // Auto-scroll to bottom when new entries are added
                                 if let lastIndex = analyzer.debugScanLog.indices.last {
@@ -359,186 +356,6 @@ struct DiskAnalysisView: View {
             NSWorkspace.shared.open(url)
         }
     }
-}
-
-struct FolderRowView: View {
-    let item: FolderItem
-    let onTap: () -> Void
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Icon and progress indicator
-            HStack(spacing: 4) {
-                Text(String(format: "%.1f%%", item.percentage))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.accentColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                
-                Image(systemName: item.isDirectory ? "folder" : "doc")
-                    .font(.title3)
-                    .foregroundColor(item.isDirectory ? Color.accentColor : .secondary)
-                    .frame(width: 20)
-            }
-            
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(item.name)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(item.formattedSize)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
-                        
-                        Text(item.formattedItemCount + " items")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(item.relativeModified)
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(minWidth: 60)
-                    
-                    if item.isDirectory {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                // Progress bar for large items
-                if item.percentage >= 1.0 {
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(.quaternary)
-                                .frame(height: 2)
-                            
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.accentColor)
-                                .frame(width: geometry.size.width * (item.percentage / 100), height: 2)
-                        }
-                    }
-                    .frame(height: 2)
-                    .padding(.top, 4)
-                }
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap()
-        }
-    }
-}
-
-struct BreadcrumbBar: View {
-    let currentPath: String
-    let rootPath: String
-    let onNavigate: (String) -> Void
-    let onBack: () -> Void
-    let onComputerClick: () -> Void
-    
-    private var pathComponents: [PathComponent] {
-        let components = currentPath.components(separatedBy: "/").filter { !$0.isEmpty }
-        var result: [PathComponent] = []
-        
-        // Add root
-        result.append(PathComponent(name: "Computer", path: rootPath))
-        
-        // Build path components
-        var buildPath = ""
-        for component in components {
-            if buildPath.isEmpty || buildPath == "/" {
-                buildPath = "/" + component
-            } else {
-                buildPath = buildPath + "/" + component
-            }
-            result.append(PathComponent(name: component, path: buildPath))
-        }
-        
-        return result
-    }
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            // Back button
-            Button {
-                onBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .disabled(currentPath == rootPath)
-            
-            // Up button
-            Button {
-                let parentPath = URL(fileURLWithPath: currentPath).deletingLastPathComponent().path
-                if parentPath != currentPath {
-                    onNavigate(parentPath)
-                }
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 14, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .disabled(currentPath == rootPath || currentPath == "/")
-            
-            Divider()
-                .frame(height: 16)
-            
-            // Breadcrumb path
-            HStack(spacing: 4) {
-                ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
-                    Button {
-                        // Special case: "Computer" should navigate to root path only if we're not already there
-                        if component.name == "Computer" && currentPath != rootPath {
-                            print("DEBUG: Computer breadcrumb clicked - navigating to root: \(component.path)")
-                            onNavigate(component.path)
-                        } else if component.name == "Computer" && currentPath == rootPath {
-                            // If we're already at root, then go back to device selection
-                            onComputerClick()
-                        } else {
-                            print("DEBUG: Breadcrumb clicked - navigating to: \(component.path)")
-                            onNavigate(component.path)
-                        }
-                    } label: {
-                        Text(component.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(index == pathComponents.count - 1 ? .primary : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    if index < pathComponents.count - 1 {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .border(Color(nsColor: .separatorColor), width: 0.5)
-    }
-}
-
-struct PathComponent {
-    let name: String
-    let path: String
 }
 
 #Preview {

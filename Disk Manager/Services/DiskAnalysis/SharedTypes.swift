@@ -40,22 +40,7 @@ struct SystemDirectoryFilter {
             "/.Spotlight-V100", "/.fseventsd", "/.Trashes",
             "/System/Volumes/Data", "/Network", "/Volumes/.timemachine"
         ]
-        
+
         return skipPaths.contains { path.hasPrefix($0) }
     }
 }
-
-
-
-// MARK: - Autoreleasepool for Async Contexts
-
-/// Autoreleasepool wrapper for async contexts to prevent memory buildup
-func asyncAutoreleasePool<T>(_ body: @escaping () async -> T) async -> T {
-    return await withTaskGroup(of: T.self) { group in
-        group.addTask {
-            await body()
-        }
-        return await group.next()!
-    }
-}
-
