@@ -83,17 +83,9 @@ actor HyperScanner {
     ]
 
     func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
-        print("[HyperScanner] ===== STARTING SCAN (v18 - Dynamic Resource Limits) =====")
-        print("[HyperScanner] Scanning path: \(url.path)")
-
         // 1. Permission Check
         let currentUser = getuid()
-        if currentUser != 0 {
-            print("⚠️  [WARNING] Running as User ID: \(currentUser).")
-            print("👉  Run with 'sudo swift FastScanner.swift' for complete results.")
-        } else {
-            print("✅ [INFO] Running as Root. Full access enabled.")
-        }
+        // Permission check removed for performance
 
         // 2. Resource Optimization (V18 Feature)
         optimizeSystemLimits()
@@ -109,19 +101,11 @@ actor HyperScanner {
         self.startPath = url.resolvingSymlinksInPath().path
         self.activeTaskCount = 0
 
-        print("[HyperScanner] Volume used bytes: \(ByteFormatter.formatFileSize(totalUsedBytes))")
-
         if url.path == "/" {
-            let result = await scanRootWithFileManager(url: url)
-            print("[HyperScanner] SCAN COMPLETE - Final size: \(ByteFormatter.formatFileSize(result.size))")
-            print("[HyperScanner] Files scanned: \(itemsScanned), Unique inodes: \(visitedInodes.count)")
-            return result
+            return await scanRootWithFileManager(url: url)
         }
 
-        let result = await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent)
-        print("[HyperScanner] SCAN COMPLETE - Final size: \(ByteFormatter.formatFileSize(result.size))")
-        print("[HyperScanner] Files scanned: \(itemsScanned), Unique inodes: \(visitedInodes.count)")
-        return result
+        return await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent)
     }
     
     // V18: Maximize file descriptors and calculate safe concurrency
@@ -132,26 +116,19 @@ actor HyperScanner {
         if getrlimit(RLIMIT_NOFILE, &rlimitData) == 0 {
             let currentSoft = rlimitData.rlim_cur
             let maxHard = rlimitData.rlim_max
-            
-            print("ℹ️  [System Limits] Files: \(currentSoft) (Soft) / \(maxHard) (Hard)")
-            
+
             // Try to raise the limit to the maximum allowed
             if currentSoft < maxHard {
                 rlimitData.rlim_cur = maxHard
-                if setrlimit(RLIMIT_NOFILE, &rlimitData) == 0 {
-                    print("🚀 [Boost] Raised file descriptor limit to \(maxHard)")
-                } else {
-                    print("⚠️ [Boost] Failed to raise limits. Using default.")
-                }
+                setrlimit(RLIMIT_NOFILE, &rlimitData)
             }
-            
+
             // Set max concurrency to 80% of the limit to leave room for overhead
             // Clamp to a reasonable range (e.g., 64 to 2048 threads)
             // Note: We use a smaller number for task concurrency than file limits because
             // thread overhead is also a factor.
             let safeLimit = Int(rlimitData.rlim_cur) / 2
             self.maxConcurrencyLimit = min(max(safeLimit, 64), 1024)
-            print("⚡️ [Concurrency] Target Parallel Tasks: \(self.maxConcurrencyLimit)")
         }
     }
 
@@ -159,13 +136,11 @@ actor HyperScanner {
         // Open Phase: Check Inode and Permissions
         let fd = open(path, O_RDONLY | O_DIRECTORY)
         guard fd >= 0 else {
-            if errno == EACCES || errno == EPERM { 
-                if path.contains("Library") { print("[Access Denied] \(path)") }
-                return await scanWithFileManager(path: path, name: name) 
+            if errno == EACCES || errno == EPERM {
+                return await scanWithFileManager(path: path, name: name)
             }
             // V18: Safety net for exhaustion
             if errno == EMFILE {
-                print("🔥 [BUSY] System saturated. Retrying sequentially: \(path)")
                 // Fallback logic could go here, but we prevent this via semaphores now.
             }
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
@@ -332,12 +307,6 @@ actor HyperScanner {
         }
 
         await updateProgress(bytesAdded: directFilesSize, path: path)
-
-        // Debug logging for large directories
-        if localSize > 10_000_000_000 { // > 10GB
-            print("[DEBUG] Large directory: \(path) = \(ByteFormatter.formatFileSize(localSize))")
-        }
-
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems.sorted { $0.size > $1.size })
     }
 
@@ -408,14 +377,6 @@ actor HyperScanner {
     private func updateProgress(bytesAdded: Int64, path: String) async {
         scannedBytes += bytesAdded
         let now = Date()
-        
-        if now.timeIntervalSince(lastConsolePrint) >= consolePrintInterval {
-            lastConsolePrint = now
-            let sizeStr = ByteFormatter.formatFileSize(scannedBytes)
-            let elapsed = abs(startTime.timeIntervalSinceNow)
-            let speed = elapsed > 0 ? Double(itemsScanned) / elapsed : 0
-            print("[STATUS] Total: \(sizeStr) | Files: \(itemsScanned) | Speed: \(Int(speed))/s | Current: \(path)")
-        }
 
         if now.timeIntervalSince(lastProgressUpdate) >= progressUpdateInterval {
             lastProgressUpdate = now
@@ -458,12 +419,6 @@ actor HyperScanner {
 
                              if let allocSize = attrs[FileAttributeKey(rawValue: "NSFileAllocatedSize")] as? NSNumber {
                                  allocatedSize = allocSize.int64Value
-
-                                 // Log sparse files (where allocated is much less than logical size)
-                                 if logicalSize > 0 && allocatedSize > 0 && logicalSize > allocatedSize * 2 {
-                                     let savedSpace = logicalSize - allocatedSize
-                                     print("[SPARSE FILE] \(itemName): Logical=\(ByteFormatter.formatFileSize(logicalSize)), Allocated=\(ByteFormatter.formatFileSize(allocatedSize)), Saved=\(ByteFormatter.formatFileSize(savedSpace))")
-                                 }
                              } else {
                                  allocatedSize = logicalSize
                              }
@@ -503,12 +458,9 @@ actor HyperScanner {
         var rootChildren: [HyperScanItem] = []
         var totalSize: Int64 = 0
 
-        print("[HyperScanner] Scanning ALL root directories and files...")
-
         // Get everything in root directory including hidden files
         let fileManager = FileManager.default
         guard let allRootContents = try? fileManager.contentsOfDirectory(atPath: "/") else {
-            print("[HyperScanner] Failed to list root directory")
             return HyperScanItem(name: "/", path: "/", size: 0, isDirectory: true, children: [])
         }
 
@@ -537,7 +489,6 @@ actor HyperScanner {
                     if item.size > 0 {
                         rootChildren.append(item)
                         totalSize += item.size
-                        print("[HyperScanner] /System (excluding /System/Volumes/Data): \(ByteFormatter.formatFileSize(item.size))")
                     }
                 } else {
                     // Scan ALL other directories normally (including Users, Applications, etc.)
@@ -545,7 +496,6 @@ actor HyperScanner {
                     if item.size > 0 {
                         rootChildren.append(item)
                         totalSize += item.size
-                        print("[HyperScanner] \(fullPath): \(ByteFormatter.formatFileSize(item.size))")
                     }
                 }
             } else {
@@ -564,13 +514,11 @@ actor HyperScanner {
                         let item = HyperScanItem(name: itemName, path: fullPath, size: fileSize, isDirectory: false, children: nil)
                         rootChildren.append(item)
                         totalSize += fileSize
-                        print("[HyperScanner] Root file \(itemName): \(ByteFormatter.formatFileSize(fileSize))")
                     }
                 }
             }
         }
 
-        print("[HyperScanner] Total from all root items: \(ByteFormatter.formatFileSize(totalSize))")
         return HyperScanItem(name: "/", path: "/", size: totalSize, isDirectory: true, children: rootChildren.sorted { $0.size > $1.size })
     }
 
@@ -595,7 +543,6 @@ actor HyperScanner {
                     for volumeName in volumeContents {
                         if volumeName == "Data" {
                             // Skip /System/Volumes/Data - it's scanned via firmlinks at root
-                            print("[HyperScanner] Skipping /System/Volumes/Data (scanned via firmlinks)")
                             continue
                         }
 
