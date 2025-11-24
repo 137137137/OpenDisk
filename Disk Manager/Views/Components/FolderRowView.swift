@@ -30,10 +30,12 @@ struct FolderRowView: View {
 
                         Text(item.formattedSize)
                             .monospacedDigit()
+                            .frame(width: 90, alignment: .trailing)
 
                         Text(item.formattedItemCount + " items")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .frame(width: 80, alignment: .leading)
                     }
                 } icon: {
                     Image(systemName: item.isDirectory ? "folder" : "doc")
