@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import Dispatch
 
 // MARK: - Models
 
@@ -49,24 +50,28 @@ actor HyperScanner {
     private var totalUsedBytes: Int64 = 0
     private var itemsScanned: Int = 0
     private var onProgress: ((HyperScanProgress) -> Void)?
-    
+
     // Timing & State
     private var startTime = Date()
     private var lastProgressUpdate = Date()
     private var lastConsolePrint = Date()
     private var startPath: String = ""
-    
-    // Cycle Detection
+
+    // V20: Use non-actor ParallelScanner for true parallelization
+    private let parallelScanner = ParallelScanner()
+
+    // Cycle Detection (kept for compatibility, but real work done in ParallelScanner)
     private var visitedInodes: Set<FileSystemID> = []
-    
+
     // Config
     private let bufferSize = 256 * 1024
     private let progressUpdateInterval: TimeInterval = 0.1
     private let consolePrintInterval: TimeInterval = 0.5
-    
-    // V18: Dynamic Concurrency Control
-    private var activeTaskCount = 0
-    private var maxConcurrencyLimit = 64 // Will be updated dynamically at runtime
+
+    // V20: Aggressive Multi-Core Parallelization (like DaisyDisk)
+    private var maxConcurrencyLimit = 128 // Start high, we'll optimize based on cores
+    private let cpuCoreCount = ProcessInfo.processInfo.activeProcessorCount
+    private let optimalConcurrency: Int // Calculated based on cores
     
     // Global exclusions
     private let excludedPathPrefixes: [String] = [
@@ -82,12 +87,16 @@ actor HyperScanner {
         "Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"
     ]
 
-    func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
-        // 1. Permission Check
-        let currentUser = getuid()
-        // Permission check removed for performance
+    init() {
+        // Match DaisyDisk's aggressive parallelization
+        // Use ALL CPU cores for maximum performance
+        // FileIDTreeGetVRefNumForDevice errors are warnings, not failures
+        self.optimalConcurrency = cpuCoreCount * 4  // 4 threads per core for I/O bound work
+        self.maxConcurrencyLimit = max(64, optimalConcurrency)  // At least 64 threads
+    }
 
-        // 2. Resource Optimization (V18 Feature)
+    func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
+        // 1. Resource Optimization (V20 - Maximum parallelization like DaisyDisk)
         optimizeSystemLimits()
 
         self.onProgress = onProgress
@@ -97,21 +106,29 @@ actor HyperScanner {
         self.startTime = Date()
         self.lastProgressUpdate = Date()
         self.lastConsolePrint = Date()
-        self.visitedInodes.removeAll()
         self.startPath = url.resolvingSymlinksInPath().path
-        self.activeTaskCount = 0
+
+        // Reset parallel scanner
+        parallelScanner.reset()
 
         if url.path == "/" {
-            return await scanRootWithFileManager(url: url)
+            return await scanRootMaxParallel(url: url)
         }
 
-        return await scanDirectoryOptimized(path: url.path, name: url.lastPathComponent)
+        // Use parallel scanner for non-root paths too
+        return await parallelScanner.parallelScanDirectory(
+            path: url.path,
+            name: url.lastPathComponent,
+            progressCallback: { [weak self] bytes, path in
+                await self?.updateProgress(bytesAdded: bytes, path: path)
+            }
+        )
     }
     
-    // V18: Maximize file descriptors and calculate safe concurrency
+    // V19: Maximize file descriptors and calculate CPU-optimized concurrency
     private func optimizeSystemLimits() {
         var rlimitData = rlimit()
-        
+
         // Get current limits
         if getrlimit(RLIMIT_NOFILE, &rlimitData) == 0 {
             let currentSoft = rlimitData.rlim_cur
@@ -123,12 +140,15 @@ actor HyperScanner {
                 setrlimit(RLIMIT_NOFILE, &rlimitData)
             }
 
-            // Set max concurrency to 80% of the limit to leave room for overhead
-            // Clamp to a reasonable range (e.g., 64 to 2048 threads)
-            // Note: We use a smaller number for task concurrency than file limits because
-            // thread overhead is also a factor.
-            let safeLimit = Int(rlimitData.rlim_cur) / 2
-            self.maxConcurrencyLimit = min(max(safeLimit, 64), 1024)
+            // Match DaisyDisk - use aggressive concurrency
+            // FileIDTreeGetVRefNumForDevice errors are non-fatal warnings
+            // The filesystem continues working despite these errors
+
+            // Use all available file descriptors
+            let fdLimit = Int(rlimitData.rlim_cur)
+
+            // For 16 cores, we want 64+ concurrent operations like DaisyDisk
+            self.maxConcurrencyLimit = max(optimalConcurrency, fdLimit / 8)
         }
     }
 
@@ -253,55 +273,31 @@ actor HyperScanner {
             }
         } // <-- FD IS CLOSED HERE. Recursion happens below with 0 open files.
 
-        // V18: Dynamic Task Scheduling
+        // V20: Aggressive parallel scanning for ALL subdirectories
+        // Match DaisyDisk - spawn tasks for everything
         if !subdirectories.isEmpty {
-            // How many tasks can we afford?
-            let availableSlots = maxConcurrencyLimit - activeTaskCount
-            
-            // If we have room, spawn parallel tasks
-            if availableSlots > 0 && subdirectories.count > 1 {
+            if subdirectories.count == 1 {
+                // Only one subdirectory, scan directly
+                let (subPath, subName) = subdirectories[0]
+                let res = await scanDirectoryOptimized(path: subPath, name: subName)
+                localItems.append(res)
+                localSize += res.size
+            } else {
+                // Multiple subdirectories - scan ALL in parallel
                 await withTaskGroup(of: HyperScanItem.self) { group in
+                    // Launch ALL subdirectory scans simultaneously
+                    // Let Swift's runtime manage the thread pool
                     for (subPath, subName) in subdirectories {
-                        // Check limit again inside the loop (approximate)
-                        if activeTaskCount < maxConcurrencyLimit {
-                            activeTaskCount += 1
-                            group.addTask {
-                                let result = await self.scanDirectoryOptimized(path: subPath, name: subName)
-                                return result
-                            }
-                        } else {
-                            // Fallback to sequential if we are saturated
-                            activeTaskCount -= 1 // Since we are counting 'completed' in the group loop, adjust logic?
-                            // Actually, strictly inside TaskGroup is tricky for counters.
-                            // Simplified: We just add the result to items.
-                            // Correct Logic for mixed group:
-                            // The addTask closure is async. We can't easily mix sequential/parallel in one group cleanly
-                            // without advanced logic.
-                            // Simpler V18 Logic: Just spawn everything, but if we are OVER limit, 
-                            // the `scanDirectoryOptimized` creates a temporary slowdown or we trust Swift Runtime.
-                            // BUT: We closed the FD. So actually, we are safe from EMFILE!
-                            // We only need to limit to prevent thread explosion.
-                            
-                            // Since we closed FD, we can rely on Swift's Thread Pool much more safely.
-                            // We will spawn all, but Swift limits threads to # of cores naturally.
-                            // The only resource we were running out of was FDs.
-                            // Since FD is closed, we can just go parallel.
+                        group.addTask {
+                            await self.scanDirectoryOptimized(path: subPath, name: subName)
                         }
                     }
-                    
-                    // Process results
+
+                    // Collect all results
                     for await result in group {
-                        activeTaskCount -= 1
                         localItems.append(result)
                         localSize += result.size
                     }
-                }
-            } else {
-                // Sequential scan for small folders or if we are trying to be gentle
-                for (subPath, subName) in subdirectories {
-                    let res = await scanDirectoryOptimized(path: subPath, name: subName)
-                    localItems.append(res)
-                    localSize += res.size
                 }
             }
         }
@@ -454,6 +450,60 @@ actor HyperScanner {
         return HyperScanItem(name: name, path: path, size: totalSize, isDirectory: true, children: children.sorted { $0.size > $1.size })
     }
 
+    private func scanRootMaxParallel(url: URL) async -> HyperScanItem {
+        // Scan root directories with MAXIMUM parallelization
+        // All work done OUTSIDE actor for true parallel execution
+
+        var rootChildren: [HyperScanItem] = []
+        var totalSize: Int64 = 0
+
+        // Get root directory listing
+        guard let allRootContents = try? FileManager.default.contentsOfDirectory(atPath: "/") else {
+            return HyperScanItem(name: "/", path: "/", size: 0, isDirectory: true, children: [])
+        }
+
+        let skipPaths = Set(["Volumes", ".VolumeIcon.icns", ".file"])
+        var directoriesToScan: [(name: String, path: String)] = []
+
+        for itemName in allRootContents {
+            if skipPaths.contains(itemName) { continue }
+
+            let fullPath = "/\(itemName)"
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue {
+                directoriesToScan.append((name: itemName, path: fullPath))
+            }
+        }
+
+        // Scan ALL root directories in parallel OUTSIDE the actor
+        await withTaskGroup(of: HyperScanItem.self) { group in
+            // Launch ALL scans immediately - true parallelization!
+            for (name, path) in directoriesToScan {
+                group.addTask {
+                    // This runs OUTSIDE actor isolation - true parallel!
+                    await self.parallelScanner.parallelScanDirectory(
+                        path: path,
+                        name: name,
+                        progressCallback: { [weak self] bytes, path in
+                            await self?.updateProgress(bytesAdded: bytes, path: path)
+                        }
+                    )
+                }
+            }
+
+            // Collect results
+            for await item in group {
+                if item.size > 0 {
+                    rootChildren.append(item)
+                    totalSize += item.size
+                }
+            }
+        }
+
+        return HyperScanItem(name: "/", path: "/", size: totalSize, isDirectory: true,
+                           children: rootChildren.sorted { $0.size > $1.size })
+    }
+
     private func scanRootWithFileManager(url: URL) async -> HyperScanItem {
         var rootChildren: [HyperScanItem] = []
         var totalSize: Int64 = 0
@@ -471,6 +521,10 @@ actor HyperScanner {
             ".file" // System file
         ])
 
+        // Separate directories and files for parallel processing
+        var directoriesToScan: [(name: String, path: String, isSystem: Bool)] = []
+        var rootFiles: [HyperScanItem] = []
+
         for itemName in allRootContents {
             // Skip certain system paths
             if skipPaths.contains(itemName) {
@@ -478,26 +532,11 @@ actor HyperScanner {
             }
 
             let fullPath = "/\(itemName)"
-
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: fullPath, isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                // Special handling for /System to skip /System/Volumes/Data
-                if itemName == "System" {
-                    let item = await scanSystemDirectoryWithoutData()
-                    if item.size > 0 {
-                        rootChildren.append(item)
-                        totalSize += item.size
-                    }
-                } else {
-                    // Scan ALL other directories normally (including Users, Applications, etc.)
-                    let item = await scanDirectoryOptimized(path: fullPath, name: itemName)
-                    if item.size > 0 {
-                        rootChildren.append(item)
-                        totalSize += item.size
-                    }
-                }
+                directoriesToScan.append((name: itemName, path: fullPath, isSystem: itemName == "System"))
             } else {
                 // Handle files in root directory
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath) {
@@ -512,8 +551,42 @@ actor HyperScanner {
 
                     if fileSize > 0 {
                         let item = HyperScanItem(name: itemName, path: fullPath, size: fileSize, isDirectory: false, children: nil)
-                        rootChildren.append(item)
+                        rootFiles.append(item)
                         totalSize += fileSize
+                    }
+                }
+            }
+        }
+
+        // Add files first
+        rootChildren.append(contentsOf: rootFiles)
+
+        // V20: Scan ALL root directories in PARALLEL for maximum performance
+        // Like DaisyDisk - use all CPU cores aggressively
+        if !directoriesToScan.isEmpty {
+            await withTaskGroup(of: HyperScanItem?.self) { group in
+                // Launch ALL root directory scans simultaneously
+                for (name, path, isSystem) in directoriesToScan {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return nil }
+
+                        if isSystem {
+                            // Special handling for /System to skip /System/Volumes/Data
+                            let item = await self.scanSystemDirectoryWithoutData()
+                            return item.size > 0 ? item : nil
+                        } else {
+                            // Scan ALL other directories normally
+                            let item = await self.scanDirectoryOptimized(path: path, name: name)
+                            return item.size > 0 ? item : nil
+                        }
+                    }
+                }
+
+                // Collect all results
+                for await item in group {
+                    if let item = item {
+                        rootChildren.append(item)
+                        totalSize += item.size
                     }
                 }
             }
