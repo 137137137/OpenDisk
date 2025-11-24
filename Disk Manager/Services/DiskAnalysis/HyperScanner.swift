@@ -99,7 +99,7 @@ actor HyperScanner {
     }
 
     func scan(url: URL, onProgress: @escaping (HyperScanProgress) -> Void) async -> HyperScanItem {
-        // 1. Resource Optimization (V20 - Maximum parallelization like DaisyDisk)
+        // 1. Resource Optimization (V20 - back to working ParallelScanner)
         optimizeSystemLimits()
 
         self.onProgress = onProgress
@@ -380,6 +380,23 @@ actor HyperScanner {
         if now.timeIntervalSince(lastProgressUpdate) >= progressUpdateInterval {
             lastProgressUpdate = now
             onProgress?(HyperScanProgress(scannedBytes: scannedBytes, totalUsedBytes: totalUsedBytes, currentPath: path, itemsScanned: itemsScanned))
+        }
+    }
+
+    // Batch progress update - called from ScanContext
+    private func updateProgressBatch(bytes: Int64, count: Int) async {
+        scannedBytes += bytes
+        itemsScanned += count
+
+        let now = Date()
+        if now.timeIntervalSince(lastProgressUpdate) >= progressUpdateInterval {
+            lastProgressUpdate = now
+            onProgress?(HyperScanProgress(
+                scannedBytes: scannedBytes,
+                totalUsedBytes: totalUsedBytes,
+                currentPath: "",  // Don't have specific path in batch
+                itemsScanned: itemsScanned
+            ))
         }
     }
 
