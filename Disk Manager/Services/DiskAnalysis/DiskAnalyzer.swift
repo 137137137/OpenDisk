@@ -1,31 +1,55 @@
 import Foundation
 import Darwin
+import Observation
 
-/// Simplified disk analyzer that delegates to specialized services
+/// Simplified disk analyzer that delegates to specialized services.
+///
+/// Uses Swift's `@Observable` macro (macOS 14+) for efficient UI updates.
+/// Supports dependency injection for testability:
+/// ```swift
+/// // Production use (default):
+/// let analyzer = DiskAnalyzer()
+///
+/// // Testing with mocks:
+/// let analyzer = DiskAnalyzer(scanner: MockScanner(), cache: MockCache())
+/// ```
 @MainActor
-final class DiskAnalyzer: ObservableObject {
-    // MARK: - Published Properties (UI State)
-    @Published var rootItems: [FolderItem] = []
-    @Published var totalSize: Int64 = 0
-    @Published var totalDiskScannedBytes: Int64 = 0
-    @Published var scanDuration: TimeInterval = 0
+@Observable
+final class DiskAnalyzer {
+    // MARK: - Observable Properties (UI State)
+    var rootItems: [FolderItem] = []
+    var totalSize: Int64 = 0
+    var totalDiskScannedBytes: Int64 = 0
+    var scanDuration: TimeInterval = 0
 
     // Keep the complete tree structure for instant navigation
     private var completeTree: [FolderItem] = []
     // V24: Store raw scan data for on-demand conversion
     private var rawScanData: HyperScanItem?
 
-    // MARK: - Published Properties for Progress (for UI compatibility)
-    @Published var isScanning: Bool = false
-    @Published var scanProgress: String = ""
-    @Published var scanProgressPercentage: Double = 0.0
-    @Published var currentScanPath: String = ""
-    @Published var estimatedTimeRemaining: String = ""
-    @Published var filesPerSecond: String = ""
+    // MARK: - Observable Properties for Progress
+    var isScanning: Bool = false
+    var scanProgress: String = ""
+    var scanProgressPercentage: Double = 0.0
+    var currentScanPath: String = ""
+    var estimatedTimeRemaining: String = ""
+    var filesPerSecond: String = ""
 
-    // MARK: - Services (Single Responsibility)
-    private let cacheManager = CacheManager()
-    private let hyperScanner = HyperScanner()
+    // MARK: - Services (Injected via Protocols)
+    private let cache: any CacheProtocol
+    private let scanner: any ScannerProtocol
+
+    // MARK: - Initialization
+
+    /// Creates a DiskAnalyzer with optional dependency injection.
+    ///
+    /// - Parameters:
+    ///   - scanner: Scanner implementation (defaults to HyperScanner)
+    ///   - cache: Cache implementation (defaults to CacheManager)
+    init(scanner: any ScannerProtocol = HyperScanner(), cache: any CacheProtocol = CacheManager()) {
+        self.scanner = scanner
+        self.cache = cache
+    }
 
     // MARK: - State
     private var currentPath: String = ""
@@ -118,7 +142,7 @@ final class DiskAnalyzer: ObservableObject {
 
         // Fallback to cache if not found in tree
         Task { @MainActor in
-            if let cachedItems = await cacheManager.getCachedChildren(for: path), !cachedItems.isEmpty {
+            if let cachedItems = await cache.get(for: path), !cachedItems.isEmpty {
                 updateUI(with: cachedItems, path: path)
             }
         }
@@ -171,7 +195,7 @@ final class DiskAnalyzer: ObservableObject {
     /// Clear all caches
     func clearAllCaches() {
         Task {
-            await cacheManager.clearAll()
+            await cache.clearAll()
         }
     }
 
@@ -220,7 +244,7 @@ final class DiskAnalyzer: ObservableObject {
     private func performHyperScan(path: String) async -> HyperScanItem {
         let startTime = Date()
 
-        return await hyperScanner.scan(
+        return await scanner.scan(
             url: URL(fileURLWithPath: path)
         ) { [weak self] progress in
             Task { @MainActor in
@@ -263,7 +287,7 @@ final class DiskAnalyzer: ObservableObject {
     private func cacheResults(_ items: [FolderItem], for path: String) async {
         // V24: Only cache top-level items, not the entire tree
         // This prevents memory bloat and speeds up caching
-        await cacheManager.cacheChildren(items, for: path)
+        await cache.set(items, for: path)
 
         // Don't recursively cache - items are lazy-loaded now
         // Deep caching happens on-demand when user navigates
