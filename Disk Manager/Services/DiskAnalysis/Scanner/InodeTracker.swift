@@ -2,29 +2,13 @@ import Foundation
 import os.lock
 import Darwin
 
-// MARK: - Sharded Inode Tracker with Lock-Free Bloom Filter
+// MARK: - Inode Tracker
 
-/// Uses a lock-free bloom filter with atomic bit operations for maximum throughput.
-/// Falls back to sharded sets only for bloom filter collisions.
+/// Tracks visited inodes for hardlink deduplication using bloom filter + sharded sets.
 ///
-/// ## Thread Safety
-/// - Bloom filter uses lock-free atomic bit operations (OSAtomicCompareAndSwap64)
-/// - Set access is protected by per-shard os_unfair_locks
-/// - Properly conforms to `Sendable` through careful synchronization
-///
-/// ## Performance
-/// - Lock-free bloom filter for fast negative lookups
-/// - Sharded sets reduce lock contention (64 shards)
-/// - Expected gain: 15% over single-lock bloom filter
-///
-/// ## Swift 6 Sendable Conformance
-/// This class uses `@unchecked Sendable` because thread safety is manually
-/// guaranteed through:
-/// - Lock-free atomic operations for bloom filter (OSAtomicCompareAndSwap64)
-/// - Per-shard os_unfair_locks protecting set access
-/// The UnsafeMutablePointer storage is safe for concurrent access due to
-/// these synchronization mechanisms.
-final class ShardedInodeTracker: @unchecked Sendable {
+/// Uses lock-free bloom filter for fast negative lookups, falling back to
+/// sharded sets (64 shards) for bloom filter collisions.
+final class InodeTracker: @unchecked Sendable {
     private let shardCount = 64 // Power of 2 for bitwise masking
     private let mask: Int
 

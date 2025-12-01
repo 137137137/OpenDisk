@@ -16,7 +16,7 @@ func atomicOr(_ ptr: UnsafeMutablePointer<Int64>, _ bits: Int64) {
 // MARK: - Static Lookup Data
 
 /// Pre-computed firmlink name bytes for fast comparison without String allocation.
-/// Used by HighPerformanceScanEngine for zero-copy filtering.
+/// Used by DiskScanner for zero-copy filtering.
 enum ScanFilterData {
     static let firmlinkNameBytes: [[UInt8]] = {
         ["Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"]

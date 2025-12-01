@@ -1,29 +1,13 @@
 import Foundation
 import Darwin
 
-// MARK: - Atomic Scan Statistics Accumulator
+// MARK: - Scan Statistics
 
-/// Uses Darwin's OSAtomicAdd64 for true lock-free atomic increments.
-/// This is nearly as fast as swift-atomics but requires no external dependencies.
-/// Eliminates lock contention for statistics updates (~10-15% gain).
+/// Lock-free atomic statistics accumulator using Darwin's OSAtomicAdd64.
 ///
-/// ## Thread Safety
-/// All methods use Darwin atomic operations which are inherently thread-safe.
-/// - `add(bytes:items:)` uses `OSAtomicAdd64` for lock-free increment
-/// - `setTotalBytes(_:)` uses `OSMemoryBarrier` for visibility
-/// - `snapshot(path:)` uses relaxed reads (safe for progress reporting)
-/// - `reset()` uses `OSAtomicCompareAndSwap64` for atomic exchange
-///
-/// ## Performance
-/// Lock-free atomics are significantly faster than mutex-protected counters
-/// under high contention from multiple scanning threads.
-///
-/// ## Swift 6 Sendable Conformance
-/// This class uses `@unchecked Sendable` because thread safety is manually
-/// guaranteed through Darwin atomic operations (OSAtomicAdd64, OSAtomicCompareAndSwap64).
-/// The UnsafeMutablePointer storage is safe for concurrent access because all
-/// reads and writes go through atomic primitives.
-final class AtomicScanStats: @unchecked Sendable {
+/// Tracks bytes scanned and items processed with thread-safe atomic operations.
+/// All methods use Darwin atomic operations for lock-free concurrent access.
+final class ScanStatistics: @unchecked Sendable {
     // Use UnsafeMutablePointer for Darwin atomic operations
     private let _scannedBytes: UnsafeMutablePointer<Int64>
     private let _itemsScanned: UnsafeMutablePointer<Int64>

@@ -18,8 +18,8 @@ struct FileSystemID: Hashable, Sendable {
 ///
 /// ## Thread Safety
 /// This class is `Sendable` because it only contains `Sendable` components:
-/// - `AtomicScanStats`: Uses Darwin atomic operations
-/// - `ShardedInodeTracker`: Uses lock-free bloom filter + sharded locks
+/// - `ScanStatistics`: Uses Darwin atomic operations
+/// - `InodeTracker`: Uses lock-free bloom filter + sharded locks
 ///
 /// ## Swift 6 Sendable Conformance
 /// Uses `@unchecked Sendable` as it contains `@unchecked Sendable` components
@@ -29,9 +29,9 @@ struct FileSystemID: Hashable, Sendable {
 /// Create one context per scan operation. The context tracks:
 /// - Bytes scanned and items processed (for progress reporting)
 /// - Visited inodes (for hardlink deduplication)
-final class HPScanContext: @unchecked Sendable {
-    let stats = AtomicScanStats()
-    let inodeTracker = ShardedInodeTracker()
+final class ScanContext: @unchecked Sendable {
+    let stats = ScanStatistics()
+    let inodeTracker = InodeTracker()
 
     /// Add progress for bytes and items scanned.
     @inline(__always)

@@ -1,23 +1,19 @@
 import Foundation
 import Darwin
 
-// MARK: - Ultra High-Performance Scan Engine
+// MARK: - Disk Scanner Engine
 
-/// This engine implements all critical optimizations:
-/// - Zero-Copy Path Accumulation: No String allocation in hot loop (40% gain)
-/// - Lock-Free Bloom Filter: Atomic bit operations for inode checking (15% gain)
-/// - Buffer Pool: Eliminates 50GB+ allocation churn (30-40% gain)
-/// - Synchronous Recursion: No async/await overhead for serial paths (15-20% gain)
-/// - Lock-Free Atomics: True lock-free statistics (10-15% gain)
-/// - SIMD Name Comparison: Single-load dot-file checks (3-5% gain)
-/// - memcmp Exclusion Checks: Direct C-level comparison (10-15% gain)
-/// - Inline loadUnaligned Parsing: Zero function call overhead (10-15% gain)
-/// - No Hot-Path Sorting: Sort only during display (5-10% gain)
-/// - 4MB Buffers: Optimized for NVMe throughput (5% gain)
+/// High-performance disk scanning engine using Darwin's `getattrlistbulk`.
 ///
-/// Expected combined improvement: 3.0-4.0x speedup
-final class HighPerformanceScanEngine {
-    private let context: HPScanContext
+/// Optimizations:
+/// - Zero-copy path accumulation (no String allocation in hot loop)
+/// - Lock-free bloom filter for inode deduplication
+/// - Buffer pool to eliminate allocation churn
+/// - Synchronous recursion for serial paths
+/// - SIMD-style name comparison for dot-files
+/// - 4MB buffers optimized for NVMe throughput
+final class DiskScanner {
+    private let context: ScanContext
     private let onProgress: ((HyperScanProgress) -> Void)?
 
     // Buffer pool for allocation reuse (30-40% gain)
@@ -33,7 +29,7 @@ final class HighPerformanceScanEngine {
     // Pre-computed C-strings for firmlink names
     private let firmlinkNamesSet: Set<String>
 
-    init(context: HPScanContext, onProgress: ((HyperScanProgress) -> Void)? = nil) {
+    init(context: ScanContext, onProgress: ((HyperScanProgress) -> Void)? = nil) {
         self.context = context
         self.onProgress = onProgress
 
@@ -678,10 +674,7 @@ final class HighPerformanceScanEngine {
                 }
             }
         } catch {
-            // Directory not accessible - log in debug mode
-            #if DEBUG
-            print("FileManager fallback scan failed at \(path): \(error)")
-            #endif
+            // Expected for permission-restricted directories - silently return empty result
         }
 
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
