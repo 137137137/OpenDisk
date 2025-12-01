@@ -1,18 +1,14 @@
 import SwiftUI
 
-// MARK: - Progress Animator
-
-/// Handles smooth progress animation with minimal performance impact
 @MainActor
 final class ProgressAnimator: ObservableObject {
     @Published private(set) var displayPercentage: Double = 0
     private var timer: Timer?
     private var targetPercentage: Double = 0
-    private var internalValue: Double = 0  // Non-published for calculations
+    private var internalValue: Double = 0
 
     func start() {
         guard timer == nil else { return }
-        // 15fps is smooth enough for progress bars, half the CPU of 30fps
         timer = Timer.scheduledTimer(withTimeInterval: 1.0/15.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
@@ -30,7 +26,6 @@ final class ProgressAnimator: ObservableObject {
     }
 
     private func tick() {
-        // Complete - stop timer
         guard internalValue < 100 else {
             displayPercentage = 100
             stop()
@@ -41,11 +36,9 @@ final class ProgressAnimator: ObservableObject {
         let current = internalValue
         let gap = target - current
 
-        // Scan complete - finish quickly
         if target >= 99.9 {
             internalValue = min(100, current + 3.0)
         } else {
-            // Speed based on gap (% per frame at 15fps - doubled from 30fps)
             let speed: Double
             if gap > 30 {
                 speed = 8.0
@@ -63,8 +56,6 @@ final class ProgressAnimator: ObservableObject {
             internalValue = min(99.0, current + speed)
         }
 
-        // Only trigger SwiftUI update if value changed by >= 0.5%
-        // This reduces re-renders significantly
         if abs(internalValue - displayPercentage) >= 0.5 {
             displayPercentage = internalValue
         }
@@ -75,9 +66,6 @@ final class ProgressAnimator: ObservableObject {
     }
 }
 
-// MARK: - Scanning Progress View
-
-/// Displays scanning progress with detailed statistics.
 struct ScanningProgressView: View {
     let scanProgress: String
     let currentScanPath: String
@@ -103,7 +91,6 @@ struct ScanningProgressView: View {
                     .font(.headline)
                     .foregroundStyle(.secondary)
 
-                // Current scanning path and rate
                 if !currentScanPath.isEmpty && !filesPerSecond.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "folder")
@@ -129,26 +116,22 @@ struct ScanningProgressView: View {
                     .frame(width: 300)
                 }
 
-                // Enhanced progress display
                 VStack(spacing: 16) {
-                    // CPU cores info
                     HStack {
                         Image(systemName: "cpu")
                             .foregroundStyle(.blue)
-                        Text("Using \(ProcessInfo.processInfo.activeProcessorCount) CPU cores - Maximum parallelization")
+                        Text("Using \(ProcessInfo.processInfo.activeProcessorCount) CPU cores")
                             .font(.caption)
                             .foregroundStyle(.blue)
                     }
 
-                    // Main progress section
                     if totalUsedDiskSpace > 0 {
                         progressSection
                     } else {
-                        // Initial loading state
                         VStack(spacing: 8) {
                             ProgressView()
                                 .scaleEffect(1.5)
-                            Text("Initializing multi-core scan...")
+                            Text("Initializing scan...")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -158,7 +141,6 @@ struct ScanningProgressView: View {
         }
     }
 
-    /// Actual percentage from scan data
     private var actualPercentage: Double {
         guard totalUsedDiskSpace > 0, totalDiskScannedBytes > 0 else { return 0 }
         return min(100.0, Double(totalDiskScannedBytes) / Double(totalUsedDiskSpace) * 100)
@@ -167,14 +149,12 @@ struct ScanningProgressView: View {
     @ViewBuilder
     private var progressSection: some View {
         VStack(spacing: 12) {
-            // Percentage display
             Text(String(format: "%.1f%%", animator.displayPercentage))
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundStyle(.blue)
                 .monospacedDigit()
 
-            // Progress bar
             ProgressView(value: animator.displayPercentage, total: 100)
                 .frame(maxWidth: 420, minHeight: 8)
                 .scaleEffect(y: 1.5)

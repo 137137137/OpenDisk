@@ -1,49 +1,22 @@
 import Foundation
 import Darwin
 
-// MARK: - Disk Scanner Engine
-
-/// High-performance disk scanning engine using Darwin's `getattrlistbulk`.
-///
-/// Optimizations:
-/// - Zero-copy path accumulation (no String allocation in hot loop)
-/// - Lock-free bloom filter for inode deduplication
-/// - Buffer pool to eliminate allocation churn
-/// - Synchronous recursion for serial paths
-/// - SIMD-style name comparison for dot-files
-/// - 4MB buffers optimized for NVMe throughput
 final class DiskScanner {
     private let context: ScanContext
     private let onProgress: ((HyperScanProgress) -> Void)?
-
-    // Buffer pool for allocation reuse (30-40% gain)
     private let bufferPool: BufferPool
-
-    // Increased buffer size to 4MB for NVMe drives
     private let bufferSize = 4 * 1024 * 1024
-
-    // Tuned parallelism thresholds for NVMe
     private let maxParallelDepth = 8
     private let minSubdirsForParallel = 2
-
-    // Pre-computed C-strings for firmlink names
     private let firmlinkNamesSet: Set<String>
 
     init(context: ScanContext, onProgress: ((HyperScanProgress) -> Void)? = nil) {
         self.context = context
         self.onProgress = onProgress
-
-        // Initialize buffer pool with 128 pre-allocated 4MB buffers
         self.bufferPool = BufferPool(bufferSize: 4 * 1024 * 1024, poolSize: 128)
-
-        // Pre-compute firmlink names
-        let firmlinks = ["Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"]
-        self.firmlinkNamesSet = Set(firmlinks)
+        self.firmlinkNamesSet = Set(["Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"])
     }
 
-    // MARK: - Name Checks (Zero-Copy)
-
-    /// Check if name matches a firmlink WITHOUT creating a String
     @inline(__always)
     private func isFirmlinkName(_ namePtr: UnsafeRawPointer, _ nameLen: Int) -> Bool {
         for bytes in ScanFilterData.firmlinkNameBytes {
@@ -56,23 +29,20 @@ final class DiskScanner {
         return false
     }
 
-    /// Check if name is "Volumes" WITHOUT creating a String
     @inline(__always)
     private func isVolumesName(_ namePtr: UnsafeRawPointer, _ nameLen: Int) -> Bool {
         if nameLen != 7 { return false }
-        let expected: [UInt8] = [86, 111, 108, 117, 109, 101, 115] // "Volumes"
+        let expected: [UInt8] = [86, 111, 108, 117, 109, 101, 115]
         return memcmp(namePtr, expected, 7) == 0
     }
 
-    /// Check if name is "Data" WITHOUT creating a String
     @inline(__always)
     private func isDataName(_ namePtr: UnsafeRawPointer, _ nameLen: Int) -> Bool {
         if nameLen != 4 { return false }
-        let expected: [UInt8] = [68, 97, 116, 97] // "Data"
+        let expected: [UInt8] = [68, 97, 116, 97]
         return memcmp(namePtr, expected, 4) == 0
     }
 
-    /// Fast memcmp-based exclusion check
     @inline(__always)
     private func isExcludedPath(_ path: String) -> Bool {
         return path.withCString { pathPtr -> Bool in
@@ -86,15 +56,11 @@ final class DiskScanner {
         }
     }
 
-    // MARK: - Entry Point
-
     func scan(path: String, name: String, parentDevice: dev_t? = nil) async -> HyperScanItem {
-        // Check for cancellation before starting
         if Task.isCancelled {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        // Get device if not provided
         let device: dev_t
         if let parentDev = parentDevice {
             device = parentDev
@@ -104,27 +70,19 @@ final class DiskScanner {
             device = dirStat.st_dev
         }
 
-        // Use synchronous recursion at the top level, let it escalate to async when needed
         return await scanRecursiveAsync(path: path, name: name, device: device, depth: 0)
     }
 
-    // MARK: - Synchronous Recursion
-
-    /// Pure synchronous recursion for serial paths. No async/await overhead.
-    /// Uses memcmp exclusion, loadUnaligned parsing, no hot-path sorting.
     private func scanRecursiveSync(path: String, name: String, device: dev_t, depth: Int) -> HyperScanItem {
-        // Fast memcmp-based exclusion check
         if depth < 3 && isExcludedPath(path) {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        // Open directory
         let fd = open(path, O_RDONLY | O_DIRECTORY)
         guard fd >= 0 else {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        // Acquire buffer from pool
         let buffer = bufferPool.acquire()
         defer {
             bufferPool.release(buffer)
@@ -151,12 +109,10 @@ final class DiskScanner {
         var subDirs: [(name: String, path: String)] = []
         subDirs.reserveCapacity(128)
 
-        // Pre-compute path checks once
         let isDataVolumeRoot = (path == "/System/Volumes/Data")
         let isRoot = (path == "/")
         let isSystemVolumes = (path == "/System/Volumes")
 
-        // The hot loop
         while true {
             let count = getattrlistbulk(fd, &attrList, buffer, bufferSize, 0)
             if count <= 0 { break }
@@ -167,12 +123,10 @@ final class DiskScanner {
                 let returnedCommon = ptr.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
                 let returnedFile = ptr.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
 
-                // Name reference
                 let nameDataOffset = Int(ptr.loadUnaligned(fromByteOffset: 24, as: Int32.self))
                 let nameLen = Int(ptr.loadUnaligned(fromByteOffset: 28, as: UInt32.self)) - 1
                 let namePtr = ptr.advanced(by: 24 + nameDataOffset)
 
-                // SIMD-style dot-file check
                 if nameLen > 0 && nameLen <= 2 {
                     let firstTwo = namePtr.loadUnaligned(as: UInt16.self)
                     if nameLen == 1 && (firstTwo & 0xFF) == 0x2E {
@@ -185,13 +139,11 @@ final class DiskScanner {
                     }
                 }
 
-                // Validate name length
                 if nameLen <= 0 || nameLen >= 1024 {
                     ptr = ptr.advanced(by: length)
                     continue
                 }
 
-                // Object type
                 var currentOffset = 32
                 var isDirectory = false
                 if (returnedCommon & UInt32(ATTR_CMN_OBJTYPE)) != 0 {
@@ -200,14 +152,12 @@ final class DiskScanner {
                     isDirectory = (objType == 2)
                 }
 
-                // Inode
                 var inode: UInt64 = 0
                 if (returnedCommon & UInt32(ATTR_CMN_FILEID)) != 0 {
                     inode = ptr.loadUnaligned(fromByteOffset: currentOffset, as: UInt64.self)
                     currentOffset += 8
                 }
 
-                // Size
                 var size: Int64 = 0
                 if !isDirectory && (returnedFile & UInt32(ATTR_FILE_ALLOCSIZE)) != 0 {
                     if currentOffset + 8 <= length {
@@ -218,7 +168,6 @@ final class DiskScanner {
                     }
                 }
 
-                // Zero-copy filtering
                 if isDataVolumeRoot && isFirmlinkName(namePtr, nameLen) {
                     ptr = ptr.advanced(by: length)
                     continue
@@ -232,14 +181,12 @@ final class DiskScanner {
                     continue
                 }
 
-                // NOW create Strings - only for items that pass all filters
                 let itemName = PathAccumulator.nameString(from: namePtr, length: nameLen)
                 let itemPath = isRoot ? "/\(itemName)" : "\(path)/\(itemName)"
 
                 if isDirectory {
                     subDirs.append((itemName, itemPath))
                 } else {
-                    // Hardlink dedup with lock-free bloom filter
                     if inode > 0 {
                         if !context.inodeTracker.visit(device: device, inode: inode) {
                             size = 0
@@ -262,7 +209,6 @@ final class DiskScanner {
                 ptr = ptr.advanced(by: length)
             }
 
-            // Update stats after each buffer batch for smooth progress
             if batchSizeAdded > 0 || batchItemsAdded > 0 {
                 context.stats.add(bytes: batchSizeAdded, items: batchItemsAdded)
                 batchSizeAdded = 0
@@ -270,7 +216,6 @@ final class DiskScanner {
             }
         }
 
-        // Synchronous recursion for serial paths
         if !subDirs.isEmpty {
             let nextDepth = depth + 1
             for (subName, subPath) in subDirs {
@@ -283,31 +228,23 @@ final class DiskScanner {
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
     }
 
-    // MARK: - Async Recursion
-
-    /// Async version with adaptive parallelism.
     private func scanRecursiveAsync(path: String, name: String, device: dev_t, depth: Int) async -> HyperScanItem {
-        // Check for cancellation at start of each directory
         if Task.isCancelled {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        // Fast memcmp-based exclusion check
         if depth < 3 && isExcludedPath(path) {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        // Open directory
         let fd = open(path, O_RDONLY | O_DIRECTORY)
         guard fd >= 0 else {
-            // Permission denied fallback
             if errno == EACCES || errno == EPERM {
                 return await scanWithFileManager(path: path, name: name, device: device, depth: depth)
             }
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        // Acquire buffer from pool
         let buffer = bufferPool.acquire()
         defer {
             bufferPool.release(buffer)
@@ -334,12 +271,10 @@ final class DiskScanner {
         var subDirs: [(name: String, path: String)] = []
         subDirs.reserveCapacity(128)
 
-        // Pre-compute path checks once
         let isDataVolumeRoot = (path == "/System/Volumes/Data")
         let isRoot = (path == "/")
         let isSystemVolumes = (path == "/System/Volumes")
 
-        // The hot loop
         while true {
             let count = getattrlistbulk(fd, &attrList, buffer, bufferSize, 0)
             if count <= 0 { break }
@@ -350,12 +285,10 @@ final class DiskScanner {
                 let returnedCommon = ptr.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
                 let returnedFile = ptr.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
 
-                // Name reference
                 let nameDataOffset = Int(ptr.loadUnaligned(fromByteOffset: 24, as: Int32.self))
                 let nameLen = Int(ptr.loadUnaligned(fromByteOffset: 28, as: UInt32.self)) - 1
                 let namePtr = ptr.advanced(by: 24 + nameDataOffset)
 
-                // SIMD-style dot-file check
                 if nameLen > 0 && nameLen <= 2 {
                     let firstTwo = namePtr.loadUnaligned(as: UInt16.self)
                     if nameLen == 1 && (firstTwo & 0xFF) == 0x2E {
@@ -368,13 +301,11 @@ final class DiskScanner {
                     }
                 }
 
-                // Validate name length
                 if nameLen <= 0 || nameLen >= 1024 {
                     ptr = ptr.advanced(by: length)
                     continue
                 }
 
-                // Object type
                 var currentOffset = 32
                 var isDirectory = false
                 if (returnedCommon & UInt32(ATTR_CMN_OBJTYPE)) != 0 {
@@ -383,14 +314,12 @@ final class DiskScanner {
                     isDirectory = (objType == 2)
                 }
 
-                // Inode
                 var inode: UInt64 = 0
                 if (returnedCommon & UInt32(ATTR_CMN_FILEID)) != 0 {
                     inode = ptr.loadUnaligned(fromByteOffset: currentOffset, as: UInt64.self)
                     currentOffset += 8
                 }
 
-                // Size
                 var size: Int64 = 0
                 if !isDirectory && (returnedFile & UInt32(ATTR_FILE_ALLOCSIZE)) != 0 {
                     if currentOffset + 8 <= length {
@@ -401,7 +330,6 @@ final class DiskScanner {
                     }
                 }
 
-                // Zero-copy filtering
                 if isDataVolumeRoot && isFirmlinkName(namePtr, nameLen) {
                     ptr = ptr.advanced(by: length)
                     continue
@@ -415,14 +343,12 @@ final class DiskScanner {
                     continue
                 }
 
-                // NOW create Strings - only for items that pass all filters
                 let itemName = PathAccumulator.nameString(from: namePtr, length: nameLen)
                 let itemPath = isRoot ? "/\(itemName)" : "\(path)/\(itemName)"
 
                 if isDirectory {
                     subDirs.append((itemName, itemPath))
                 } else {
-                    // Hardlink dedup with lock-free bloom filter
                     if inode > 0 {
                         if !context.inodeTracker.visit(device: device, inode: inode) {
                             size = 0
@@ -445,7 +371,6 @@ final class DiskScanner {
                 ptr = ptr.advanced(by: length)
             }
 
-            // Update stats after each buffer batch for smooth progress
             if batchSizeAdded > 0 || batchItemsAdded > 0 {
                 context.stats.add(bytes: batchSizeAdded, items: batchItemsAdded)
                 batchSizeAdded = 0
@@ -453,11 +378,9 @@ final class DiskScanner {
             }
         }
 
-        // Adaptive parallelism with sync fast-path
         if !subDirs.isEmpty {
             let nextDepth = depth + 1
 
-            // Use synchronous recursion for serial paths
             if subDirs.count < minSubdirsForParallel || depth > maxParallelDepth {
                 for (subName, subPath) in subDirs {
                     let item = scanRecursiveSync(path: subPath, name: subName, device: device, depth: nextDepth)
@@ -465,7 +388,6 @@ final class DiskScanner {
                     localSize += item.size
                 }
             } else {
-                // Parallel execution for wide directories
                 await withTaskGroup(of: HyperScanItem.self) { group in
                     for (subName, subPath) in subDirs {
                         group.addTask {
@@ -484,8 +406,6 @@ final class DiskScanner {
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
     }
 
-    // MARK: - Special Root Scan
-
     func scanRoot() async -> HyperScanItem {
         var rootChildren: [HyperScanItem] = []
         var totalSize: Int64 = 0
@@ -497,7 +417,6 @@ final class DiskScanner {
         let skipPaths = Set(["Volumes", ".VolumeIcon.icns", ".file"])
         var directoriesToScan: [(name: String, path: String)] = []
 
-        // Get root device once
         var rootStat = stat()
         stat("/", &rootStat)
         let rootDevice = rootStat.st_dev
@@ -512,7 +431,6 @@ final class DiskScanner {
             }
         }
 
-        // Scan all root directories in parallel
         await withTaskGroup(of: HyperScanItem.self) { group in
             for (name, path) in directoriesToScan {
                 group.addTask(priority: .userInitiated) {
@@ -534,8 +452,6 @@ final class DiskScanner {
 
         return HyperScanItem(name: "/", path: "/", size: totalSize, isDirectory: true, children: rootChildren)
     }
-
-    // MARK: - Special /System Handler
 
     private func scanSystemWithoutData(device: dev_t) async -> HyperScanItem {
         var systemChildren: [HyperScanItem] = []
@@ -589,8 +505,6 @@ final class DiskScanner {
         return HyperScanItem(name: "System", path: "/System", size: totalSize, isDirectory: true, children: systemChildren)
     }
 
-    // MARK: - FileManager Fallback
-
     private func scanWithFileManager(path: String, name: String, device: dev_t, depth: Int) async -> HyperScanItem {
         var localItems: [HyperScanItem] = []
         var localSize: Int64 = 0
@@ -607,7 +521,6 @@ final class DiskScanner {
 
                 let fullPath = isRoot ? "/\(itemName)" : "\(path)/\(itemName)"
 
-                // Skip firmlinks
                 if isDataVolumeRoot && firmlinkNamesSet.contains(itemName) { continue }
                 if isRoot && itemName == "Volumes" { continue }
 
@@ -616,7 +529,6 @@ final class DiskScanner {
                     if isDir.boolValue {
                         subDirs.append((fullPath, itemName))
                     } else {
-                        // Get file size
                         if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath) {
                             let allocSize: Int64
                             if let allocSizeNum = attrs[FileAttributeKey(rawValue: "NSFileAllocatedSize")] as? NSNumber {
@@ -647,12 +559,10 @@ final class DiskScanner {
                 }
             }
 
-            // Report progress
             if localSize > 0 {
                 context.stats.add(bytes: localSize, items: localItems.count)
             }
 
-            // Recurse using adaptive parallelism
             if !subDirs.isEmpty {
                 let nextDepth = depth + 1
 
@@ -677,9 +587,7 @@ final class DiskScanner {
                     }
                 }
             }
-        } catch {
-            // Expected for permission-restricted directories - silently return empty result
-        }
+        } catch { }
 
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
     }

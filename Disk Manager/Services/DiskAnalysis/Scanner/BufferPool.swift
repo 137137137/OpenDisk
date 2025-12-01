@@ -1,24 +1,6 @@
 import Foundation
 import os.lock
 
-// MARK: - Buffer Pool
-
-/// Reusable buffer pool that eliminates per-directory allocation overhead.
-/// For 100K directories, this saves ~50GB of allocation traffic.
-///
-/// ## Thread Safety
-/// Uses `OSAllocatedUnfairLock` for proper `Sendable` conformance (macOS 14+).
-/// All access to mutable state is protected by the lock.
-///
-/// ## Performance
-/// - Pre-allocates buffers with 16-byte alignment for SIMD operations
-/// - LIFO stack for better cache locality
-/// - Falls back to on-demand allocation when pool is exhausted
-///
-/// ## Swift 6 Sendable Conformance
-/// This class uses `@unchecked Sendable` because thread safety is manually
-/// guaranteed through `OSAllocatedUnfairLock`. All access to mutable state
-/// (the buffer pool array and head index) is protected by the lock.
 final class BufferPool: @unchecked Sendable {
     private let bufferSize: Int
     private let poolSize: Int
@@ -34,7 +16,6 @@ final class BufferPool: @unchecked Sendable {
         self.bufferSize = bufferSize
         self.poolSize = poolSize
 
-        // Allocate pool and pre-allocate buffers
         let pool = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: poolSize)
         for i in 0..<poolSize {
             pool[i] = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 16)
@@ -45,7 +26,6 @@ final class BufferPool: @unchecked Sendable {
 
     deinit {
         state.withLockUnchecked { state in
-            // Free all buffers in the pool
             for i in 0..<state.head {
                 state.pool[i]?.deallocate()
             }
@@ -60,7 +40,6 @@ final class BufferPool: @unchecked Sendable {
                 state.head -= 1
                 return state.pool[state.head]!
             }
-            // Pool exhausted, allocate new buffer
             return UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 16)
         }
     }

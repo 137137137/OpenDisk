@@ -2,51 +2,36 @@ import Foundation
 import os.lock
 import Darwin
 
-// MARK: - Inode Tracker
-
-/// Tracks visited inodes for hardlink deduplication using bloom filter + sharded sets.
-///
-/// Uses lock-free bloom filter for fast negative lookups, falling back to
-/// sharded sets (64 shards) for bloom filter collisions.
 final class InodeTracker: @unchecked Sendable {
-    private let shardCount = 64 // Power of 2 for bitwise masking
+    private let shardCount = 64
     private let mask: Int
-
-    // Per-shard locks and sets
     private let locks: UnsafeMutableBufferPointer<os_unfair_lock>
     private let locksBase: UnsafeMutablePointer<os_unfair_lock>
     private let sets: UnsafeMutablePointer<Set<UInt64>>
-
-    // Lock-free bloom filter using atomic Int64 operations
-    // 64KB = 8K Int64 slots = 512K bits
     private let bloomFilter: UnsafeMutablePointer<Int64>
     private let bloomSlots = 8 * 1024
     private let bloomMask: UInt64
 
     init() {
         self.mask = shardCount - 1
-        self.bloomMask = UInt64(bloomSlots * 64 - 1)  // Mask for bit index
+        self.bloomMask = UInt64(bloomSlots * 64 - 1)
 
-        // Allocate raw locks for maximum speed
         let buffer = UnsafeMutableBufferPointer<os_unfair_lock>.allocate(capacity: shardCount)
         buffer.initialize(repeating: os_unfair_lock())
         self.locks = buffer
-        self.locksBase = buffer.baseAddress!  // Store once, avoid repeated force unwrap
+        self.locksBase = buffer.baseAddress!
 
-        // Allocate sets array
         let setsPtr = UnsafeMutablePointer<Set<UInt64>>.allocate(capacity: shardCount)
         for i in 0..<shardCount {
             setsPtr.advanced(by: i).initialize(to: Set<UInt64>(minimumCapacity: 1024))
         }
         self.sets = setsPtr
 
-        // Allocate bloom filter as Int64 for atomic operations
         self.bloomFilter = .allocate(capacity: bloomSlots)
         self.bloomFilter.initialize(repeating: 0, count: bloomSlots)
     }
 
     deinit {
-        // Clean up sets
         for i in 0..<shardCount {
             sets.advanced(by: i).deinitialize(count: 1)
         }
@@ -55,69 +40,52 @@ final class InodeTracker: @unchecked Sendable {
         bloomFilter.deallocate()
     }
 
-    /// Returns true if this is a NEW inode (first visit), false if already seen
     @inline(__always)
     func visit(inode: UInt64) -> Bool {
         let shardIndex = Int(inode) & mask
-
         os_unfair_lock_lock(locksBase + shardIndex)
         let (inserted, _) = sets[shardIndex].insert(inode)
         os_unfair_lock_unlock(locksBase + shardIndex)
-
         return inserted
     }
 
-    /// Lock-free bloom filter check with atomic bit test-and-set.
-    /// Returns true if this is a NEW inode (first visit), false if already seen.
     @inline(__always)
     func visit(device: dev_t, inode: ino_t) -> Bool {
-        // Combine device and inode into single UInt64 key
         let key = (UInt64(device) << 32) | UInt64(inode)
 
-        // Two hash positions for reduced false positive rate
         let h1 = key & bloomMask
         let h2 = ((key >> 16) ^ (key << 16)) & bloomMask
 
-        let word1 = Int(h1 >> 6)  // Divide by 64 to get word index
-        let bit1 = Int64(1 << (h1 & 63))  // Bit within word
+        let word1 = Int(h1 >> 6)
+        let bit1 = Int64(1 << (h1 & 63))
         let word2 = Int(h2 >> 6)
         let bit2 = Int64(1 << (h2 & 63))
 
-        // Lock-free atomic read of bloom filter bits
         let existing1 = bloomFilter[word1]
         let existing2 = bloomFilter[word2]
 
-        // Fast check: if either bit is NOT set, this is definitely new
         if (existing1 & bit1) == 0 || (existing2 & bit2) == 0 {
-            // Definitely new - atomically set bloom filter bits using CAS loop
             atomicOr(bloomFilter.advanced(by: word1), bit1)
             if word1 != word2 {
                 atomicOr(bloomFilter.advanced(by: word2), bit2)
             }
 
-            // Still need to add to set for correctness, but we know it's new
             let shardIndex = Int(key) & mask
             os_unfair_lock_lock(locksBase + shardIndex)
             sets[shardIndex].insert(key)
             os_unfair_lock_unlock(locksBase + shardIndex)
-
-            return true  // Definitely new
+            return true
         }
 
-        // Maybe seen - fall back to set check (bloom filter false positive)
         let shardIndex = Int(key) & mask
         os_unfair_lock_lock(locksBase + shardIndex)
         let (inserted, _) = sets[shardIndex].insert(key)
         os_unfair_lock_unlock(locksBase + shardIndex)
-
         return inserted
     }
 
     func reset() {
-        // Reset bloom filter
         memset(bloomFilter, 0, bloomSlots * MemoryLayout<Int64>.size)
-
-        // Reset sets
         for i in 0..<shardCount {
             os_unfair_lock_lock(locksBase + i)
             sets[i].removeAll(keepingCapacity: true)
