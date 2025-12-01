@@ -2,16 +2,18 @@ import SwiftUI
 
 // MARK: - Progress Animator
 
-/// Handles smooth progress animation independently from view updates
+/// Handles smooth progress animation with minimal performance impact
 @MainActor
 final class ProgressAnimator: ObservableObject {
     @Published private(set) var displayPercentage: Double = 0
     private var timer: Timer?
     private var targetPercentage: Double = 0
+    private var internalValue: Double = 0  // Non-published for calculations
 
     func start() {
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
+        // 15fps is smooth enough for progress bars, half the CPU of 30fps
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0/15.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
             }
@@ -28,38 +30,44 @@ final class ProgressAnimator: ObservableObject {
     }
 
     private func tick() {
-        guard displayPercentage < 100 else {
+        // Complete - stop timer
+        guard internalValue < 100 else {
+            displayPercentage = 100
             stop()
             return
         }
 
         let target = targetPercentage
-        let current = displayPercentage
+        let current = internalValue
+        let gap = target - current
 
         // Scan complete - finish quickly
         if target >= 99.9 {
-            displayPercentage = min(100, current + 2.0)
-            return
-        }
-
-        // Speed based on gap (% per frame at 30fps)
-        let gap = target - current
-        let speed: Double
-        if gap > 30 {
-            speed = 4.0
-        } else if gap > 10 {
-            speed = 2.5
-        } else if gap > 0 {
-            speed = 1.5
-        } else if gap > -10 {
-            speed = 0.8
-        } else if gap > -30 {
-            speed = 0.3
+            internalValue = min(100, current + 3.0)
         } else {
-            speed = 0.1
+            // Speed based on gap (% per frame at 15fps - doubled from 30fps)
+            let speed: Double
+            if gap > 30 {
+                speed = 8.0
+            } else if gap > 10 {
+                speed = 5.0
+            } else if gap > 0 {
+                speed = 3.0
+            } else if gap > -10 {
+                speed = 1.5
+            } else if gap > -30 {
+                speed = 0.5
+            } else {
+                speed = 0.2
+            }
+            internalValue = min(99.0, current + speed)
         }
 
-        displayPercentage = min(99.0, current + speed)
+        // Only trigger SwiftUI update if value changed by >= 0.5%
+        // This reduces re-renders significantly
+        if abs(internalValue - displayPercentage) >= 0.5 {
+            displayPercentage = internalValue
+        }
     }
 
     deinit {
@@ -159,49 +167,18 @@ struct ScanningProgressView: View {
     @ViewBuilder
     private var progressSection: some View {
         VStack(spacing: 12) {
-            // Progress header
-            HStack(spacing: 8) {
-                Text("Scanned: \(ByteFormatter.formatFileSize(totalDiskScannedBytes))")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .fontWeight(.medium)
-
-                Spacer()
-
-                Text(String(format: "%.1f%%", animator.displayPercentage))
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.blue)
-                    .monospacedDigit()
-            }
-            .frame(maxWidth: 420)
+            // Percentage display
+            Text(String(format: "%.1f%%", animator.displayPercentage))
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundStyle(.blue)
+                .monospacedDigit()
 
             // Progress bar
             ProgressView(value: animator.displayPercentage, total: 100)
                 .frame(maxWidth: 420, minHeight: 8)
                 .scaleEffect(y: 1.5)
                 .tint(.blue)
-
-            // Progress footer with time estimate
-            HStack {
-                Text("of \(ByteFormatter.formatFileSize(totalUsedDiskSpace)) total")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if !estimatedTimeRemaining.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                        Text(estimatedTimeRemaining)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: 420)
         }
         .onChange(of: actualPercentage) { _, newValue in
             animator.updateTarget(newValue)
