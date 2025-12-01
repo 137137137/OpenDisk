@@ -1,13 +1,75 @@
 import SwiftUI
 
+// MARK: - Progress Animator
+
+/// Handles smooth progress animation independently from view updates
+@MainActor
+final class ProgressAnimator: ObservableObject {
+    @Published private(set) var displayPercentage: Double = 0
+    private var timer: Timer?
+    private var targetPercentage: Double = 0
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.tick()
+            }
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func updateTarget(_ target: Double) {
+        targetPercentage = target
+    }
+
+    private func tick() {
+        guard displayPercentage < 100 else {
+            stop()
+            return
+        }
+
+        let target = targetPercentage
+        let current = displayPercentage
+
+        // Scan complete - finish quickly
+        if target >= 99.9 {
+            displayPercentage = min(100, current + 2.0)
+            return
+        }
+
+        // Speed based on gap (% per frame at 30fps)
+        let gap = target - current
+        let speed: Double
+        if gap > 30 {
+            speed = 4.0
+        } else if gap > 10 {
+            speed = 2.5
+        } else if gap > 0 {
+            speed = 1.5
+        } else if gap > -10 {
+            speed = 0.8
+        } else if gap > -30 {
+            speed = 0.3
+        } else {
+            speed = 0.1
+        }
+
+        displayPercentage = min(99.0, current + speed)
+    }
+
+    deinit {
+        timer?.invalidate()
+    }
+}
+
+// MARK: - Scanning Progress View
+
 /// Displays scanning progress with detailed statistics.
-///
-/// Shows:
-/// - Current scanning status and path
-/// - CPU core utilization info
-/// - Progress bar with percentage
-/// - Estimated time remaining
-/// - Files per second rate
 struct ScanningProgressView: View {
     let scanProgress: String
     let currentScanPath: String
@@ -16,11 +78,7 @@ struct ScanningProgressView: View {
     let totalUsedDiskSpace: Int64
     let estimatedTimeRemaining: String
 
-    // Smooth progress - always moving, speed adjusts based on actual progress
-    @State private var displayPercentage: Double = 0
-
-    // 60fps timer for smooth visual updates
-    private let timer = Timer.publish(every: 1.0/60.0, on: .main, in: .common).autoconnect()
+    @StateObject private var animator = ProgressAnimator()
 
     var body: some View {
         VStack(spacing: 20) {
@@ -110,7 +168,7 @@ struct ScanningProgressView: View {
 
                 Spacer()
 
-                Text(String(format: "%.1f%%", displayPercentage))
+                Text(String(format: "%.1f%%", animator.displayPercentage))
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundStyle(.blue)
@@ -118,8 +176,8 @@ struct ScanningProgressView: View {
             }
             .frame(maxWidth: 420)
 
-            // Progress bar - uses smoothly interpolated displayPercentage
-            ProgressView(value: displayPercentage, total: 100)
+            // Progress bar
+            ProgressView(value: animator.displayPercentage, total: 100)
                 .frame(maxWidth: 420, minHeight: 8)
                 .scaleEffect(y: 1.5)
                 .tint(.blue)
@@ -145,43 +203,15 @@ struct ScanningProgressView: View {
             }
             .frame(maxWidth: 420)
         }
-        .onReceive(timer) { _ in
-            let target = actualPercentage
-            let current = displayPercentage
-
-            // Scan complete - snap to 100%
-            if target >= 99.9 {
-                displayPercentage = min(100, current + 2.0)
-                return
-            }
-
-            // Base speed: ~30% per second at 60fps = 0.5% per frame
-            // This ensures we'd reach 99% in about 3 seconds if moving steadily
-            let baseSpeed: Double = 0.5
-
-            // Adjust speed based on gap between actual and display
-            let gap = target - current
-            let speed: Double
-
-            if gap > 30 {
-                speed = baseSpeed * 4.0   // Very behind - fast catchup
-            } else if gap > 10 {
-                speed = baseSpeed * 2.5   // Behind - speed up
-            } else if gap > 0 {
-                speed = baseSpeed * 1.5   // Slightly behind - normal+
-            } else if gap > -10 {
-                speed = baseSpeed * 0.8   // Slightly ahead - slow down
-            } else if gap > -30 {
-                speed = baseSpeed * 0.3   // Ahead - crawl
-            } else {
-                speed = baseSpeed * 0.1   // Way ahead - barely move
-            }
-
-            // Always move forward, cap at 99% until scan completes
-            displayPercentage = min(99.0, current + speed)
+        .onChange(of: actualPercentage) { _, newValue in
+            animator.updateTarget(newValue)
         }
         .onAppear {
-            displayPercentage = 0
+            animator.updateTarget(actualPercentage)
+            animator.start()
+        }
+        .onDisappear {
+            animator.stop()
         }
     }
 }
