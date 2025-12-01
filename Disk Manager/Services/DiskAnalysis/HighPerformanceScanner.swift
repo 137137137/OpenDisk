@@ -454,7 +454,7 @@ final class HighPerformanceScanEngine {
         return prefixes.map { str -> (UnsafePointer<CChar>, Int) in
             let len = str.utf8.count
             let ptr = UnsafeMutablePointer<CChar>.allocate(capacity: len + 1)
-            str.withCString { memcpy(ptr, $0, len + 1) }
+            _ = str.withCString { memcpy(ptr, $0, len + 1) }
             return (UnsafePointer(ptr), len)
         }
     }()
