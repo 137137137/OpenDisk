@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import SwiftUI
+import Combine
 
 struct CleanupOptions {
     var dsStoreFiles = true  // Only option we need
