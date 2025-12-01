@@ -261,11 +261,13 @@ final class DiskScanner {
 
                 ptr = ptr.advanced(by: length)
             }
-        }
 
-        // Update stats
-        if batchSizeAdded > 0 || batchItemsAdded > 0 {
-            context.stats.add(bytes: batchSizeAdded, items: batchItemsAdded)
+            // Update stats after each buffer batch for smooth progress
+            if batchSizeAdded > 0 || batchItemsAdded > 0 {
+                context.stats.add(bytes: batchSizeAdded, items: batchItemsAdded)
+                batchSizeAdded = 0
+                batchItemsAdded = 0
+            }
         }
 
         // Synchronous recursion for serial paths
@@ -442,11 +444,13 @@ final class DiskScanner {
 
                 ptr = ptr.advanced(by: length)
             }
-        }
 
-        // Update stats
-        if batchSizeAdded > 0 || batchItemsAdded > 0 {
-            context.stats.add(bytes: batchSizeAdded, items: batchItemsAdded)
+            // Update stats after each buffer batch for smooth progress
+            if batchSizeAdded > 0 || batchItemsAdded > 0 {
+                context.stats.add(bytes: batchSizeAdded, items: batchItemsAdded)
+                batchSizeAdded = 0
+                batchItemsAdded = 0
+            }
         }
 
         // Adaptive parallelism with sync fast-path

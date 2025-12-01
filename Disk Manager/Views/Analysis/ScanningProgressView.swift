@@ -16,6 +16,12 @@ struct ScanningProgressView: View {
     let totalUsedDiskSpace: Int64
     let estimatedTimeRemaining: String
 
+    // Smooth progress - always moving, speed adjusts based on actual progress
+    @State private var displayPercentage: Double = 0
+
+    // 60fps timer for smooth visual updates
+    private let timer = Timer.publish(every: 1.0/60.0, on: .main, in: .common).autoconnect()
+
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "doc.text.magnifyingglass")
@@ -86,13 +92,14 @@ struct ScanningProgressView: View {
         }
     }
 
+    /// Actual percentage from scan data
+    private var actualPercentage: Double {
+        guard totalUsedDiskSpace > 0, totalDiskScannedBytes > 0 else { return 0 }
+        return min(100.0, Double(totalDiskScannedBytes) / Double(totalUsedDiskSpace) * 100)
+    }
+
     @ViewBuilder
     private var progressSection: some View {
-        let rawPercentage = totalDiskScannedBytes > 0
-            ? Double(totalDiskScannedBytes) / Double(totalUsedDiskSpace) * 100
-            : 0.0
-        let scannedPercentage = min(100.0, max(0.0, rawPercentage))
-
         VStack(spacing: 12) {
             // Progress header
             HStack(spacing: 8) {
@@ -103,15 +110,16 @@ struct ScanningProgressView: View {
 
                 Spacer()
 
-                Text(String(format: "%.1f%%", scannedPercentage))
+                Text(String(format: "%.1f%%", displayPercentage))
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundStyle(.blue)
+                    .monospacedDigit()
             }
             .frame(maxWidth: 420)
 
-            // Progress bar
-            ProgressView(value: scannedPercentage, total: 100)
+            // Progress bar - uses smoothly interpolated displayPercentage
+            ProgressView(value: displayPercentage, total: 100)
                 .frame(maxWidth: 420, minHeight: 8)
                 .scaleEffect(y: 1.5)
                 .tint(.blue)
@@ -136,6 +144,44 @@ struct ScanningProgressView: View {
                 }
             }
             .frame(maxWidth: 420)
+        }
+        .onReceive(timer) { _ in
+            let target = actualPercentage
+            let current = displayPercentage
+
+            // Scan complete - snap to 100%
+            if target >= 99.9 {
+                displayPercentage = min(100, current + 2.0)
+                return
+            }
+
+            // Base speed: ~30% per second at 60fps = 0.5% per frame
+            // This ensures we'd reach 99% in about 3 seconds if moving steadily
+            let baseSpeed: Double = 0.5
+
+            // Adjust speed based on gap between actual and display
+            let gap = target - current
+            let speed: Double
+
+            if gap > 30 {
+                speed = baseSpeed * 4.0   // Very behind - fast catchup
+            } else if gap > 10 {
+                speed = baseSpeed * 2.5   // Behind - speed up
+            } else if gap > 0 {
+                speed = baseSpeed * 1.5   // Slightly behind - normal+
+            } else if gap > -10 {
+                speed = baseSpeed * 0.8   // Slightly ahead - slow down
+            } else if gap > -30 {
+                speed = baseSpeed * 0.3   // Ahead - crawl
+            } else {
+                speed = baseSpeed * 0.1   // Way ahead - barely move
+            }
+
+            // Always move forward, cap at 99% until scan completes
+            displayPercentage = min(99.0, current + speed)
+        }
+        .onAppear {
+            displayPercentage = 0
         }
     }
 }

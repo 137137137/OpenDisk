@@ -11,9 +11,9 @@ import Darwin
 /// - Progress reporting to the UI
 /// - Scan lifecycle management
 actor HyperScanner: ScannerProtocol {
-    // Internal state for progress compatibility
-    private var scannedBytes: Int64 = 0
-    private var itemsScanned: Int = 0
+    // Progress update interval: 33ms (~30 fps) for smooth UI updates
+    // Lock-free atomic reads have negligible overhead
+    private let progressIntervalNanos: UInt64 = 33_000_000
 
     init() {
         // Request highest I/O priority for scan operations
@@ -32,13 +32,12 @@ actor HyperScanner: ScannerProtocol {
         // Create scan engine
         let engine = DiskScanner(context: context)
 
-        // Start progress reporting timer
-        let progressTask = Task { [weak self] in
+        // Start progress reporting timer (~30 updates/sec for smooth animation)
+        let progressTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+                try? await Task.sleep(nanoseconds: self.progressIntervalNanos)
                 let progress = context.getProgress(currentPath: "")
                 onProgress(progress)
-                await self?.updateInternalState(bytes: progress.scannedBytes, items: progress.itemsScanned)
             }
         }
 
@@ -63,11 +62,6 @@ actor HyperScanner: ScannerProtocol {
     }
 
     // MARK: - Private Methods
-
-    private func updateInternalState(bytes: Int64, items: Int) {
-        self.scannedBytes = bytes
-        self.itemsScanned = items
-    }
 
     /// Maximize system limits for peak I/O performance.
     private func optimizeSystemLimits() {
