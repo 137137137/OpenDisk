@@ -16,7 +16,7 @@ enum ScanFilterData {
     }()
 
     static let excludedPrefixData: [(UnsafePointer<CChar>, Int)] = {
-        let prefixes = ["/dev", "/net", "/home", "/private/var/vm", "/Volumes", "/proc"]
+        let prefixes = ["/dev", "/net", "/home", "/private/var/vm", "/proc"]
         return prefixes.map { str -> (UnsafePointer<CChar>, Int) in
             let len = str.utf8.count
             let ptr = UnsafeMutablePointer<CChar>.allocate(capacity: len + 1)
