@@ -9,7 +9,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent {
+                LabeledContent("Status") {
                     HStack {
                         Circle()
                             .fill(fdaStatus ? .green : .orange)
@@ -20,13 +20,11 @@ struct SettingsView: View {
 
                         Spacer()
 
-                        Button("Check Status") {
+                        Button("Check Again") {
                             checkFDAStatus()
                         }
                         .disabled(isCheckingFDA)
                     }
-                } label: {
-                    Text("Status")
                 }
 
                 Text("Full Disk Access allows Disk Manager to analyze all files and folders on your system for accurate disk usage information.")
@@ -39,9 +37,8 @@ struct SettingsView: View {
                     } label: {
                         Label("Open Privacy & Security Settings", systemImage: "arrow.up.forward.square")
                     }
-                    .buttonStyle(.borderedProminent)
 
-                    Text("After granting access, click 'Check Status' to verify.")
+                    Text("After granting access, click 'Check Again' to verify.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -70,17 +67,15 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("Why does Disk Manager need Full Disk Access?")
-                    .font(.headline)
-
                 Text("""
+                Why does Disk Manager need Full Disk Access?
+
                 • Analyze system files and protected folders
                 • Calculate accurate disk usage across all directories
                 • Access application containers and caches
                 • Provide complete disk analysis results
                 """)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.callout)
             } header: {
                 Label("About Permissions", systemImage: "info.circle")
             }

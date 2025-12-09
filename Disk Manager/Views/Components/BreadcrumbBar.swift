@@ -7,9 +7,16 @@
 
 import SwiftUI
 
-struct PathComponent {
+struct PathComponent: Identifiable {
+    let id: String
     let name: String
     let path: String
+
+    init(name: String, path: String) {
+        self.name = name
+        self.path = path
+        self.id = path
+    }
 }
 
 struct BreadcrumbBar: View {
@@ -23,10 +30,8 @@ struct BreadcrumbBar: View {
         let components = currentPath.components(separatedBy: "/").filter { !$0.isEmpty }
         var result: [PathComponent] = []
 
-        // Add root
         result.append(PathComponent(name: "Computer", path: rootPath))
 
-        // Build path components
         var buildPath = ""
         for component in components {
             if buildPath.isEmpty || buildPath == "/" {
@@ -42,7 +47,7 @@ struct BreadcrumbBar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
+            ForEach(pathComponents) { component in
                 Button {
                     if component.name == "Computer" && currentPath != rootPath {
                         onNavigate(component.path)
@@ -54,19 +59,15 @@ struct BreadcrumbBar: View {
                 } label: {
                     Text(component.name)
                         .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
 
-                if index < pathComponents.count - 1 {
+                if component.id != pathComponents.last?.id {
                     Image(systemName: "chevron.right")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                        .imageScale(.small)
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 }

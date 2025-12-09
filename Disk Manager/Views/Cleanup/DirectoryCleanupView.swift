@@ -11,226 +11,138 @@ struct DirectoryCleanupView: View {
     @StateObject private var cleanupManager = DirectoryCleanupManager()
     @StateObject private var diskUtility = DiskSpaceUtility()
     @State private var showingDefaultsGuide = false
-    
+
     var body: some View {
         VStack(spacing: 0) {
-            // Main content area
             ScrollView {
-                VStack(spacing: 0) {
-                    // Header section with native spacing
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Reset Finder View Settings")
-                                .font(.largeTitle)
-                                .fontWeight(.bold)
-                            
-                            Text("Remove .DS_Store files to reset all folder view preferences to their default settings.")
-                                .font(.body)
+                VStack(alignment: .leading, spacing: 20) {
+                    // Header
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Reset Finder View Settings")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+
+                        Text("Remove .DS_Store files to reset all folder view preferences to their default settings.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    // Target location info
+                    if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
+                        LabeledContent {
+                            Text("Total Used: \(computerDevice.formattedUsedStorage)")
                                 .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        } label: {
+                            Label("Computer (Root Directory)", systemImage: "internaldrive")
                         }
-                        
-                        // Target location info
-                        if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
-                            GroupBox {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "internaldrive")
-                                        .font(.title2)
-                                        .foregroundStyle(.blue)
-                                        .frame(width: 32, height: 32)
+                        .padding()
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    }
 
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("Target Location")
-                                            .font(.headline)
-                                            .fontWeight(.semibold)
+                    // DS_Store explanation
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label(".DS_Store Files", systemImage: "folder.badge.gearshape")
+                                .font(.headline)
 
-                                        Text("Computer (Root Directory)")
-                                            .font(.body)
-                                            .foregroundStyle(.primary)
+                            Text("These hidden files store folder view preferences including:")
+                                .foregroundStyle(.secondary)
 
-                                        Text("Total Used Space: \(computerDevice.formattedUsedStorage)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("• Icon positions and arrangement")
+                                Text("• Sort order and view type (list, icon, column)")
+                                Text("• Column widths and window size")
+                                Text("• Background images and colors")
+                            }
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+
+                            if cleanupManager.hasScanned {
+                                Divider()
+
+                                HStack {
+                                    Text("Scan Results:")
+                                        .fontWeight(.medium)
 
                                     Spacer()
+
+                                    Text("\(cleanupManager.scanResults.dsStoreCount) files found")
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(cleanupManager.scanResults.dsStoreCount > 0 ? .primary : .secondary)
                                 }
-                                .padding(.vertical, 4)
                             }
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 24)
-                    .padding(.bottom, 20)
-                    
-                    // Main content card
-                    VStack(spacing: 20) {
-                        // .DS_Store explanation
+
+                    // Progress section
+                    if cleanupManager.isScanning || cleanupManager.isCleaning {
                         GroupBox {
-                            VStack(alignment: .leading, spacing: 16) {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "folder.badge.gearshape")
-                                        .font(.largeTitle)
-                                        .frame(width: 40, height: 40)
-
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(".DS_Store Files")
-                                            .font(.title2)
-                                            .fontWeight(.semibold)
-
-                                        Text("Desktop Services Store")
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Spacer()
-                                }
-
-                                Text("These hidden files store folder view preferences including:")
-                                    .font(.body)
-                                    .foregroundStyle(.primary)
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack(spacing: 8) {
-                                        Text("•")
-                                            .foregroundStyle(.secondary)
-                                        Text("Icon positions and arrangement")
-                                            .font(.body)
-                                    }
-                                    HStack(spacing: 8) {
-                                        Text("•")
-                                            .foregroundStyle(.secondary)
-                                        Text("Sort order and view type (list, icon, column)")
-                                            .font(.body)
-                                    }
-                                    HStack(spacing: 8) {
-                                        Text("•")
-                                            .foregroundStyle(.secondary)
-                                        Text("Column widths and window size")
-                                            .font(.body)
-                                    }
-                                    HStack(spacing: 8) {
-                                        Text("•")
-                                            .foregroundStyle(.secondary)
-                                        Text("Background images and colors")
-                                            .font(.body)
-                                    }
-                                }
-                                .padding(.leading, 16)
-                                
-                                if cleanupManager.hasScanned {
-                                    Divider()
-                                        .padding(.vertical, 4)
-                                    
+                            VStack(spacing: 8) {
+                                if cleanupManager.isScanning && cleanupManager.totalBytes > 0 {
                                     HStack {
-                                        Image(systemName: "magnifyingglass")
-                                            .foregroundStyle(.secondary)
-
-                                        Text("Scan Results:")
-                                            .font(.headline)
+                                        Text(cleanupManager.progressMessage)
                                             .fontWeight(.medium)
 
                                         Spacer()
 
-                                        Text("\(cleanupManager.scanResults.dsStoreCount)")
-                                            .font(.title2)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(cleanupManager.scanResults.dsStoreCount > 0 ? .primary : .secondary)
-
-                                        Text("files found")
-                                            .font(.body)
+                                        Text("\(cleanupManager.formattedScannedBytes) / \(cleanupManager.formattedTotalBytes)")
                                             .foregroundStyle(.secondary)
+                                            .monospacedDigit()
+                                    }
+
+                                    ProgressView(value: cleanupManager.progressPercentage, total: 100.0)
+                                } else {
+                                    HStack {
+                                        ProgressView()
+                                            .controlSize(.small)
+
+                                        Text(cleanupManager.progressMessage)
+                                            .fontWeight(.medium)
+
+                                        Spacer()
                                     }
                                 }
-                            }
-                            .padding(.vertical, 8)
-                        }
-                        
-                        // Progress section
-                        if cleanupManager.isScanning || cleanupManager.isCleaning {
-                            GroupBox {
-                                VStack(spacing: 12) {
-                                    if cleanupManager.isScanning && cleanupManager.totalBytes > 0 {
-                                        VStack(spacing: 8) {
-                                            HStack {
-                                                Text(cleanupManager.progressMessage)
-                                                    .font(.body)
-                                                    .fontWeight(.medium)
-                                                
-                                                Spacer()
-                                                
-                                                Text("\(cleanupManager.formattedScannedBytes) / \(cleanupManager.formattedTotalBytes)")
-                                                    .font(.body)
-                                                    .foregroundStyle(.secondary)
-                                                    .monospacedDigit()
-                                            }
-                                            
-                                            ProgressView(value: cleanupManager.progressPercentage, total: 100.0)
-                                                .scaleEffect(y: 1.2)
-                                        }
-                                    } else {
-                                        HStack {
-                                            ProgressView()
-                                                .scaleEffect(0.8)
-                                            
-                                            Text(cleanupManager.progressMessage)
-                                                .font(.body)
-                                                .fontWeight(.medium)
-                                            
-                                            Spacer()
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 8)
                             }
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 24)
                 }
+                .padding(24)
             }
-            
+
             // Bottom toolbar
-            VStack(spacing: 0) {
-                Divider()
-                
-                HStack(spacing: 16) {
-                    Button("Scan for .DS_Store Files") {
-                        if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
-                            Task {
-                                await cleanupManager.scanDirectory("/", totalUsedSpace: Int64(computerDevice.usedStorage))
-                            }
+            HStack(spacing: 16) {
+                Button("Scan for .DS_Store Files") {
+                    if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
+                        Task {
+                            await cleanupManager.scanDirectory("/", totalUsedSpace: Int64(computerDevice.usedStorage))
                         }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(cleanupManager.isScanning || cleanupManager.isCleaning)
-                    
-                    Spacer()
-                    
-                    if cleanupManager.hasScanned && cleanupManager.scanResults.dsStoreCount > 0 {
-                        Text("\(cleanupManager.scanResults.dsStoreCount) files ready to remove")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Button("Reset All View Settings") {
-                        if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
-                            Task {
-                                await cleanupManager.performCleanup("/", totalUsedSpace: Int64(computerDevice.usedStorage))
-                                // Show guide after cleanup completes
-                                showingDefaultsGuide = true
-                            }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!cleanupManager.hasScanned || cleanupManager.isScanning || cleanupManager.isCleaning || cleanupManager.totalSelectedItems == 0)
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
-                .background(.ultraThinMaterial)
+                .controlSize(.large)
+                .disabled(cleanupManager.isScanning || cleanupManager.isCleaning)
+
+                Spacer()
+
+                if cleanupManager.hasScanned && cleanupManager.scanResults.dsStoreCount > 0 {
+                    Text("\(cleanupManager.scanResults.dsStoreCount) files ready to remove")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Reset All View Settings") {
+                    if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
+                        Task {
+                            await cleanupManager.performCleanup("/", totalUsedSpace: Int64(computerDevice.usedStorage))
+                            showingDefaultsGuide = true
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(!cleanupManager.hasScanned || cleanupManager.isScanning || cleanupManager.isCleaning || cleanupManager.totalSelectedItems == 0)
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(.bar)
         }
         .sheet(isPresented: $showingDefaultsGuide) {
             SetDefaultsGuideView()

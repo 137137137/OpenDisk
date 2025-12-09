@@ -20,8 +20,7 @@ struct SetDefaultsGuideView: View {
                         .font(.title)
                         .fontWeight(.bold)
 
-                    Text("Your folder view settings have been reset. Follow these steps to set new defaults for all folders.")
-                        .font(.body)
+                    Text("Your folder view settings have been reset. Follow these steps to set new defaults.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -33,165 +32,90 @@ struct SetDefaultsGuideView: View {
                 .buttonStyle(.borderedProminent)
             }
             .padding(24)
-
-            Divider()
+            .background(.bar)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
                     // Step 1
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "1.circle.fill")
-                                    .font(.title2)
-
-                                Text("Open Finder")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
+                    stepView(number: 1, title: "Open Finder") {
+                        HStack(spacing: 12) {
+                            Button("Open Finder & Navigate") {
+                                openFinderAndNavigateToDocuments()
                             }
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 12) {
-                                    Button("Open Finder & Navigate") {
-                                        openFinderAndNavigateToDocuments()
-                                    }
-                                    .buttonStyle(.bordered)
-
-                                    Text("This will open Finder and navigate to your Documents folder")
-                                        .font(.body)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                            Text("Opens Finder to your Documents folder")
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 8)
                     }
 
                     // Step 2
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "2.circle.fill")
-                                    .font(.title2)
-
-                                Text("Navigate to a Folder")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                            }
-
-                            Text("Go to any folder (like Documents or Desktop) that you want to use as a template for your default settings.")
-                                .font(.body)
-                        }
-                        .padding(.vertical, 8)
+                    stepView(number: 2, title: "Navigate to a Folder") {
+                        Text("Go to any folder that you want to use as a template for your default settings.")
+                            .foregroundStyle(.secondary)
                     }
 
                     // Step 3
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "3.circle.fill")
-                                    .font(.title2)
-
-                                Text("Customize the View")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                            }
-
+                    stepView(number: 3, title: "Customize the View") {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Set up the folder exactly how you want all folders to look:")
-                                .font(.body)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack(spacing: 8) {
-                                    Text("•")
-                                        .foregroundStyle(.secondary)
-                                    Text("Choose view type: List, Icon, Column, or Gallery")
-                                }
-                                HStack(spacing: 8) {
-                                    Text("•")
-                                        .foregroundStyle(.secondary)
-                                    Text("Adjust column widths and sort order")
-                                }
-                                HStack(spacing: 8) {
-                                    Text("•")
-                                        .foregroundStyle(.secondary)
-                                    Text("Set icon size and arrangement")
-                                }
-                                HStack(spacing: 8) {
-                                    Text("•")
-                                        .foregroundStyle(.secondary)
-                                    Text("Configure sidebar and toolbar visibility")
-                                }
-                            }
-                            .padding(.leading, 16)
+                                .foregroundStyle(.secondary)
+                            Text("• Choose view type: List, Icon, Column, or Gallery")
+                            Text("• Adjust column widths and sort order")
+                            Text("• Set icon size and arrangement")
+                            Text("• Configure sidebar and toolbar visibility")
                         }
-                        .padding(.vertical, 8)
+                        .font(.callout)
                     }
 
                     // Step 4
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Image(systemName: "4.circle.fill")
-                                    .font(.title2)
-
-                                Text("Set as Default")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                            }
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Once your folder looks perfect:")
-                                    .font(.body)
-
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 12) {
-                                        Button("Open View Options") {
-                                            openViewOptionsPanel()
-                                        }
-                                        .buttonStyle(.bordered)
-
-                                        Text("This will open the View Options panel (⌘J)")
-                                            .font(.body)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    HStack {
-                                        Text("Then click")
-                                        Text("\"Use as Defaults\"")
-                                            .fontWeight(.semibold)
-                                        Text("at the bottom of the panel")
-                                    }
+                    stepView(number: 4, title: "Set as Default") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 12) {
+                                Button("Open View Options") {
+                                    openViewOptionsPanel()
                                 }
-                            }
-                        }
-                        .padding(.vertical, 8)
-                    }
 
-                    // Final note
-                    GroupBox {
-                        HStack(spacing: 12) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.title2)
-                                .foregroundStyle(.green)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("All Done!")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-
-                                Text("All new folders and folders without .DS_Store files will now use your default settings.")
-                                    .font(.body)
+                                Text("Opens the View Options panel (⌘J)")
                                     .foregroundStyle(.secondary)
                             }
 
-                            Spacer()
+                            Text("Then click **\"Use as Defaults\"** at the bottom of the panel")
                         }
-                        .padding(.vertical, 8)
+                    }
+
+                    // Success message
+                    GroupBox {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("All Done!")
+                                    .fontWeight(.semibold)
+
+                                Text("All new folders will now use your default settings.")
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.title2)
+                        }
                     }
                 }
                 .padding(24)
             }
         }
-        .frame(width: 600, height: 500)
+        .frame(width: 550, height: 480)
+    }
+
+    @ViewBuilder
+    private func stepView(number: Int, title: String, @ViewBuilder content: () -> some View) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(title, systemImage: "\(number).circle.fill")
+                    .font(.headline)
+
+                content()
+            }
+        }
     }
 
     // MARK: - AppleScript Functions

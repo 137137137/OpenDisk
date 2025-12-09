@@ -17,13 +17,29 @@ struct Disk_ManagerApp: App {
             ContentView()
                 .frame(minWidth: 800, minHeight: 600)
                 .onAppear {
+                    configureWindowForLiquidGlass()
                     checkFullDiskAccessAtStartup()
                 }
         }
-        .windowToolbarStyle(UnifiedWindowToolbarStyle())
+        .windowToolbarStyle(.unified)
+        .windowStyle(.automatic)
+        .defaultSize(width: 1000, height: 700)
         .commands {
             SidebarCommands()
             ToolbarCommands()
+        }
+    }
+
+    /// Configures the window with iOS 26 Liquid Glass optimizations
+    private func configureWindowForLiquidGlass() {
+        DispatchQueue.main.async {
+            guard let window = NSApplication.shared.windows.first else { return }
+
+            // Enable full-size content view for edge-to-edge glass effect
+            window.styleMask.insert(.fullSizeContentView)
+
+            // Set minimum viable size for glass effect visibility
+            window.minSize = NSSize(width: 800, height: 600)
         }
     }
 
@@ -35,6 +51,7 @@ struct Disk_ManagerApp: App {
         guard showPromptAtStartup else { return }
 
         // Check Full Disk Access status and prompt if needed
+        // Delayed to allow window glass effects to render first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             FullDiskAccess.promptIfNotGranted(
                 title: "Full Disk Access Required",

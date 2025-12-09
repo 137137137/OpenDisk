@@ -79,66 +79,59 @@ struct ScanningProgressView: View {
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue)
+                .font(.system(size: 48))
+                .foregroundStyle(.tint)
 
-            VStack(spacing: 12) {
+            VStack(spacing: 6) {
                 Text("Analyzing Disk Usage")
                     .font(.title2)
                     .fontWeight(.semibold)
 
                 Text(scanProgress)
-                    .font(.headline)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
+            }
 
-                if !currentScanPath.isEmpty && !filesPerSecond.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "folder")
-                            .foregroundStyle(.blue)
-                            .font(.caption)
+            if !currentScanPath.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder.fill")
+                        .foregroundStyle(.tint)
 
-                        Text(currentScanPath)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    Text(currentScanPath)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-                        Spacer()
+                    Spacer()
 
-                        Image(systemName: "speedometer")
-                            .foregroundStyle(.green)
-                            .font(.caption)
-
+                    if !filesPerSecond.isEmpty {
                         Text(filesPerSecond)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    .frame(width: 300)
                 }
+                .frame(maxWidth: 360)
+            }
 
-                VStack(spacing: 16) {
-                    HStack {
-                        Image(systemName: "cpu")
-                            .foregroundStyle(.blue)
-                        Text("Using \(ProcessInfo.processInfo.activeProcessorCount) CPU cores")
-                            .font(.caption)
-                            .foregroundStyle(.blue)
-                    }
+            HStack(spacing: 6) {
+                Image(systemName: "cpu")
+                    .foregroundStyle(.tint)
+                Text("Using \(ProcessInfo.processInfo.activeProcessorCount) CPU cores")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
-                    if totalUsedDiskSpace > 0 {
-                        progressSection
-                    } else {
-                        VStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                            Text("Initializing scan...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+            if totalUsedDiskSpace > 0 {
+                progressSection
+            } else {
+                ProgressView()
+                    .controlSize(.large)
             }
         }
+        .padding(32)
+        .frame(maxWidth: 420)
+        .glassEffect()
     }
 
     private var actualPercentage: Double {
@@ -150,15 +143,13 @@ struct ScanningProgressView: View {
     private var progressSection: some View {
         VStack(spacing: 12) {
             Text(String(format: "%.1f%%", animator.displayPercentage))
-                .font(.title2)
+                .font(.title)
                 .fontWeight(.bold)
-                .foregroundStyle(.blue)
+                .foregroundStyle(.tint)
                 .monospacedDigit()
 
             ProgressView(value: animator.displayPercentage, total: 100)
-                .frame(maxWidth: 420, minHeight: 8)
-                .scaleEffect(y: 1.5)
-                .tint(.blue)
+                .frame(maxWidth: 340)
         }
         .onChange(of: actualPercentage) { _, newValue in
             animator.updateTarget(newValue)

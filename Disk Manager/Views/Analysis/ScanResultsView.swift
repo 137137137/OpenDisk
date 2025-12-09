@@ -14,60 +14,52 @@ struct ScanResultsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Folder list
             List(items) { item in
                 FolderRowView(item: item) {
                     if item.isDirectory {
                         onFolderTap(item)
                     }
                 }
-                .listRowInsets(EdgeInsets())
             }
-            .listStyle(PlainListStyle())
+            .listStyle(.plain)
 
-            // Total bar at the bottom
             totalBar
         }
     }
 
     @ViewBuilder
     private var totalBar: some View {
-        VStack(spacing: 0) {
-            Divider()
+        HStack(spacing: 12) {
+            Text("Total")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
-                Text("Total")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-
-                // Show scan duration if scan completed
-                if scanDuration > 0 && !isScanning {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock.badge.checkmark")
-                            .font(.caption)
-                            .foregroundStyle(.green)
-                        Text(formatScanDuration(scanDuration))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+            if scanDuration > 0 && !isScanning {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.badge.checkmark")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                    Text(formatScanDuration(scanDuration))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-
-                Spacer()
-
-                let totalSize = items.reduce(0) { $0 + $1.size }
-                Text(ByteFormatter.formatFileSize(totalSize))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-
-                Text("(\(items.count) items)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 6)
-            .background(.ultraThinMaterial)
+
+            Spacer()
+
+            let totalSize = items.reduce(0) { $0 + $1.size }
+            Text(ByteFormatter.formatFileSize(totalSize))
+                .font(.subheadline)
+                .fontWeight(.semibold)
+
+            Text("(\(items.count) items)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     private func formatScanDuration(_ duration: TimeInterval) -> String {

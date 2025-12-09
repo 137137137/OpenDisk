@@ -6,32 +6,30 @@ struct FolderRowView: View {
     let onTap: () -> Void
 
     var body: some View {
-        HStack {
-            Label {
-                HStack {
+        Button(action: onTap) {
+            HStack {
+                Label {
                     Text(item.name)
                         .lineLimit(1)
-
-                    Spacer()
-
-                    Text(item.formattedSize)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
+                        .foregroundStyle(item.isDirectory ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 }
-            } icon: {
-                Image(systemName: item.isDirectory ? "folder" : "doc")
-            }
 
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .opacity(item.isDirectory ? 1 : 0)
-                .padding(.trailing, 8)
+                Spacer()
+
+                Text(item.formattedSize)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+
+                if item.isDirectory {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTap()
-        }
+        .buttonStyle(.plain)
         .contextMenu {
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
@@ -41,4 +39,3 @@ struct FolderRowView: View {
         }
     }
 }
-
