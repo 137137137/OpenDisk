@@ -20,6 +20,27 @@ struct DiskAnalysisView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Full-width glass breadcrumb header - always visible
+            BreadcrumbBar(
+                currentPath: currentPath,
+                rootPath: rootPath,
+                onNavigate: { path in
+                    navigateToPath(path)
+                },
+                onBack: {
+                    goBack()
+                },
+                onComputerClick: {
+                    if currentPath == rootPath {
+                        self.isNavigatingBack = true
+                        onBack()
+                    } else {
+                        navigateToPath(rootPath)
+                    }
+                }
+            )
+
+            // Main content
             if analyzer.isScanning {
                 Spacer()
                 ScanningProgressView(
@@ -46,29 +67,6 @@ struct DiskAnalysisView: View {
         }
         .navigationTitle(currentPath == rootPath ? "Computer" : URL(fileURLWithPath: currentPath).lastPathComponent)
         .toolbar {
-            ToolbarItemGroup(placement: .principal) {
-                if !analyzer.rootItems.isEmpty {
-                    BreadcrumbBar(
-                        currentPath: currentPath,
-                        rootPath: rootPath,
-                        onNavigate: { path in
-                            navigateToPath(path)
-                        },
-                        onBack: {
-                            goBack()
-                        },
-                        onComputerClick: {
-                            if currentPath == rootPath {
-                                self.isNavigatingBack = true
-                                onBack()
-                            } else {
-                                navigateToPath(rootPath)
-                            }
-                        }
-                    )
-                }
-            }
-
             ToolbarItem(placement: .confirmationAction) {
                 Button {
                     Task {

@@ -16,6 +16,7 @@ struct DeviceRow: View {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(device.name)
+                        .fontWeight(.medium)
 
                     if device.totalStorage > 0 {
                         Text("\(device.formattedUsedStorage) / \(device.formattedTotalStorage)")

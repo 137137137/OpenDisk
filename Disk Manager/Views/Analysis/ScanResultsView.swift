@@ -1,11 +1,5 @@
 import SwiftUI
 
-/// Displays the scan results as a list of folders and files.
-///
-/// Shows:
-/// - List of folder items sorted by size
-/// - Total size and item count footer
-/// - Scan duration when available
 struct ScanResultsView: View {
     let items: [FolderItem]
     let scanDuration: TimeInterval
@@ -73,18 +67,4 @@ struct ScanResultsView: View {
             return String(format: "Scanned in %d:%02d", minutes, seconds)
         }
     }
-}
-
-#Preview {
-    ScanResultsView(
-        items: [
-            FolderItem(name: "Documents", path: "/Users/test/Documents", size: 5_000_000_000, isDirectory: true, itemCount: 150, lastModified: Date()),
-            FolderItem(name: "Downloads", path: "/Users/test/Downloads", size: 3_000_000_000, isDirectory: true, itemCount: 45, lastModified: Date()),
-            FolderItem(name: "large_file.zip", path: "/Users/test/large_file.zip", size: 1_500_000_000, isDirectory: false, itemCount: 1, lastModified: Date())
-        ],
-        scanDuration: 2.5,
-        isScanning: false,
-        onFolderTap: { _ in }
-    )
-    .frame(width: 500, height: 400)
 }
