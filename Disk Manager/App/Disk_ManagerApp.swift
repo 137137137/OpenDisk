@@ -28,6 +28,11 @@ struct Disk_ManagerApp: App {
             SidebarCommands()
             ToolbarCommands()
         }
+
+        // Native Settings window (⌘,)
+        Settings {
+            SettingsView()
+        }
     }
 
     /// Configures the window with iOS 26 Liquid Glass optimizations
