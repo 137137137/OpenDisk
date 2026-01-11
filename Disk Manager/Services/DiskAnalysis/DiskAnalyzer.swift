@@ -160,13 +160,13 @@ final class DiskAnalyzer {
         func searchItems(_ items: [FolderItem]) -> [FolderItem]? {
             for item in items {
                 if item.path == targetPath && item.isDirectory {
-                    // V24: If children are empty (lazy loading), need to scan that path
+                    // If children are empty (lazy loading), convert from rawScanData on-demand
                     if item.children.isEmpty && item.itemCount > 0 {
-                        // Trigger background scan for this specific folder
-                        Task {
-                            await self.scanDirectory(targetPath)
+                        // Look up in raw scan data and convert on-demand
+                        if let convertedChildren = convertChildrenFromRawData(for: targetPath) {
+                            return convertedChildren
                         }
-                        return nil // Will be loaded async
+                        return nil // Not found in raw data either
                     }
                     return item.children
                 }
@@ -181,7 +181,60 @@ final class DiskAnalyzer {
         }
 
         // Search in the complete tree (has everything from initial scan)
-        return searchItems(completeTree)
+        if let found = searchItems(completeTree) {
+            return found
+        }
+
+        // Fallback: search directly in rawScanData for paths not in completeTree
+        return convertChildrenFromRawData(for: targetPath)
+    }
+
+    /// Search rawScanData for a path and convert its children to FolderItems on-demand
+    private func convertChildrenFromRawData(for targetPath: String) -> [FolderItem]? {
+        guard let rawData = rawScanData else { return nil }
+
+        // Recursively search the HyperScanItem tree for the target path
+        func findInRawTree(_ item: HyperScanItem) -> HyperScanItem? {
+            if item.path == targetPath {
+                return item
+            }
+            guard let children = item.children else { return nil }
+            for child in children {
+                if targetPath.hasPrefix(child.path + "/") || targetPath == child.path {
+                    if let found = findInRawTree(child) {
+                        return found
+                    }
+                }
+            }
+            return nil
+        }
+
+        // Search starting from rawScanData
+        guard let foundItem = findInRawTree(rawData),
+              let children = foundItem.children else {
+            return nil
+        }
+
+        // Convert children to FolderItems (sorted by size, top 100 shown immediately)
+        let sharedDate = Date()
+        let sortedChildren = children.sorted { $0.size > $1.size }
+        var convertedItems = sortedChildren.prefix(100).map { child -> FolderItem in
+            FolderItem(
+                name: child.name,
+                path: child.path,
+                size: child.size,
+                isDirectory: child.isDirectory,
+                itemCount: child.children?.count ?? 1,
+                lastModified: sharedDate,
+                children: [] // Still lazy - will be converted when navigated to
+            )
+        }
+
+        // Filter out tiny items and calculate percentages
+        convertedItems = convertedItems.filter { $0.size > 1024 }
+        ScanResultProcessor.calculatePercentages(for: &convertedItems)
+
+        return convertedItems
     }
 
 
