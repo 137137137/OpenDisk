@@ -37,6 +37,11 @@ struct DiskAnalysisView: View {
                     } else {
                         navigateToPath(rootPath)
                     }
+                },
+                onRefresh: {
+                    Task {
+                        await analyzer.scanDirectory(currentPath)
+                    }
                 }
             )
 
@@ -65,19 +70,8 @@ struct DiskAnalysisView: View {
                 )
             }
         }
-        .navigationTitle(currentPath == rootPath ? "Computer" : URL(fileURLWithPath: currentPath).lastPathComponent)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button {
-                    Task {
-                        await analyzer.scanDirectory(currentPath)
-                    }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .keyboardShortcut("r", modifiers: .command)
-            }
-        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden)
         .onAppear {
             if self.isNavigatingBack {
                 return

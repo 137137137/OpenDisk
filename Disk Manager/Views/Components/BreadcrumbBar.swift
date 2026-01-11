@@ -29,6 +29,7 @@ struct BreadcrumbBar: View {
     let onNavigate: (String) -> Void
     let onBack: () -> Void
     let onComputerClick: () -> Void
+    let onRefresh: () -> Void
 
     @State private var hoveredComponent: String?
 
@@ -110,6 +111,17 @@ struct BreadcrumbBar: View {
             }
 
             Spacer(minLength: 0)
+
+            // Refresh button
+            Button(action: onRefresh) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("r", modifiers: .command)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -160,7 +172,8 @@ struct BreadcrumbSegment: View {
             rootPath: "/",
             onNavigate: { _ in },
             onBack: { },
-            onComputerClick: { }
+            onComputerClick: { },
+            onRefresh: { }
         )
 
         BreadcrumbBar(
@@ -168,7 +181,8 @@ struct BreadcrumbSegment: View {
             rootPath: "/",
             onNavigate: { _ in },
             onBack: { },
-            onComputerClick: { }
+            onComputerClick: { },
+            onRefresh: { }
         )
     }
     .padding()
