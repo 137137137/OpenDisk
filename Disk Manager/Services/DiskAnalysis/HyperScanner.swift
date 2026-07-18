@@ -19,7 +19,7 @@ actor HyperScanner: ScannerProtocol {
 
         let progressTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: self.progressIntervalNanos)
+                try? await Task.sleep(for: .nanoseconds(self.progressIntervalNanos))
                 let progress = context.getProgress(currentPath: "")
                 onProgress(progress)
             }

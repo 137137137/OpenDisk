@@ -1,61 +1,49 @@
 import Foundation
 import os.lock
 
+/// Recycles the raw buffers used for getattrlistbulk reads.
+///
+/// Buffers are allocated lazily on first use, so the pool's memory footprint
+/// tracks actual scan concurrency instead of a worst-case preallocation.
 final class BufferPool: @unchecked Sendable {
     private let bufferSize: Int
-    private let poolSize: Int
-    private let state: OSAllocatedUnfairLock<PoolState>
+    private let maxPooled: Int
+    private let pool: OSAllocatedUnfairLock<[UnsafeMutableRawPointer]>
 
-    struct PoolState {
-        var pool: UnsafeMutablePointer<UnsafeMutableRawPointer?>
-        var head: Int
-        let poolSize: Int
-    }
-
-    init(bufferSize: Int, poolSize: Int = 256) {
+    init(bufferSize: Int, poolSize: Int = 64) {
         self.bufferSize = bufferSize
-        self.poolSize = poolSize
-
-        let pool = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: poolSize)
-        for i in 0..<poolSize {
-            pool[i] = UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 16)
-        }
-
-        self.state = OSAllocatedUnfairLock(initialState: PoolState(pool: pool, head: 0, poolSize: poolSize))
+        self.maxPooled = poolSize
+        self.pool = OSAllocatedUnfairLock(uncheckedState: [])
     }
 
     deinit {
-        state.withLockUnchecked { state in
-            for i in 0..<state.head {
-                state.pool[i]?.deallocate()
+        pool.withLockUnchecked { buffers in
+            for buffer in buffers {
+                buffer.deallocate()
             }
-            state.pool.deallocate()
+            buffers.removeAll()
         }
     }
 
     @inline(__always)
     func acquire() -> UnsafeMutableRawPointer {
-        state.withLockUnchecked { state in
-            if state.head > 0 {
-                state.head -= 1
-                return state.pool[state.head]!
-            }
-            return UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 16)
+        if let buffer = pool.withLockUnchecked({ $0.popLast() }) {
+            return buffer
         }
+        return UnsafeMutableRawPointer.allocate(byteCount: bufferSize, alignment: 16)
     }
 
     @inline(__always)
     func release(_ buffer: UnsafeMutableRawPointer) {
-        let shouldDeallocate = state.withLockUnchecked { state -> Bool in
-            if state.head < state.poolSize {
-                state.pool[state.head] = buffer
-                state.head += 1
-                return false
+        let pooled = pool.withLockUnchecked { buffers -> Bool in
+            if buffers.count < maxPooled {
+                buffers.append(buffer)
+                return true
             }
-            return true
+            return false
         }
 
-        if shouldDeallocate {
+        if !pooled {
             buffer.deallocate()
         }
     }

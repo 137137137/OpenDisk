@@ -1,54 +1,43 @@
 import Foundation
-import Darwin
+import os.lock
 
-final class ScanStatistics: @unchecked Sendable {
-    private let _scannedBytes: UnsafeMutablePointer<Int64>
-    private let _itemsScanned: UnsafeMutablePointer<Int64>
-    private let _totalUsedBytes: UnsafeMutablePointer<Int64>
-
-    init() {
-        _scannedBytes = .allocate(capacity: 1)
-        _scannedBytes.initialize(to: 0)
-        _itemsScanned = .allocate(capacity: 1)
-        _itemsScanned.initialize(to: 0)
-        _totalUsedBytes = .allocate(capacity: 1)
-        _totalUsedBytes.initialize(to: 0)
+/// Aggregated scan counters. Updated once per getattrlistbulk batch (not per
+/// file), so a single unfair lock is uncontended in practice.
+final class ScanStatistics: Sendable {
+    private struct Counters {
+        var scannedBytes: Int64 = 0
+        var itemsScanned: Int64 = 0
+        var totalUsedBytes: Int64 = 0
     }
 
-    deinit {
-        _scannedBytes.deallocate()
-        _itemsScanned.deallocate()
-        _totalUsedBytes.deallocate()
-    }
+    private let state = OSAllocatedUnfairLock(initialState: Counters())
 
     @inline(__always)
     func add(bytes: Int64, items: Int) {
-        if bytes > 0 {
-            OSAtomicAdd64(bytes, _scannedBytes)
-        }
-        if items > 0 {
-            OSAtomicAdd64(Int64(items), _itemsScanned)
+        state.withLock { counters in
+            counters.scannedBytes += bytes
+            counters.itemsScanned += Int64(items)
         }
     }
 
-    @inline(__always)
     func setTotalBytes(_ bytes: Int64) {
-        _totalUsedBytes.pointee = bytes
-        OSMemoryBarrier()
+        state.withLock { $0.totalUsedBytes = bytes }
     }
 
-    @inline(__always)
     func snapshot(path: String) -> HyperScanProgress {
-        HyperScanProgress(
-            scannedBytes: _scannedBytes.pointee,
-            totalUsedBytes: _totalUsedBytes.pointee,
+        let counters = state.withLock { $0 }
+        return HyperScanProgress(
+            scannedBytes: counters.scannedBytes,
+            totalUsedBytes: counters.totalUsedBytes,
             currentPath: path,
-            itemsScanned: Int(_itemsScanned.pointee)
+            itemsScanned: Int(counters.itemsScanned)
         )
     }
 
     func reset() {
-        while OSAtomicCompareAndSwap64(_scannedBytes.pointee, 0, _scannedBytes) == false {}
-        while OSAtomicCompareAndSwap64(_itemsScanned.pointee, 0, _itemsScanned) == false {}
+        state.withLock { counters in
+            counters.scannedBytes = 0
+            counters.itemsScanned = 0
+        }
     }
 }

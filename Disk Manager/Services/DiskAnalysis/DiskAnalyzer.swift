@@ -54,7 +54,7 @@ final class DiskAnalyzer {
     // MARK: - State
     private var currentPath: String = ""
     private var initialScanPath: String = ""
-    private var scanTask: Task<Void, Never>?
+    private var scanTask: Task<HyperScanItem, Never>?
     private var scanStartTime: Date?
 
     // MARK: - Public Methods
@@ -85,8 +85,11 @@ final class DiskAnalyzer {
             return
         }
 
-        // Perform scan
-        let hyperResult = await performHyperScan(path: path)
+        // Perform scan in a stored task so cancelCurrentScan() actually cancels it
+        let task = Task { await performHyperScan(path: path) }
+        scanTask = task
+        let hyperResult = await task.value
+        scanTask = nil
 
         // V24: Store raw data for on-demand conversion
         rawScanData = hyperResult
@@ -104,18 +107,6 @@ final class DiskAnalyzer {
 
         // Store for navigation (lightweight now with only top 100 items per folder)
         completeTree = items
-
-        // Optional: Background conversion of full tree (low priority)
-        Task.detached(priority: .utility) {
-            // Convert more data in background for smoother navigation
-            // This happens after UI is already responsive
-            if let fullItems = hyperResult.children {
-                for item in fullItems where item.children?.count ?? 0 > 100 {
-                    // Pre-convert folders with many items
-                    _ = item.toFolderItem()
-                }
-            }
-        }
 
         // Complete scan
         isScanning = false

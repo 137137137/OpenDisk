@@ -1,19 +1,17 @@
 import Foundation
 import Darwin
 
-final class DiskScanner {
+final class DiskScanner: @unchecked Sendable {
     private let context: ScanContext
-    private let onProgress: ((HyperScanProgress) -> Void)?
-    private let bufferPool: BufferPool
-    private let bufferSize = 4 * 1024 * 1024
+    private let bufferSize = 1 * 1024 * 1024
     private let maxParallelDepth = 8
     private let minSubdirsForParallel = 2
+    private let bufferPool: BufferPool
     private let firmlinkNamesSet: Set<String>
 
     init(context: ScanContext, onProgress: ((HyperScanProgress) -> Void)? = nil) {
         self.context = context
-        self.onProgress = onProgress
-        self.bufferPool = BufferPool(bufferSize: 4 * 1024 * 1024, poolSize: 128)
+        self.bufferPool = BufferPool(bufferSize: bufferSize, poolSize: 64)
         self.firmlinkNamesSet = Set(["Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"])
     }
 
@@ -73,14 +71,35 @@ final class DiskScanner {
         return await scanRecursiveAsync(path: path, name: name, device: device, depth: 0)
     }
 
-    private func scanRecursiveSync(path: String, name: String, device: dev_t, depth: Int) -> HyperScanItem {
-        if depth < 3 && isExcludedPath(path) {
-            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
-        }
+    // MARK: - Directory reading (shared by sync and async recursion)
 
+    private enum DirectoryRead {
+        case contents(files: [HyperScanItem], filesSize: Int64, subDirs: [(name: String, path: String)])
+        case accessDenied
+        case unreadable
+    }
+
+    /// Builds "prefix + name" without intermediate allocations. `prefix` is the
+    /// parent path's UTF-8 bytes including a trailing slash.
+    @inline(__always)
+    private func makeChildPath(prefix: [UInt8], namePtr: UnsafeRawPointer, nameLen: Int) -> String {
+        let total = prefix.count + nameLen
+        return String(unsafeUninitializedCapacity: total) { dest in
+            let base = UnsafeMutableRawPointer(dest.baseAddress!)
+            prefix.withUnsafeBytes { src in
+                base.copyMemory(from: src.baseAddress!, byteCount: src.count)
+            }
+            base.advanced(by: prefix.count).copyMemory(from: namePtr, byteCount: nameLen)
+            return total
+        }
+    }
+
+    /// Reads one directory with getattrlistbulk. The fd and read buffer are
+    /// released before this returns, so nothing is held while children recurse.
+    private func readDirectory(path: String, device: dev_t) -> DirectoryRead {
         let fd = open(path, O_RDONLY | O_DIRECTORY)
         guard fd >= 0 else {
-            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
+            return (errno == EACCES || errno == EPERM) ? .accessDenied : .unreadable
         }
 
         let buffer = bufferPool.acquire()
@@ -97,21 +116,28 @@ final class DiskScanner {
             UInt32(ATTR_CMN_OBJTYPE) |
             UInt32(ATTR_CMN_FILEID)
         )
-        attrList.fileattr = attrgroup_t(UInt32(ATTR_FILE_ALLOCSIZE))
+        attrList.fileattr = attrgroup_t(UInt32(ATTR_FILE_LINKCOUNT) | UInt32(ATTR_FILE_ALLOCSIZE))
 
-        var localItems = [HyperScanItem]()
-        localItems.reserveCapacity(512)
+        var files = [HyperScanItem]()
+        files.reserveCapacity(256)
 
-        var localSize: Int64 = 0
+        var filesSize: Int64 = 0
         var batchSizeAdded: Int64 = 0
         var batchItemsAdded: Int = 0
 
         var subDirs: [(name: String, path: String)] = []
-        subDirs.reserveCapacity(128)
+        subDirs.reserveCapacity(64)
 
         let isDataVolumeRoot = (path == "/System/Volumes/Data")
         let isRoot = (path == "/")
         let isSystemVolumes = (path == "/System/Volumes")
+
+        var pathPrefix = [UInt8]()
+        pathPrefix.reserveCapacity(path.utf8.count + 1)
+        pathPrefix.append(contentsOf: path.utf8)
+        if pathPrefix.last != 0x2F {
+            pathPrefix.append(0x2F)
+        }
 
         while true {
             let count = getattrlistbulk(fd, &attrList, buffer, bufferSize, 0)
@@ -120,6 +146,8 @@ final class DiskScanner {
             var ptr = buffer
             for _ in 0..<count {
                 let length = Int(ptr.loadUnaligned(as: UInt32.self))
+                defer { ptr = ptr.advanced(by: length) }
+
                 let returnedCommon = ptr.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
                 let returnedFile = ptr.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
 
@@ -129,20 +157,11 @@ final class DiskScanner {
 
                 if nameLen > 0 && nameLen <= 2 {
                     let firstTwo = namePtr.loadUnaligned(as: UInt16.self)
-                    if nameLen == 1 && (firstTwo & 0xFF) == 0x2E {
-                        ptr = ptr.advanced(by: length)
-                        continue
-                    }
-                    if nameLen == 2 && firstTwo == 0x2E2E {
-                        ptr = ptr.advanced(by: length)
-                        continue
-                    }
+                    if nameLen == 1 && (firstTwo & 0xFF) == 0x2E { continue }
+                    if nameLen == 2 && firstTwo == 0x2E2E { continue }
                 }
 
-                if nameLen <= 0 || nameLen >= 1024 {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
+                if nameLen <= 0 || nameLen >= 1024 { continue }
 
                 var currentOffset = 32
                 var isDirectory = false
@@ -158,6 +177,12 @@ final class DiskScanner {
                     currentOffset += 8
                 }
 
+                var linkCount: UInt32 = 1
+                if (returnedFile & UInt32(ATTR_FILE_LINKCOUNT)) != 0 {
+                    linkCount = ptr.loadUnaligned(fromByteOffset: currentOffset, as: UInt32.self)
+                    currentOffset += 4
+                }
+
                 var size: Int64 = 0
                 if !isDirectory && (returnedFile & UInt32(ATTR_FILE_ALLOCSIZE)) != 0 {
                     if currentOffset + 8 <= length {
@@ -168,36 +193,29 @@ final class DiskScanner {
                     }
                 }
 
-                if isDataVolumeRoot && isFirmlinkName(namePtr, nameLen) {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
-                if isRoot && isVolumesName(namePtr, nameLen) {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
-                if isDirectory && isSystemVolumes && isDataName(namePtr, nameLen) {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
+                if isDataVolumeRoot && isFirmlinkName(namePtr, nameLen) { continue }
+                if isRoot && isVolumesName(namePtr, nameLen) { continue }
+                if isDirectory && isSystemVolumes && isDataName(namePtr, nameLen) { continue }
 
                 let itemName = PathAccumulator.nameString(from: namePtr, length: nameLen)
-                let itemPath = isRoot ? "/\(itemName)" : "\(path)/\(itemName)"
+                let itemPath = makeChildPath(prefix: pathPrefix, namePtr: namePtr, nameLen: nameLen)
 
                 if isDirectory {
                     subDirs.append((itemName, itemPath))
                 } else {
-                    if inode > 0 {
+                    // Only hard-linked files (nlink > 1) can be double-counted,
+                    // so only those pay for deduplication tracking.
+                    if linkCount > 1 && inode > 0 {
                         if !context.inodeTracker.visit(device: device, inode: inode) {
                             size = 0
                         }
                     }
 
-                    localSize += size
+                    filesSize += size
                     batchSizeAdded += size
                     batchItemsAdded += 1
 
-                    localItems.append(HyperScanItem(
+                    files.append(HyperScanItem(
                         name: itemName,
                         path: itemPath,
                         size: size,
@@ -205,8 +223,6 @@ final class DiskScanner {
                         children: nil
                     ))
                 }
-
-                ptr = ptr.advanced(by: length)
             }
 
             if batchSizeAdded > 0 || batchItemsAdded > 0 {
@@ -216,13 +232,25 @@ final class DiskScanner {
             }
         }
 
-        if !subDirs.isEmpty {
-            let nextDepth = depth + 1
-            for (subName, subPath) in subDirs {
-                let item = scanRecursiveSync(path: subPath, name: subName, device: device, depth: nextDepth)
-                localItems.append(item)
-                localSize += item.size
-            }
+        return .contents(files: files, filesSize: filesSize, subDirs: subDirs)
+    }
+
+    // MARK: - Recursion
+
+    private func scanRecursiveSync(path: String, name: String, device: dev_t, depth: Int) -> HyperScanItem {
+        if depth < 3 && isExcludedPath(path) {
+            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
+        }
+
+        guard case .contents(var localItems, var localSize, let subDirs) = readDirectory(path: path, device: device) else {
+            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
+        }
+
+        let nextDepth = depth + 1
+        for (subName, subPath) in subDirs {
+            let item = scanRecursiveSync(path: subPath, name: subName, device: device, depth: nextDepth)
+            localItems.append(item)
+            localSize += item.size
         }
 
         return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
@@ -237,146 +265,23 @@ final class DiskScanner {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        let fd = open(path, O_RDONLY | O_DIRECTORY)
-        guard fd >= 0 else {
-            if errno == EACCES || errno == EPERM {
-                return await scanWithFileManager(path: path, name: name, device: device, depth: depth)
-            }
+        let localItems: [HyperScanItem]
+        let localSize: Int64
+        let subDirs: [(name: String, path: String)]
+
+        switch readDirectory(path: path, device: device) {
+        case .contents(let files, let filesSize, let dirs):
+            localItems = files
+            localSize = filesSize
+            subDirs = dirs
+        case .accessDenied:
+            return await scanWithFileManager(path: path, name: name, device: device, depth: depth)
+        case .unreadable:
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        let buffer = bufferPool.acquire()
-        defer {
-            bufferPool.release(buffer)
-            close(fd)
-        }
-
-        var attrList = attrlist()
-        attrList.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
-        attrList.commonattr = attrgroup_t(
-            UInt32(ATTR_CMN_RETURNED_ATTRS) |
-            UInt32(ATTR_CMN_NAME) |
-            UInt32(ATTR_CMN_OBJTYPE) |
-            UInt32(ATTR_CMN_FILEID)
-        )
-        attrList.fileattr = attrgroup_t(UInt32(ATTR_FILE_ALLOCSIZE))
-
-        var localItems = [HyperScanItem]()
-        localItems.reserveCapacity(512)
-
-        var localSize: Int64 = 0
-        var batchSizeAdded: Int64 = 0
-        var batchItemsAdded: Int = 0
-
-        var subDirs: [(name: String, path: String)] = []
-        subDirs.reserveCapacity(128)
-
-        let isDataVolumeRoot = (path == "/System/Volumes/Data")
-        let isRoot = (path == "/")
-        let isSystemVolumes = (path == "/System/Volumes")
-
-        while true {
-            let count = getattrlistbulk(fd, &attrList, buffer, bufferSize, 0)
-            if count <= 0 { break }
-
-            var ptr = buffer
-            for _ in 0..<count {
-                let length = Int(ptr.loadUnaligned(as: UInt32.self))
-                let returnedCommon = ptr.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
-                let returnedFile = ptr.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
-
-                let nameDataOffset = Int(ptr.loadUnaligned(fromByteOffset: 24, as: Int32.self))
-                let nameLen = Int(ptr.loadUnaligned(fromByteOffset: 28, as: UInt32.self)) - 1
-                let namePtr = ptr.advanced(by: 24 + nameDataOffset)
-
-                if nameLen > 0 && nameLen <= 2 {
-                    let firstTwo = namePtr.loadUnaligned(as: UInt16.self)
-                    if nameLen == 1 && (firstTwo & 0xFF) == 0x2E {
-                        ptr = ptr.advanced(by: length)
-                        continue
-                    }
-                    if nameLen == 2 && firstTwo == 0x2E2E {
-                        ptr = ptr.advanced(by: length)
-                        continue
-                    }
-                }
-
-                if nameLen <= 0 || nameLen >= 1024 {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
-
-                var currentOffset = 32
-                var isDirectory = false
-                if (returnedCommon & UInt32(ATTR_CMN_OBJTYPE)) != 0 {
-                    let objType = ptr.loadUnaligned(fromByteOffset: currentOffset, as: UInt32.self)
-                    currentOffset += 4
-                    isDirectory = (objType == 2)
-                }
-
-                var inode: UInt64 = 0
-                if (returnedCommon & UInt32(ATTR_CMN_FILEID)) != 0 {
-                    inode = ptr.loadUnaligned(fromByteOffset: currentOffset, as: UInt64.self)
-                    currentOffset += 8
-                }
-
-                var size: Int64 = 0
-                if !isDirectory && (returnedFile & UInt32(ATTR_FILE_ALLOCSIZE)) != 0 {
-                    if currentOffset + 8 <= length {
-                        size = ptr.loadUnaligned(fromByteOffset: currentOffset, as: Int64.self)
-                        if size < 0 || size > 1_000_000_000_000_000 {
-                            size = 0
-                        }
-                    }
-                }
-
-                if isDataVolumeRoot && isFirmlinkName(namePtr, nameLen) {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
-                if isRoot && isVolumesName(namePtr, nameLen) {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
-                if isDirectory && isSystemVolumes && isDataName(namePtr, nameLen) {
-                    ptr = ptr.advanced(by: length)
-                    continue
-                }
-
-                let itemName = PathAccumulator.nameString(from: namePtr, length: nameLen)
-                let itemPath = isRoot ? "/\(itemName)" : "\(path)/\(itemName)"
-
-                if isDirectory {
-                    subDirs.append((itemName, itemPath))
-                } else {
-                    if inode > 0 {
-                        if !context.inodeTracker.visit(device: device, inode: inode) {
-                            size = 0
-                        }
-                    }
-
-                    localSize += size
-                    batchSizeAdded += size
-                    batchItemsAdded += 1
-
-                    localItems.append(HyperScanItem(
-                        name: itemName,
-                        path: itemPath,
-                        size: size,
-                        isDirectory: false,
-                        children: nil
-                    ))
-                }
-
-                ptr = ptr.advanced(by: length)
-            }
-
-            if batchSizeAdded > 0 || batchItemsAdded > 0 {
-                context.stats.add(bytes: batchSizeAdded, items: batchItemsAdded)
-                batchSizeAdded = 0
-                batchItemsAdded = 0
-            }
-        }
+        var allItems = localItems
+        var totalSize = localSize
 
         if !subDirs.isEmpty {
             let nextDepth = depth + 1
@@ -384,8 +289,8 @@ final class DiskScanner {
             if subDirs.count < minSubdirsForParallel || depth > maxParallelDepth {
                 for (subName, subPath) in subDirs {
                     let item = scanRecursiveSync(path: subPath, name: subName, device: device, depth: nextDepth)
-                    localItems.append(item)
-                    localSize += item.size
+                    allItems.append(item)
+                    totalSize += item.size
                 }
             } else {
                 await withTaskGroup(of: HyperScanItem.self) { group in
@@ -396,14 +301,14 @@ final class DiskScanner {
                     }
 
                     for await item in group {
-                        localItems.append(item)
-                        localSize += item.size
+                        allItems.append(item)
+                        totalSize += item.size
                     }
                 }
             }
         }
 
-        return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
+        return HyperScanItem(name: name, path: path, size: totalSize, isDirectory: true, children: allItems)
     }
 
     func scanRoot() async -> HyperScanItem {
@@ -529,29 +434,19 @@ final class DiskScanner {
                     if isDir.boolValue {
                         subDirs.append((fullPath, itemName))
                     } else {
-                        if let attrs = try? FileManager.default.attributesOfItem(atPath: fullPath) {
-                            let allocSize: Int64
-                            if let allocSizeNum = attrs[FileAttributeKey(rawValue: "NSFileAllocatedSize")] as? NSNumber {
-                                allocSize = allocSizeNum.int64Value
-                            } else if let size = attrs[.size] as? Int64 {
-                                allocSize = size
-                            } else {
-                                allocSize = 0
-                            }
-
+                        var fileStat = stat()
+                        if stat(fullPath, &fileStat) == 0 {
+                            let allocSize = Int64(fileStat.st_blocks) * 512
                             if allocSize > 0 {
-                                var fileStat = stat()
-                                if stat(fullPath, &fileStat) == 0 {
-                                    if context.inodeTracker.visit(device: fileStat.st_dev, inode: fileStat.st_ino) {
-                                        localItems.append(HyperScanItem(
-                                            name: itemName,
-                                            path: fullPath,
-                                            size: allocSize,
-                                            isDirectory: false,
-                                            children: nil
-                                        ))
-                                        localSize += allocSize
-                                    }
+                                if fileStat.st_nlink <= 1 || context.inodeTracker.visit(device: fileStat.st_dev, inode: fileStat.st_ino) {
+                                    localItems.append(HyperScanItem(
+                                        name: itemName,
+                                        path: fullPath,
+                                        size: allocSize,
+                                        isDirectory: false,
+                                        children: nil
+                                    ))
+                                    localSize += allocSize
                                 }
                             }
                         }

@@ -1,14 +1,6 @@
 import Foundation
 import Darwin
 
-@inline(__always)
-func atomicOr(_ ptr: UnsafeMutablePointer<Int64>, _ bits: Int64) {
-    var oldValue = ptr.pointee
-    while !OSAtomicCompareAndSwap64(oldValue, oldValue | bits, ptr) {
-        oldValue = ptr.pointee
-    }
-}
-
 enum ScanFilterData {
     static let firmlinkNameBytes: [[UInt8]] = {
         ["Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"]
