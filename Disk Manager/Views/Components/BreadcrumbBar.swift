@@ -1,56 +1,53 @@
-//
-//  BreadcrumbBar.swift
-//  Disk Manager
-//
-//  Created by 137137137 on 9/2/25.
-//
-
 import SwiftUI
 
+/// One segment of the breadcrumb path.
 struct PathComponent: Identifiable {
-    let id: String
     let name: String
     let path: String
+    let isRoot: Bool
     let isLast: Bool
 
-    init(name: String, path: String, isLast: Bool = false) {
-        self.name = name
-        self.path = path
-        self.id = path
-        self.isLast = isLast
-    }
+    var id: String { path }
 }
 
-/// Full-width glass navigation bar with breadcrumb path
-/// Implements Apple's Liquid Glass design system (macOS Tahoe)
+/// Full-width glass navigation bar: back button, scrolling breadcrumb path,
+/// refresh button.
 struct BreadcrumbBar: View {
     let currentPath: String
     let rootPath: String
+    /// Display name of the root segment (device name).
+    let rootName: String
     let onNavigate: (String) -> Void
     let onBack: () -> Void
-    let onComputerClick: () -> Void
+    /// Tapping the root segment while already at the root.
+    let onRootTap: () -> Void
     let onRefresh: () -> Void
 
     @State private var hoveredComponent: String?
 
+    /// Segments relative to the scanned root, so external volumes don't
+    /// grow phantom "/Volumes" crumbs pointing outside the scan.
     private var pathComponents: [PathComponent] {
-        let components = currentPath.components(separatedBy: "/").filter { !$0.isEmpty }
-        var result: [PathComponent] = []
+        var result = [PathComponent(
+            name: rootName, path: rootPath, isRoot: true, isLast: currentPath == rootPath
+        )]
 
-        // Add Computer as root
-        result.append(PathComponent(name: "Computer", path: rootPath, isLast: components.isEmpty && currentPath == rootPath))
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard currentPath.hasPrefix(prefix) else { return result }
 
-        var buildPath = ""
+        let components = currentPath.dropFirst(prefix.count).split(separator: "/")
+        var accumulatedPath = rootPath
         for (index, component) in components.enumerated() {
-            if buildPath.isEmpty || buildPath == "/" {
-                buildPath = "/" + component
-            } else {
-                buildPath = buildPath + "/" + component
-            }
-            let isLast = index == components.count - 1
-            result.append(PathComponent(name: component, path: buildPath, isLast: isLast))
+            accumulatedPath = accumulatedPath.hasSuffix("/")
+                ? accumulatedPath + component
+                : accumulatedPath + "/" + component
+            result.append(PathComponent(
+                name: String(component),
+                path: accumulatedPath,
+                isRoot: false,
+                isLast: index == components.count - 1
+            ))
         }
-
         return result
     }
 
@@ -60,14 +57,7 @@ struct BreadcrumbBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Back button
-            Button {
-                if canGoBack {
-                    onBack()
-                } else {
-                    onComputerClick()
-                }
-            } label: {
+            Button(action: onBack) {
                 Image(systemName: "chevron.left")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(canGoBack ? .primary : .tertiary)
@@ -75,13 +65,12 @@ struct BreadcrumbBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!canGoBack && currentPath == rootPath)
+            .disabled(!canGoBack)
 
             Divider()
                 .frame(height: 20)
                 .padding(.horizontal, 8)
 
-            // Breadcrumb path
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(pathComponents) { component in
@@ -89,8 +78,8 @@ struct BreadcrumbBar: View {
                             component: component,
                             isHovered: hoveredComponent == component.id,
                             onTap: {
-                                if component.name == "Computer" && currentPath == rootPath {
-                                    onComputerClick()
+                                if component.isRoot && currentPath == rootPath {
+                                    onRootTap()
                                 } else {
                                     onNavigate(component.path)
                                 }
@@ -112,7 +101,6 @@ struct BreadcrumbBar: View {
 
             Spacer(minLength: 0)
 
-            // Refresh button
             Button(action: onRefresh) {
                 Image(systemName: "arrow.clockwise")
                     .font(.body)
@@ -130,8 +118,8 @@ struct BreadcrumbBar: View {
     }
 }
 
-/// Individual breadcrumb segment with hover effect
-struct BreadcrumbSegment: View {
+/// Individual breadcrumb segment with hover effect.
+private struct BreadcrumbSegment: View {
     let component: PathComponent
     let isHovered: Bool
     let onTap: () -> Void
@@ -139,7 +127,7 @@ struct BreadcrumbSegment: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 4) {
-                if component.name == "Computer" {
+                if component.isRoot {
                     Image(systemName: "desktopcomputer")
                         .font(.caption)
                         .foregroundStyle(.tint)
@@ -170,19 +158,21 @@ struct BreadcrumbSegment: View {
         BreadcrumbBar(
             currentPath: "/",
             rootPath: "/",
+            rootName: "Computer",
             onNavigate: { _ in },
-            onBack: { },
-            onComputerClick: { },
-            onRefresh: { }
+            onBack: {},
+            onRootTap: {},
+            onRefresh: {}
         )
 
         BreadcrumbBar(
-            currentPath: "/Users/test/Documents/Projects",
-            rootPath: "/",
+            currentPath: "/Volumes/External/Documents/Projects",
+            rootPath: "/Volumes/External",
+            rootName: "External",
             onNavigate: { _ in },
-            onBack: { },
-            onComputerClick: { },
-            onRefresh: { }
+            onBack: {},
+            onRootTap: {},
+            onRefresh: {}
         )
     }
     .padding()

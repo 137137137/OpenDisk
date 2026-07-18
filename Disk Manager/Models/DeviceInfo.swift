@@ -1,32 +1,29 @@
 import Foundation
 
-struct DeviceInfo: Identifiable, Hashable {
-    let id = UUID()
-    let name: String
-    let icon: String
-    let path: String  // Path to scan when selected
-    let totalStorage: Double
-    let availableStorage: Double
-    let subtitle: String?
-    
-    var usedStorage: Double {
-        totalStorage - availableStorage
-    }
-    
-    var usagePercentage: Double {
-        usedStorage / totalStorage
-    }
-    
-    var formattedTotalStorage: String {
-        ByteFormatter.formatDecimalNoFraction(totalStorage)
-    }
+/// A scannable device shown in the sidebar: the boot volume group or an
+/// external volume.
+struct DeviceInfo: Identifiable, Hashable, Sendable {
+    /// The scan path is unique per device and stable across refreshes, so
+    /// sidebar selection survives device-list rebuilds.
+    var id: String { path }
 
-    var formattedAvailableStorage: String {
-        ByteFormatter.formatDecimalNoFraction(availableStorage)
+    let name: String
+    /// SF Symbol name for the sidebar row.
+    let icon: String
+    /// Path scanned when the device is selected.
+    let path: String
+    let totalBytes: Int64
+    let availableBytes: Int64
+    /// True for the "whole Mac" entry that scans "/".
+    let isBootVolume: Bool
+
+    var usedBytes: Int64 { totalBytes - availableBytes }
+
+    var formattedTotalStorage: String {
+        ByteFormatter.formatDecimalNoFraction(totalBytes)
     }
 
     var formattedUsedStorage: String {
-        ByteFormatter.formatDecimalNoFraction(usedStorage)
+        ByteFormatter.formatDecimalNoFraction(usedBytes)
     }
 }
-

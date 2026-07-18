@@ -1,18 +1,30 @@
 import SwiftUI
 
+/// Smooths the jumpy real scan percentage into a steadily advancing
+/// display value, easing faster the further it lags behind the target.
 @MainActor
-final class ProgressAnimator: ObservableObject {
+private final class ProgressAnimator: ObservableObject {
     @Published private(set) var displayPercentage: Double = 0
+
     private var timer: Timer?
     private var targetPercentage: Double = 0
     private var internalValue: Double = 0
 
-    func start() {
-        guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0/15.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.tick()
-            }
+    private static let ticksPerSecond = 15.0
+    /// Advance speed (percent per tick) by how far display lags target.
+    private static let easing: [(minimumGap: Double, speed: Double)] = [
+        (30, 8.0), (10, 5.0), (0, 3.0), (-10, 1.5), (-30, 0.5), (-.infinity, 0.2),
+    ]
+
+    func start(target: Double) {
+        internalValue = 0
+        displayPercentage = 0
+        targetPercentage = target
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(
+            withTimeInterval: 1.0 / Self.ticksPerSecond, repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
         }
     }
 
@@ -32,28 +44,12 @@ final class ProgressAnimator: ObservableObject {
             return
         }
 
-        let target = targetPercentage
-        let current = internalValue
-        let gap = target - current
-
-        if target >= 99.9 {
-            internalValue = min(100, current + 3.0)
+        if targetPercentage >= 99.9 {
+            internalValue = min(100, internalValue + 3.0)
         } else {
-            let speed: Double
-            if gap > 30 {
-                speed = 8.0
-            } else if gap > 10 {
-                speed = 5.0
-            } else if gap > 0 {
-                speed = 3.0
-            } else if gap > -10 {
-                speed = 1.5
-            } else if gap > -30 {
-                speed = 0.5
-            } else {
-                speed = 0.2
-            }
-            internalValue = min(99.0, current + speed)
+            let gap = targetPercentage - internalValue
+            let speed = Self.easing.first { gap > $0.minimumGap }?.speed ?? 0.2
+            internalValue = min(99.0, internalValue + speed)
         }
 
         if abs(internalValue - displayPercentage) >= 0.5 {
@@ -66,13 +62,14 @@ final class ProgressAnimator: ObservableObject {
     }
 }
 
+/// Scan-in-progress panel: status line, current path, throughput, and an
+/// animated progress meter.
 struct ScanningProgressView: View {
-    let scanProgress: String
+    let statusDescription: String
     let currentScanPath: String
     let filesPerSecond: String
     let totalDiskScannedBytes: Int64
     let totalUsedDiskSpace: Int64
-    let estimatedTimeRemaining: String
 
     @StateObject private var animator = ProgressAnimator()
 
@@ -87,7 +84,7 @@ struct ScanningProgressView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text(scanProgress)
+                Text(statusDescription)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -112,14 +109,6 @@ struct ScanningProgressView: View {
                     }
                 }
                 .frame(maxWidth: 360)
-            }
-
-            HStack(spacing: 6) {
-                Image(systemName: "cpu")
-                    .foregroundStyle(.tint)
-                Text("Using \(ProcessInfo.processInfo.activeProcessorCount) CPU cores")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             if totalUsedDiskSpace > 0 {
@@ -155,8 +144,7 @@ struct ScanningProgressView: View {
             animator.updateTarget(newValue)
         }
         .onAppear {
-            animator.updateTarget(actualPercentage)
-            animator.start()
+            animator.start(target: actualPercentage)
         }
         .onDisappear {
             animator.stop()
@@ -166,12 +154,11 @@ struct ScanningProgressView: View {
 
 #Preview {
     ScanningProgressView(
-        scanProgress: "Scanning files...",
+        statusDescription: "Scanning: 250 GB (1,234,567 items)",
         currentScanPath: "/Users/test/Documents",
-        filesPerSecond: "15,234 files/sec",
+        filesPerSecond: "152,340 files/sec",
         totalDiskScannedBytes: 250_000_000_000,
-        totalUsedDiskSpace: 500_000_000_000,
-        estimatedTimeRemaining: "~30 seconds"
+        totalUsedDiskSpace: 500_000_000_000
     )
     .frame(width: 500, height: 400)
 }

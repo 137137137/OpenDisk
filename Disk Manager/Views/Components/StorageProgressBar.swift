@@ -1,29 +1,24 @@
 import SwiftUI
 
+/// Thin capacity bar showing how full a volume is.
 struct StorageProgressBar: View {
-    let totalStorage: Double
-    let availableStorage: Double
+    let totalBytes: Int64
+    let availableBytes: Int64
 
-    private var usedStorage: Double {
-        totalStorage - availableStorage
-    }
-
-    private var usagePercentage: Double {
-        guard totalStorage > 0 else { return 0 }
-        return usedStorage / totalStorage
+    private var usedFraction: Double {
+        guard totalBytes > 0 else { return 0 }
+        return Double(totalBytes - availableBytes) / Double(totalBytes)
     }
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                // Background track
                 Capsule()
                     .fill(.quaternary)
 
-                // Filled portion - uses system accent color
                 Capsule()
                     .fill(.tint)
-                    .frame(width: max(0, geometry.size.width * usagePercentage))
+                    .frame(width: max(0, geometry.size.width * usedFraction))
             }
         }
         .frame(height: 4)

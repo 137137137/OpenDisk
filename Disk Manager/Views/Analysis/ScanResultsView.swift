@@ -1,18 +1,16 @@
 import SwiftUI
 
+/// Scan results list with a bottom bar totaling the visible items.
 struct ScanResultsView: View {
     let items: [FolderItem]
     let scanDuration: TimeInterval
-    let isScanning: Bool
     let onFolderTap: (FolderItem) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             List(items) { item in
                 FolderRowView(item: item) {
-                    if item.isDirectory {
-                        onFolderTap(item)
-                    }
+                    onFolderTap(item)
                 }
             }
             .listStyle(.plain)
@@ -21,7 +19,6 @@ struct ScanResultsView: View {
         }
     }
 
-    @ViewBuilder
     private var totalBar: some View {
         HStack(spacing: 12) {
             Text("Total")
@@ -29,12 +26,12 @@ struct ScanResultsView: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
 
-            if scanDuration > 0 && !isScanning {
+            if scanDuration > 0 {
                 HStack(spacing: 4) {
                     Image(systemName: "clock.badge.checkmark")
                         .font(.caption)
                         .foregroundStyle(.green)
-                    Text(formatScanDuration(scanDuration))
+                    Text(DurationFormatter.scanDuration(scanDuration))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -42,8 +39,7 @@ struct ScanResultsView: View {
 
             Spacer()
 
-            let totalSize = items.reduce(0) { $0 + $1.size }
-            Text(ByteFormatter.formatFileSize(totalSize))
+            Text(ByteFormatter.formatFileSize(items.reduce(0) { $0 + $1.size }))
                 .font(.subheadline)
                 .fontWeight(.semibold)
 
@@ -54,17 +50,5 @@ struct ScanResultsView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
-    }
-
-    private func formatScanDuration(_ duration: TimeInterval) -> String {
-        if duration < 1 {
-            return String(format: "Scanned in %.1f ms", duration * 1000)
-        } else if duration < 60 {
-            return String(format: "Scanned in %.1f seconds", duration)
-        } else {
-            let minutes = Int(duration / 60)
-            let seconds = Int(duration.truncatingRemainder(dividingBy: 60))
-            return String(format: "Scanned in %d:%02d", minutes, seconds)
-        }
     }
 }

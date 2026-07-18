@@ -1,62 +1,62 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
+/// Detail pane for a selected device: scans it, shows progress, and hosts
+/// breadcrumb navigation through the results.
 struct DiskAnalysisView: View {
-    @State private var analyzer = DiskAnalyzer()
     let rootPath: String
+    let rootName: String
+    let onBack: () -> Void
+
+    @State private var analyzer = DiskAnalyzer()
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
-    @State private var isNavigatingBack = false
-    @State private var totalUsedDiskSpace: Int64 = 0
-    let onBack: () -> Void
+    private let totalUsedDiskSpace: Int64
 
-    init(rootPath: String = "/", totalUsedSpace: Int64 = 0, onBack: @escaping () -> Void = {}) {
+    init(
+        rootPath: String,
+        rootName: String = "Computer",
+        totalUsedSpace: Int64 = 0,
+        onBack: @escaping () -> Void = {}
+    ) {
         self.rootPath = rootPath
-        self._currentPath = State(initialValue: rootPath)
-        self._totalUsedDiskSpace = State(initialValue: totalUsedSpace)
+        self.rootName = rootName
+        self.totalUsedDiskSpace = totalUsedSpace
         self.onBack = onBack
+        self._currentPath = State(initialValue: rootPath)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Full-width glass breadcrumb header - only when not scanning
             if !analyzer.isScanning {
                 BreadcrumbBar(
-                currentPath: currentPath,
-                rootPath: rootPath,
-                onNavigate: { path in
-                    navigateToPath(path)
-                },
-                onBack: {
-                    goBack()
-                },
-                onComputerClick: {
-                    if currentPath == rootPath {
-                        self.isNavigatingBack = true
-                        onBack()
-                    } else {
-                        navigateToPath(rootPath)
+                    currentPath: currentPath,
+                    rootPath: rootPath,
+                    rootName: rootName,
+                    onNavigate: navigateToPath,
+                    onBack: goBack,
+                    onRootTap: {
+                        if currentPath == rootPath {
+                            onBack()
+                        } else {
+                            navigateToPath(rootPath)
+                        }
+                    },
+                    onRefresh: {
+                        Task { await analyzer.scanDirectory(currentPath) }
                     }
-                },
-                onRefresh: {
-                    Task {
-                        await analyzer.scanDirectory(currentPath)
-                    }
-                }
                 )
             }
 
-            // Main content
             if analyzer.isScanning {
                 Spacer()
                 ScanningProgressView(
-                    scanProgress: analyzer.scanProgress,
+                    statusDescription: analyzer.statusDescription,
                     currentScanPath: analyzer.currentScanPath,
                     filesPerSecond: analyzer.filesPerSecond,
                     totalDiskScannedBytes: analyzer.totalDiskScannedBytes,
-                    totalUsedDiskSpace: totalUsedDiskSpace,
-                    estimatedTimeRemaining: analyzer.estimatedTimeRemaining
+                    totalUsedDiskSpace: totalUsedDiskSpace
                 )
                 Spacer()
             } else if analyzer.rootItems.isEmpty {
@@ -67,45 +67,32 @@ struct DiskAnalysisView: View {
                 ScanResultsView(
                     items: analyzer.rootItems,
                     scanDuration: analyzer.scanDuration,
-                    isScanning: analyzer.isScanning,
                     onFolderTap: navigateToFolder
                 )
             }
         }
         .onAppear {
-            if self.isNavigatingBack {
-                return
-            }
-
-            if !hasInitiallyScanned {
-                hasInitiallyScanned = true
-                analyzer.clearAllCaches()
-                Task {
-                    await analyzer.scanDirectory(currentPath)
-                }
-            } else if analyzer.rootItems.isEmpty {
-                _ = analyzer.navigateToPath(currentPath)
-            }
-        }
-        .onChange(of: currentPath) {
+            guard !hasInitiallyScanned else { return }
+            hasInitiallyScanned = true
+            Task { await analyzer.scanDirectory(rootPath) }
         }
         .onDisappear {
             analyzer.cancelCurrentScan()
         }
     }
 
-    // MARK: - Empty State View
+    // MARK: - Empty state
 
     @ViewBuilder
     private var emptyStateView: some View {
-        if analyzer.scanProgress.contains("Full Disk Access required") {
+        if analyzer.needsFullDiskAccess {
             ContentUnavailableView {
                 Label("Full Disk Access Required", systemImage: "exclamationmark.shield")
             } description: {
                 Text("Disk Manager needs Full Disk Access to analyze your entire system.")
             } actions: {
                 Button("Open System Settings") {
-                    openFullDiskAccessSettings()
+                    FullDiskAccess.openSystemSettings()
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -121,38 +108,41 @@ struct DiskAnalysisView: View {
     // MARK: - Navigation
 
     private func navigateToFolder(_ item: FolderItem) {
+        guard item.isDirectory else { return }
         breadcrumbs.append(currentPath)
         currentPath = item.path
-        // Navigate to path (will use cache or scan as needed)
-        _ = analyzer.navigateToPath(currentPath)
+        showContents(of: item.path)
     }
 
     private func goBack() {
-        if let previousPath = breadcrumbs.popLast() {
-            currentPath = previousPath
-            // Navigate to path (will use cache or scan as needed)
-            _ = analyzer.navigateToPath(currentPath)
-        }
+        guard let previousPath = breadcrumbs.popLast() else { return }
+        currentPath = previousPath
+        showContents(of: previousPath)
     }
 
     private func navigateToPath(_ path: String) {
-        // Only add to breadcrumbs if we're going deeper, not back
-        if !breadcrumbs.contains(currentPath) && path != currentPath {
+        guard path != currentPath else { return }
+        // Jumping via a breadcrumb can only go to an ancestor: rewind the
+        // back stack to it instead of appending, so Back stays coherent.
+        if let index = breadcrumbs.firstIndex(of: path) {
+            breadcrumbs.removeSubrange(index...)
+        } else {
             breadcrumbs.append(currentPath)
         }
         currentPath = path
-
-        // Navigate to path (will use cache or scan as needed)
-        _ = analyzer.navigateToPath(path)
+        showContents(of: path)
     }
 
-    private func openFullDiskAccessSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
-            NSWorkspace.shared.open(url)
+    /// Serves the path from the completed scan when possible; a path
+    /// outside the scanned tree (e.g. an ancestor of a refreshed subtree)
+    /// gets a fresh scan instead.
+    private func showContents(of path: String) {
+        if !analyzer.navigateToPath(path) {
+            Task { await analyzer.scanDirectory(path) }
         }
     }
 }
 
 #Preview {
-    DiskAnalysisView(totalUsedSpace: 500_000_000_000) { } // 500 GB for preview
+    DiskAnalysisView(rootPath: "/", totalUsedSpace: 500_000_000_000)
 }

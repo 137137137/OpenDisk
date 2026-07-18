@@ -1,10 +1,9 @@
 import SwiftUI
-import AppKit
 
 struct SettingsView: View {
-    @State private var fdaStatus: Bool = false
-    @State private var isCheckingFDA: Bool = false
-    @AppStorage("fda_show_prompt_at_startup") private var showPromptAtStartup: Bool = true
+    @State private var isFullDiskAccessGranted = false
+    @State private var isCheckingAccess = false
+    @AppStorage("fda_show_prompt_at_startup") private var showPromptAtStartup = true
 
     var body: some View {
         Form {
@@ -12,18 +11,18 @@ struct SettingsView: View {
                 LabeledContent("Status") {
                     HStack {
                         Circle()
-                            .fill(fdaStatus ? .green : .orange)
+                            .fill(isFullDiskAccessGranted ? .green : .orange)
                             .frame(width: 10, height: 10)
 
-                        Text(fdaStatus ? "Granted" : "Not Granted")
-                            .foregroundStyle(fdaStatus ? .green : .orange)
+                        Text(isFullDiskAccessGranted ? "Granted" : "Not Granted")
+                            .foregroundStyle(isFullDiskAccessGranted ? .green : .orange)
 
                         Spacer()
 
                         Button("Check Again") {
-                            checkFDAStatus()
+                            checkFullDiskAccessStatus()
                         }
-                        .disabled(isCheckingFDA)
+                        .disabled(isCheckingAccess)
                     }
                 }
 
@@ -31,7 +30,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if !fdaStatus {
+                if !isFullDiskAccessGranted {
                     Button {
                         FullDiskAccess.openSystemSettings()
                     } label: {
@@ -57,7 +56,7 @@ struct SettingsView: View {
                     }
                 }
 
-                if !FullDiskAccess.isGranted {
+                if !isFullDiskAccessGranted {
                     Button("Reset Prompt Suppression") {
                         FullDiskAccess.resetPromptSuppression()
                     }
@@ -82,20 +81,19 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
-        .onAppear {
-            checkFDAStatus()
-        }
+        .onAppear(perform: checkFullDiskAccessStatus)
     }
 
-    private func checkFDAStatus() {
-        isCheckingFDA = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            let status = FullDiskAccess.isGranted
-            DispatchQueue.main.async {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    self.fdaStatus = status
-                    self.isCheckingFDA = false
-                }
+    /// The probe does filesystem work; run it off the main thread.
+    private func checkFullDiskAccessStatus() {
+        isCheckingAccess = true
+        Task {
+            let granted = await Task.detached(priority: .userInitiated) {
+                FullDiskAccess.isGranted
+            }.value
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isFullDiskAccessGranted = granted
+                isCheckingAccess = false
             }
         }
     }

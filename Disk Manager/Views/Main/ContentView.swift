@@ -1,31 +1,29 @@
-//
-//  ContentView.swift
-//  Disk Manager
-//
-//  Created by 137137137 on 9/2/25.
-//
-
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var diskUtility = DiskSpaceUtility()
+    @State private var deviceMonitor = DeviceMonitor()
     @State private var selectedDevice: DeviceInfo?
 
     var body: some View {
         NavigationSplitView {
-            List(diskUtility.devices, selection: $selectedDevice) { device in
-                DeviceRow(device: device) {
-                    selectedDevice = device
-                }
-                .tag(device)
+            List(deviceMonitor.devices, selection: $selectedDevice) { device in
+                DeviceRow(device: device)
+                    .tag(device)
             }
             .listStyle(.sidebar)
             .navigationTitle("Devices")
         } detail: {
-            if let selectedDevice = selectedDevice {
-                DiskAnalysisView(rootPath: selectedDevice.path, totalUsedSpace: Int64(selectedDevice.usedStorage)) {
+            if let selectedDevice {
+                DiskAnalysisView(
+                    rootPath: selectedDevice.path,
+                    rootName: selectedDevice.name,
+                    totalUsedSpace: selectedDevice.usedBytes
+                ) {
                     self.selectedDevice = nil
                 }
+                // Re-key the view per device so its navigation state resets
+                // when the selection jumps directly between devices.
+                .id(selectedDevice.id)
             } else {
                 ContentUnavailableView(
                     "Select a device to analyze",
@@ -35,10 +33,17 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .onAppear {
-            if let computerDevice = diskUtility.devices.first(where: { $0.name == "Computer" }) {
-                selectedDevice = computerDevice
-            }
+        .onAppear(perform: selectBootVolumeIfNeeded)
+        .onChange(of: deviceMonitor.devices) { _, _ in
+            selectBootVolumeIfNeeded()
+        }
+    }
+
+    /// Auto-selects the boot volume once devices load, unless the user has
+    /// already picked something.
+    private func selectBootVolumeIfNeeded() {
+        if selectedDevice == nil {
+            selectedDevice = deviceMonitor.devices.first(where: \.isBootVolume)
         }
     }
 }
