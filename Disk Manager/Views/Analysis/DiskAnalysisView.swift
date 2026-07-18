@@ -20,8 +20,9 @@ struct DiskAnalysisView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Full-width glass breadcrumb header - always visible
-            BreadcrumbBar(
+            // Full-width glass breadcrumb header - only when not scanning
+            if !analyzer.isScanning {
+                BreadcrumbBar(
                 currentPath: currentPath,
                 rootPath: rootPath,
                 onNavigate: { path in
@@ -43,7 +44,8 @@ struct DiskAnalysisView: View {
                         await analyzer.scanDirectory(currentPath)
                     }
                 }
-            )
+                )
+            }
 
             // Main content
             if analyzer.isScanning {
@@ -70,8 +72,6 @@ struct DiskAnalysisView: View {
                 )
             }
         }
-        .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden)
         .onAppear {
             if self.isNavigatingBack {
                 return
