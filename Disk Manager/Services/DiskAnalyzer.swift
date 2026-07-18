@@ -69,12 +69,14 @@ final class DiskAnalyzer {
         }
         scanTask = task
         let result = await task.value
-        guard scanTask === task else { return }
+        // Task equality is identity-based: bail if another scan superseded
+        // this one while it was awaited.
+        guard scanTask == task else { return }
         scanTask = nil
 
         scanResult = result
         currentPath = path
-        rootItems = folderItems(for: FileTree.rootID)
+        rootItems = folderItems(for: FileTree.rootID, limit: nil)
         scanDuration = Date().timeIntervalSince(startDate)
         isScanning = false
     }
@@ -97,7 +99,7 @@ final class DiskAnalyzer {
     func navigateToPath(_ path: String) -> Bool {
         guard let node = nodeID(forPath: path) else { return false }
         currentPath = path
-        rootItems = folderItems(for: node)
+        rootItems = folderItems(for: node, limit: Self.maxVisibleChildren)
         return true
     }
 
@@ -124,13 +126,16 @@ final class DiskAnalyzer {
         return result.tree.nodeID(atComponents: path.dropFirst(prefix.count).split(separator: "/"))
     }
 
-    private func folderItems(for node: FileTree.NodeID) -> [FolderItem] {
+    /// Materializes a directory's rows. The scan root shows everything
+    /// (matching the previous engine); drill-in levels pass a limit so a
+    /// 100k-entry folder never materializes 100k path strings.
+    private func folderItems(for node: FileTree.NodeID, limit: Int?) -> [FolderItem] {
         guard let tree = scanResult?.tree, tree.isDirectory(node) else { return [] }
         // Sort and trim on node IDs first so only the visible rows ever
         // materialize path strings.
         return tree.children(of: node)
             .sorted { tree.size(of: $0) > tree.size(of: $1) }
-            .prefix(Self.maxVisibleChildren)
+            .prefix(limit ?? Int.max)
             .filter { tree.size(of: $0) > Self.minVisibleSize }
             .map { child in
                 FolderItem(

@@ -21,8 +21,9 @@ enum ByteFormatter {
         formatter.allowedUnits = [.useGB, .useTB]
         let formatted = formatter.string(fromByteCount: bytes)
         // ByteCountFormatter offers no fraction-digit control; strip the
-        // fraction for the compact sidebar figures.
-        if let range = formatted.range(of: "\\.\\d+", options: .regularExpression) {
+        // fraction for the compact sidebar figures. Match either decimal
+        // separator so comma-decimal locales strip too.
+        if let range = formatted.range(of: "[.,]\\d+", options: .regularExpression) {
             return String(formatted[..<range.lowerBound] + formatted[range.upperBound...])
         }
         return formatted

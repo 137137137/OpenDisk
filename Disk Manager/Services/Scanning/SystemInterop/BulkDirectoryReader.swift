@@ -18,9 +18,9 @@ struct DirectoryContents {
 
 /// The outcome of attempting to read one directory.
 enum DirectoryReadResult {
-    case contents(DirectoryContents)
-    /// The directory lives on a different device (mount point or firmlink
-    /// boundary) and must not be descended into.
+    case contents(DirectoryContents, device: dev_t)
+    /// The directory lives on a device outside the scan's allowlist (mount
+    /// point or firmlink boundary) and must not be descended into.
     case crossesDeviceBoundary
     /// The directory could not be opened or read.
     case unreadable
@@ -31,7 +31,7 @@ enum DirectoryReadResult {
 ///
 /// - Important: Thread-safety: not `Sendable`. Each scan worker owns its
 ///   own instance; the reusable read buffer is only touched inside
-///   `read(directoryAt:expectedDevice:)`, which is never called
+///   `read(directoryAt:allowedDevices:)`, which is never called
 ///   concurrently on one instance.
 final class BulkDirectoryReader {
 
@@ -51,23 +51,26 @@ final class BulkDirectoryReader {
 
     /// Reads every entry of the directory at `path`.
     ///
-    /// When `expectedDevice` is given and the opened directory reports a
-    /// different `st_dev`, the read is abandoned with
-    /// `.crossesDeviceBoundary`. Checking the device on the *opened*
-    /// descriptor is what keeps a scan on one volume: opening a firmlink or
-    /// mount point yields the target volume's device, so firmlinks,
-    /// external volumes, and virtual filesystems are all cut off by the
-    /// same rule with no hardcoded path lists.
-    func read(directoryAt path: String, expectedDevice: dev_t?) -> DirectoryReadResult {
+    /// If the opened directory's `st_dev` is not in `allowedDevices`, the
+    /// read is abandoned with `.crossesDeviceBoundary`. Checking the device
+    /// on the *opened* descriptor is what keeps a scan on its volumes:
+    /// opening a firmlink or mount point yields the target volume's device,
+    /// so external volumes and virtual filesystems are cut off by the same
+    /// rule with no hardcoded path lists (a scan of a System-volume subtree
+    /// allowlists the Data volume too, so firmlinks compose as they do in
+    /// the live namespace).
+    ///
+    /// Known limitation (shared with the previous engine): an unresponsive
+    /// network mount point can block `open` in the kernel indefinitely;
+    /// there is no portable timeout for that.
+    func read(directoryAt path: String, allowedDevices: Set<dev_t>) -> DirectoryReadResult {
         let fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard fd >= 0 else { return .unreadable }
         defer { close(fd) }
 
-        if let expectedDevice {
-            var info = stat()
-            guard fstat(fd, &info) == 0 else { return .unreadable }
-            guard info.st_dev == expectedDevice else { return .crossesDeviceBoundary }
-        }
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { return .unreadable }
+        guard allowedDevices.contains(info.st_dev) else { return .crossesDeviceBoundary }
 
         var request = attrlist()
         request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
@@ -104,7 +107,7 @@ final class BulkDirectoryReader {
             }
         }
 
-        return .contents(contents)
+        return .contents(contents, device: info.st_dev)
     }
 
     /// Parses one variable-length attribute record.

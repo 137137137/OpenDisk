@@ -14,9 +14,11 @@ import Foundation
 /// otherwise starves the whole app's async work — the cooperative pool
 /// never grows to cover blocked threads).
 ///
-/// The scan never leaves the device it started on: every opened directory's
-/// `st_dev` is checked, which uniformly cuts off firmlinks, mount points,
-/// and virtual filesystems with no hardcoded path lists.
+/// The scan never leaves its allowlisted devices: every opened directory's
+/// `st_dev` is checked, which uniformly cuts off mount points and virtual
+/// filesystems with no hardcoded path lists. Scans rooted on the System
+/// volume also allowlist the Data volume, so firmlinks compose exactly as
+/// the live namespace does.
 enum TraversalScanner {
 
     /// In-flight directory reads. Modern APFS tolerates far more than the
@@ -91,7 +93,15 @@ enum TraversalScanner {
         }
     }
 
-    /// Scans the subtree rooted at `path` on that path's device only.
+    /// Hard links never span volumes, but a multi-device scan must not let
+    /// equal file IDs from different volumes collide.
+    private struct HardLinkKey: Hashable {
+        let device: dev_t
+        let fileID: UInt64
+    }
+
+    /// Scans the subtree rooted at `path`, descending only into directories
+    /// on `allowedDevices` (default: the root path's own device).
     ///
     /// Blocking: call from a background queue, never the main thread or the
     /// cooperative pool. The returned tree has not had directory sizes
@@ -99,15 +109,17 @@ enum TraversalScanner {
     static func scan(
         path: String,
         rootName: String,
+        allowedDevices: Set<dev_t>? = nil,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) -> FileTree {
         guard let rootDevice = VolumeAttributes.deviceID(ofPath: path) else {
             return FileTree(rootName: rootName)
         }
+        let devices = (allowedDevices ?? []).union([rootDevice])
 
         let tree = Locked(FileTree(rootName: rootName))
-        let seenMultiLinkFileIDs = Locked(Set<UInt64>())
+        let seenMultiLinkFiles = Locked(Set<HardLinkKey>())
         let state = WorkState()
         state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))
 
@@ -123,8 +135,8 @@ enum TraversalScanner {
                 runWorker(
                     state: state,
                     tree: tree,
-                    seenMultiLinkFileIDs: seenMultiLinkFileIDs,
-                    rootDevice: rootDevice,
+                    seenMultiLinkFiles: seenMultiLinkFiles,
+                    allowedDevices: devices,
                     metrics: metrics,
                     isCancelled: isCancelled
                 )
@@ -138,8 +150,8 @@ enum TraversalScanner {
     private static func runWorker(
         state: WorkState,
         tree: Locked<FileTree>,
-        seenMultiLinkFileIDs: Locked<Set<UInt64>>,
-        rootDevice: dev_t,
+        seenMultiLinkFiles: Locked<Set<HardLinkKey>>,
+        allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) {
@@ -149,8 +161,8 @@ enum TraversalScanner {
             defer { state.completeDirectory() }
             if isCancelled() { continue }
 
-            guard case .contents(var contents) = reader.read(
-                directoryAt: item.path, expectedDevice: rootDevice
+            guard case .contents(var contents, let device) = reader.read(
+                directoryAt: item.path, allowedDevices: allowedDevices
             ) else {
                 continue
             }
@@ -161,8 +173,9 @@ enum TraversalScanner {
             for index in contents.files.indices {
                 let file = contents.files[index]
                 if file.linkCount > 1, file.fileID > 0 {
-                    let firstSighting = seenMultiLinkFileIDs.withLock {
-                        $0.insert(file.fileID).inserted
+                    let key = HardLinkKey(device: device, fileID: file.fileID)
+                    let firstSighting = seenMultiLinkFiles.withLock {
+                        $0.insert(key).inserted
                     }
                     if !firstSighting {
                         contents.files[index] = DirectoryFileEntry(

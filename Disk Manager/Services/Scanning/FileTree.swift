@@ -241,7 +241,11 @@ struct FileTree: Sendable {
                     adoptSubtree(from: other, otherNode: otherChild, under: directory)
                 }
             } else {
-                adoptSubtree(from: other, otherNode: otherChild, under: directory)
+                // Non-directory collisions keep the existing node —
+                // duplicate sibling names would break path-keyed identity.
+                if child(of: directory, named: childName) == nil {
+                    adoptSubtree(from: other, otherNode: otherChild, under: directory)
+                }
             }
         }
     }

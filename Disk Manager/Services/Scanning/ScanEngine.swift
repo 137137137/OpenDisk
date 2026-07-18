@@ -89,11 +89,39 @@ final class ScanEngine: DiskScanning {
             return scanBootVolumeGroup(metrics: metrics, isCancelled: isCancelled)
         }
 
+        // Some entries shown at "/" exist only in the Data volume's
+        // namespace; translate so rescanning them works, while presenting
+        // results under the requested path.
+        var scanPath = path
+        if !FileManager.default.fileExists(atPath: scanPath) {
+            let dataPath = dataVolumeMountPoint + path
+            if FileManager.default.fileExists(atPath: dataPath) {
+                scanPath = dataPath
+            }
+        }
+
         var tree = scanVolumeOrTraverse(
-            path: path, rootName: path, metrics: metrics, isCancelled: isCancelled
+            path: scanPath, rootName: path,
+            allowedDevices: subtreeAllowedDevices(forScanRoot: scanPath),
+            metrics: metrics, isCancelled: isCancelled
         )
         tree.rollUpDirectorySizes()
         return tree
+    }
+
+    /// Devices a subtree scan may descend into: the root's own device,
+    /// plus the Data volume when the root sits on the System volume — a
+    /// System-side subtree (like /usr with its firmlinked /usr/local) must
+    /// compose across the volume group exactly as the live namespace does.
+    private static func subtreeAllowedDevices(forScanRoot path: String) -> Set<dev_t> {
+        guard let rootDevice = VolumeAttributes.deviceID(ofPath: path) else { return [] }
+        var devices: Set<dev_t> = [rootDevice]
+        if let systemDevice = VolumeAttributes.deviceID(ofPath: "/"),
+           rootDevice == systemDevice,
+           let dataDevice = VolumeAttributes.deviceID(ofPath: dataVolumeMountPoint) {
+            devices.insert(dataDevice)
+        }
+        return devices
     }
 
     /// Catalog-scans `path` when it is the root of a `searchfs`-capable
@@ -101,6 +129,7 @@ final class ScanEngine: DiskScanning {
     private static func scanVolumeOrTraverse(
         path: String,
         rootName: String,
+        allowedDevices: Set<dev_t>? = nil,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) -> FileTree {
@@ -118,7 +147,8 @@ final class ScanEngine: DiskScanning {
             }
         }
         return TraversalScanner.scan(
-            path: path, rootName: rootName, metrics: metrics, isCancelled: isCancelled
+            path: path, rootName: rootName, allowedDevices: allowedDevices,
+            metrics: metrics, isCancelled: isCancelled
         )
     }
 
@@ -160,15 +190,18 @@ final class ScanEngine: DiskScanning {
         }
 
         // Helper volumes of the group (Preboot, VM, Update, ...): real used
-        // space, shown where they live under /System/Volumes.
+        // space, shown where they live under /System/Volumes. They are
+        // small, so they run sequentially on one lane — this bounds
+        // worst-case thread demand if every volume degrades to traversal.
         let siblingNames = siblingVolumeNames()
-        for name in siblingNames {
-            let mountPoint = systemVolumesDirectory + "/" + name
-            run("sibling:" + name) {
-                scanVolumeOrTraverse(
+        queue.async(group: group) {
+            for name in siblingNames {
+                let mountPoint = systemVolumesDirectory + "/" + name
+                let tree = scanVolumeOrTraverse(
                     path: mountPoint, rootName: mountPoint,
                     metrics: metrics, isCancelled: isCancelled
                 )
+                results.withLock { $0["sibling:" + name] = tree }
             }
         }
 
