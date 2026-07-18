@@ -3,15 +3,22 @@ import Darwin
 
 final class DiskScanner: @unchecked Sendable {
     private let context: ScanContext
-    private let bufferSize = 1 * 1024 * 1024
-    private let maxParallelDepth = 8
-    private let minSubdirsForParallel = 2
     private let bufferPool: BufferPool
+    private let gate: ScanGate
     private let firmlinkNamesSet: Set<String>
+
+    /// 256KB holds thousands of entries per getattrlistbulk call; larger
+    /// buffers measurably increase per-call kernel cost with no fewer calls
+    /// for the typical (small) directory.
+    private let bufferSize = 256 * 1024
 
     init(context: ScanContext, onProgress: ((HyperScanProgress) -> Void)? = nil) {
         self.context = context
-        self.bufferPool = BufferPool(bufferSize: bufferSize, poolSize: 64)
+        self.bufferPool = BufferPool(bufferSize: 256 * 1024, poolSize: 32)
+        // Sweet spot measured at 6-8 concurrent readers; scale down on
+        // smaller machines, never exceed 8 (kernel contention cliff).
+        let width = min(8, max(4, ProcessInfo.processInfo.activeProcessorCount / 2))
+        self.gate = ScanGate(width: width)
         self.firmlinkNamesSet = Set(["Users", "Applications", "Library", "System", "private", "usr", "bin", "sbin", "opt", "Volumes", "cores"])
     }
 
@@ -68,10 +75,10 @@ final class DiskScanner: @unchecked Sendable {
             device = dirStat.st_dev
         }
 
-        return await scanRecursiveAsync(path: path, name: name, device: device, depth: 0)
+        return await scanRecursive(path: path, name: name, device: device, depth: 0)
     }
 
-    // MARK: - Directory reading (shared by sync and async recursion)
+    // MARK: - Directory reading
 
     private enum DirectoryRead {
         case contents(files: [HyperScanItem], filesSize: Int64, subDirs: [(name: String, path: String)])
@@ -237,26 +244,7 @@ final class DiskScanner: @unchecked Sendable {
 
     // MARK: - Recursion
 
-    private func scanRecursiveSync(path: String, name: String, device: dev_t, depth: Int) -> HyperScanItem {
-        if depth < 3 && isExcludedPath(path) {
-            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
-        }
-
-        guard case .contents(var localItems, var localSize, let subDirs) = readDirectory(path: path, device: device) else {
-            return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
-        }
-
-        let nextDepth = depth + 1
-        for (subName, subPath) in subDirs {
-            let item = scanRecursiveSync(path: subPath, name: subName, device: device, depth: nextDepth)
-            localItems.append(item)
-            localSize += item.size
-        }
-
-        return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
-    }
-
-    private func scanRecursiveAsync(path: String, name: String, device: dev_t, depth: Int) async -> HyperScanItem {
+    private func scanRecursive(path: String, name: String, device: dev_t, depth: Int) async -> HyperScanItem {
         if Task.isCancelled {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
@@ -265,11 +253,15 @@ final class DiskScanner: @unchecked Sendable {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        let localItems: [HyperScanItem]
-        let localSize: Int64
+        await gate.acquire()
+        let read = readDirectory(path: path, device: device)
+        await gate.release()
+
+        var localItems: [HyperScanItem]
+        var localSize: Int64
         let subDirs: [(name: String, path: String)]
 
-        switch readDirectory(path: path, device: device) {
+        switch read {
         case .contents(let files, let filesSize, let dirs):
             localItems = files
             localSize = filesSize
@@ -280,35 +272,31 @@ final class DiskScanner: @unchecked Sendable {
             return HyperScanItem(name: name, path: path, size: 0, isDirectory: true, children: [])
         }
 
-        var allItems = localItems
-        var totalSize = localSize
-
         if !subDirs.isEmpty {
             let nextDepth = depth + 1
 
-            if subDirs.count < minSubdirsForParallel || depth > maxParallelDepth {
-                for (subName, subPath) in subDirs {
-                    let item = scanRecursiveSync(path: subPath, name: subName, device: device, depth: nextDepth)
-                    allItems.append(item)
-                    totalSize += item.size
-                }
+            if subDirs.count == 1 {
+                let (subName, subPath) = subDirs[0]
+                let item = await scanRecursive(path: subPath, name: subName, device: device, depth: nextDepth)
+                localItems.append(item)
+                localSize += item.size
             } else {
                 await withTaskGroup(of: HyperScanItem.self) { group in
                     for (subName, subPath) in subDirs {
                         group.addTask {
-                            return await self.scanRecursiveAsync(path: subPath, name: subName, device: device, depth: nextDepth)
+                            return await self.scanRecursive(path: subPath, name: subName, device: device, depth: nextDepth)
                         }
                     }
 
                     for await item in group {
-                        allItems.append(item)
-                        totalSize += item.size
+                        localItems.append(item)
+                        localSize += item.size
                     }
                 }
             }
         }
 
-        return HyperScanItem(name: name, path: path, size: totalSize, isDirectory: true, children: allItems)
+        return HyperScanItem(name: name, path: path, size: localSize, isDirectory: true, children: localItems)
     }
 
     func scanRoot() async -> HyperScanItem {
@@ -342,7 +330,7 @@ final class DiskScanner: @unchecked Sendable {
                     if name == "System" {
                         return await self.scanSystemWithoutData(device: rootDevice)
                     } else {
-                        return await self.scanRecursiveAsync(path: path, name: name, device: rootDevice, depth: 0)
+                        return await self.scanRecursive(path: path, name: name, device: rootDevice, depth: 0)
                     }
                 }
             }
@@ -380,7 +368,7 @@ final class DiskScanner: @unchecked Sendable {
                                 if volumeName == "Data" { continue }
 
                                 let volumePath = "\(fullPath)/\(volumeName)"
-                                let item = await self.scanRecursiveAsync(path: volumePath, name: volumeName, device: device, depth: 1)
+                                let item = await self.scanRecursive(path: volumePath, name: volumeName, device: device, depth: 1)
                                 volumesChildren.append(item)
                                 volumesSize += item.size
                             }
@@ -396,7 +384,7 @@ final class DiskScanner: @unchecked Sendable {
                     }
                 } else {
                     group.addTask(priority: .high) {
-                        return await self.scanRecursiveAsync(path: fullPath, name: itemName, device: device, depth: 1)
+                        return await self.scanRecursive(path: fullPath, name: itemName, device: device, depth: 1)
                     }
                 }
             }
@@ -461,24 +449,16 @@ final class DiskScanner: @unchecked Sendable {
             if !subDirs.isEmpty {
                 let nextDepth = depth + 1
 
-                if subDirs.count < minSubdirsForParallel || depth > maxParallelDepth {
+                await withTaskGroup(of: HyperScanItem.self) { group in
                     for (subPath, subName) in subDirs {
-                        let item = scanRecursiveSync(path: subPath, name: subName, device: device, depth: nextDepth)
-                        localItems.append(item)
-                        localSize += item.size
+                        group.addTask {
+                            return await self.scanRecursive(path: subPath, name: subName, device: device, depth: nextDepth)
+                        }
                     }
-                } else {
-                    await withTaskGroup(of: HyperScanItem.self) { group in
-                        for (subPath, subName) in subDirs {
-                            group.addTask {
-                                return await self.scanRecursiveAsync(path: subPath, name: subName, device: device, depth: nextDepth)
-                            }
-                        }
 
-                        for await child in group {
-                            localItems.append(child)
-                            localSize += child.size
-                        }
+                    for await child in group {
+                        localItems.append(child)
+                        localSize += child.size
                     }
                 }
             }
