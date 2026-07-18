@@ -33,18 +33,6 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .onAppear(perform: selectBootVolumeIfNeeded)
-        .onChange(of: deviceMonitor.devices) { _, _ in
-            selectBootVolumeIfNeeded()
-        }
-    }
-
-    /// Auto-selects the boot volume once devices load, unless the user has
-    /// already picked something.
-    private func selectBootVolumeIfNeeded() {
-        if selectedDevice == nil {
-            selectedDevice = deviceMonitor.devices.first(where: \.isBootVolume)
-        }
     }
 }
 
