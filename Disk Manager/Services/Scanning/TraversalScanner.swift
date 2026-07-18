@@ -21,13 +21,14 @@ import Foundation
 /// the live namespace does.
 enum TraversalScanner {
 
-    /// In-flight directory reads. Modern APFS tolerates far more than the
-    /// historically feared ~8 concurrent readers (the 2018-era kernel-lock
-    /// contention was halved in Mojave); fast scanners run 2-3x cores.
-    /// Capped because beyond a few dozen readers syscall latency, not
-    /// parallelism, dominates.
+    /// In-flight directory reads. APFS serializes directory metadata reads
+    /// on kernel locks, so throughput peaks at a handful of readers and
+    /// then falls off a cliff: benchmarked warm-cache on a 16-core machine,
+    /// ~/Library (900k items) scans in 2.1s with 4 workers but 11.8s with
+    /// 32 — the extra threads burn 12x the CPU spinning on those locks.
+    /// Elapsed time is flat across 4-5 workers and degrades from ~6 up.
     static var workerCount: Int {
-        min(32, max(8, ProcessInfo.processInfo.activeProcessorCount * 2))
+        min(5, max(3, ProcessInfo.processInfo.activeProcessorCount / 4))
     }
 
     private struct WorkItem {
