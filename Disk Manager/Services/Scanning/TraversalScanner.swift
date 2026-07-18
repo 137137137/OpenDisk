@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import Synchronization
 
 /// Recursive-descent scanner built on `getattrlistbulk(2)`.
 ///
@@ -46,7 +45,7 @@ enum TraversalScanner {
             var isDrained = false
         }
 
-        private let guarded = Mutex(Guarded())
+        private let guarded = Locked(Guarded())
         private let itemsAvailable = DispatchSemaphore(value: 0)
 
         func start(with item: WorkItem) {

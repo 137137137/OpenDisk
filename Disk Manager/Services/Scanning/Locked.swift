@@ -1,19 +1,22 @@
-import Synchronization
+import os.lock
 
-/// Reference wrapper for a `Mutex`-guarded value.
+/// A value guarded by an unfair lock, shareable across escaping worker
+/// closures.
 ///
-/// `Mutex` itself is a non-copyable struct, so a shared guarded value —
-/// one captured by several escaping worker closures — needs a reference
-/// type around it. Keep critical sections short; workers hold this lock
-/// only to push results, never across syscalls.
-final class Locked<Value: Sendable>: Sendable {
-    private let mutex: Mutex<Value>
+/// Backed by `OSAllocatedUnfairLock`, the cheapest blocking primitive on
+/// Darwin (same class as `Mutex`). Keep critical sections short; scan
+/// workers hold these locks only to push results, never across syscalls.
+///
+/// - Important: Thread-safety: access to `value` only ever happens inside
+///   `withLock`, which serializes all readers and writers.
+final class Locked<Value>: @unchecked Sendable {
+    private let lock: OSAllocatedUnfairLock<Value>
 
     init(_ value: Value) {
-        mutex = Mutex(value)
+        lock = OSAllocatedUnfairLock(uncheckedState: value)
     }
 
     func withLock<Result>(_ body: (inout Value) throws -> Result) rethrows -> Result {
-        try mutex.withLock(body)
+        try lock.withLockUnchecked(body)
     }
 }

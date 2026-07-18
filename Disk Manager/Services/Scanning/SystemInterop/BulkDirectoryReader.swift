@@ -91,11 +91,16 @@ final class BulkDirectoryReader {
             // than discarding the directory.
             if count <= 0 { break }
 
-            var record = buffer
+            var offset = 0
             for _ in 0..<count {
+                // The length prefix drives the walk; validate it so a
+                // malformed record can never push reads past the buffer.
+                guard offset + 4 <= Self.bufferSize else { break }
+                let record = buffer.advanced(by: offset)
                 let length = Int(record.loadUnaligned(as: UInt32.self))
-                defer { record = record.advanced(by: length) }
+                guard length > 0, offset + length <= Self.bufferSize else { break }
                 parseRecord(record, length: length, into: &contents)
+                offset += length
             }
         }
 

@@ -1,11 +1,10 @@
 import Darwin
 import Foundation
-import Synchronization
 
 /// Thread-safe cancellation signal shared between the async world and the
 /// blocking scan workers.
 final class CancellationFlag: Sendable {
-    private let state = Mutex(false)
+    private let state = Locked(false)
 
     var isCancelled: Bool { state.withLock { $0 } }
     func cancel() { state.withLock { $0 = true } }
