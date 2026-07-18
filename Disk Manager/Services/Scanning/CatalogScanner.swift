@@ -15,7 +15,7 @@ import Foundation
 enum CatalogScanner {
 
     /// HFS+ and APFS both use inode 2 for the volume's root directory.
-    private static let rootDirectoryFileID: UInt64 = 2
+    private static let rootDirectoryFileID = CatalogTreeBuilder.volumeRootFileID
     /// Metrics are flushed once per this many entries, not per entry.
     private static let metricsBatchSize = 8_192
 
@@ -25,13 +25,24 @@ enum CatalogScanner {
     /// had directory sizes rolled up. Throws `CatalogSearchError` when the
     /// volume cannot be catalog-scanned; the caller should fall back to
     /// traversal.
+    ///
+    /// `onPartialTreeAvailable` is called once, before scanning begins,
+    /// with a thread-safe provider that snapshots the tree built so far
+    /// (entries whose ancestors have not streamed out of the catalog yet
+    /// are excluded rather than misplaced; like the final tree, the
+    /// snapshot is not yet rolled up).
     static func scanVolume(
         mountPoint: String,
         rootName: String,
         metrics: ScanMetrics,
-        isCancelled: () -> Bool
+        isCancelled: () -> Bool,
+        onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
     ) throws -> FileTree {
-        var builder = CatalogTreeBuilder(rootName: rootName)
+        // The builder is mutated only by this thread; the lock exists so
+        // snapshot providers can copy it (value semantics, O(1) thanks to
+        // copy-on-write) while entries keep streaming.
+        let builder = Locked(CatalogTreeBuilder(rootName: rootName))
+        onPartialTreeAvailable { builder.withLock { $0 }.buildPartialTree() }
 
         var batchBytes: Int64 = 0
         var batchItems = 0
@@ -45,7 +56,7 @@ enum CatalogScanner {
                 onRestart: {
                     // The catalog changed under a resumed search (EBUSY):
                     // every entry seen so far is invalid.
-                    builder = CatalogTreeBuilder(rootName: rootName)
+                    builder.withLock { $0 = CatalogTreeBuilder(rootName: rootName) }
                     metrics.subtract(bytes: flushedBytes + batchBytes,
                                      items: flushedItems + batchItems)
                     (batchBytes, batchItems) = (0, 0)
@@ -55,7 +66,7 @@ enum CatalogScanner {
                     guard entry.fileID != rootDirectoryFileID, entry.fileID > 1 else {
                         return
                     }
-                    let countedBytes = builder.add(entry)
+                    let countedBytes = builder.withLock { $0.add(entry) }
                     batchBytes += countedBytes
                     batchItems += 1
                     if batchItems >= metricsBatchSize {
@@ -76,7 +87,7 @@ enum CatalogScanner {
         if batchItems > 0 {
             metrics.add(bytes: batchBytes, items: batchItems, currentPath: mountPoint)
         }
-        return builder.buildTree()
+        return builder.withLock { $0 }.buildTree()
     }
 }
 
@@ -96,12 +107,20 @@ struct CatalogTreeBuilder {
     /// record per inode, so this set stays empty there.)
     private var countedMultiLinkFileIDs: Set<UInt64> = []
 
+    /// HFS+ and APFS both use inode 2 for the volume's root directory.
+    static let volumeRootFileID: UInt64 = 2
+
     init(rootName: String) {
         tree = FileTree(rootName: rootName)
         tree.reserveCapacity(1 << 16)
         parentIDs = []
         parentIDs.reserveCapacity(1 << 16)
         nodeIDsByFileID = Dictionary(minimumCapacity: 1 << 16)
+        // Entries at the volume's top level carry the root's file ID as
+        // their parent; mapping it up front lets partial snapshots link
+        // them (the final build would otherwise fall back to the root
+        // anyway, but partial linking has no fallback by design).
+        nodeIDsByFileID[Self.volumeRootFileID] = FileTree.rootID
     }
 
     /// Adds one catalog entry. Returns the number of bytes this entry
@@ -123,6 +142,28 @@ struct CatalogTreeBuilder {
             nodeIDsByFileID[entry.fileID] = id
         }
         return size
+    }
+
+    /// Links what is linkable so far and returns a displayable snapshot.
+    ///
+    /// Unlike `buildTree()`, entries whose parent has not streamed out of
+    /// the catalog yet stay detached (excluded from totals) instead of
+    /// attaching to the root: a live snapshot must not flash transient
+    /// orphans at the top level. Because linked-but-detached subtrees are
+    /// unreachable from the root, they simply appear once their ancestors
+    /// arrive in a later snapshot; sizes only ever grow.
+    func buildPartialTree() -> FileTree {
+        var result = tree
+        let nodeCount = result.nodeCount
+        for index in 1..<nodeCount {
+            let id = FileTree.NodeID(index)
+            guard let parent = nodeIDsByFileID[parentIDs[index - 1]],
+                  parent != id, result.isDirectory(parent) else {
+                continue
+            }
+            result.link(id, under: parent)
+        }
+        return result
     }
 
     /// Links every node to its parent and returns the finished tree.

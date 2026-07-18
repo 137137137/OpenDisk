@@ -29,9 +29,17 @@ struct FolderRowView: View {
 
                 Spacer()
 
-                Text(item.formattedSize)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                if item.sizeIsKnown {
+                    Text(item.formattedSize)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                } else {
+                    // Skeleton row: the scan has not sized this entry yet.
+                    Text("0.00 MB")
+                        .monospacedDigit()
+                        .redacted(reason: .placeholder)
+                        .foregroundStyle(.tertiary)
+                }
 
                 if item.isDirectory {
                     Image(systemName: "chevron.right")

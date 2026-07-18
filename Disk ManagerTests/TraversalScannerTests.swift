@@ -66,6 +66,30 @@ struct TraversalScannerTests {
         }
     }
 
+    @Test("partial tree provider snapshots match the finished scan")
+    func partialProviderSnapshots() throws {
+        try withTemporaryTree { root in
+            let sub = root.appendingPathComponent("sub", isDirectory: true)
+            try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+            try Data(count: 4_096).write(to: sub.appendingPathComponent("a.bin"))
+
+            var provider: PartialTreeProvider?
+            var tree = TraversalScanner.scan(
+                path: root.path, rootName: root.path,
+                metrics: ScanMetrics(), isCancelled: { false },
+                onPartialTreeAvailable: { provider = $0 }
+            )
+            tree.rollUpDirectorySizes()
+
+            // The provider outlives the scan and yields the same content.
+            let capturedProvider = try #require(provider)
+            var snapshot = capturedProvider()
+            snapshot.rollUpDirectorySizes()
+            #expect(snapshot.nodeCount == tree.nodeCount)
+            #expect(snapshot.size(of: FileTree.rootID) == tree.size(of: FileTree.rootID))
+        }
+    }
+
     @Test("cancellation returns quickly with a partial tree")
     func cancellationStops() throws {
         try withTemporaryTree { root in

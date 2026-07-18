@@ -107,12 +107,17 @@ enum TraversalScanner {
     /// Blocking: call from a background queue, never the main thread or the
     /// cooperative pool. The returned tree has not had directory sizes
     /// rolled up yet (callers merge trees first, then roll up once).
+    ///
+    /// `onPartialTreeAvailable` is called once, before scanning begins,
+    /// with a thread-safe provider that snapshots the tree built so far
+    /// (value-semantics copy; like the final tree, not yet rolled up).
     static func scan(
         path: String,
         rootName: String,
         allowedDevices: Set<dev_t>? = nil,
         metrics: ScanMetrics,
-        isCancelled: @escaping @Sendable () -> Bool
+        isCancelled: @escaping @Sendable () -> Bool,
+        onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
         guard let rootDevice = VolumeAttributes.deviceID(ofPath: path) else {
             return FileTree(rootName: rootName)
@@ -120,6 +125,7 @@ enum TraversalScanner {
         let devices = (allowedDevices ?? []).union([rootDevice])
 
         let tree = Locked(FileTree(rootName: rootName))
+        onPartialTreeAvailable { tree.withLock { $0 } }
         let seenMultiLinkFiles = Locked(Set<HardLinkKey>())
         let state = WorkState()
         state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))

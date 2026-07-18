@@ -1,8 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// Detail pane for a selected device: scans it, shows progress, and hosts
-/// breadcrumb navigation through the results.
+/// Detail pane for a selected device: scans it, streams results live, and
+/// hosts breadcrumb navigation through them.
+///
+/// There is no separate "scanning" screen — results render from the first
+/// instant (a skeleton of top-level names, then live sizes) and the scan's
+/// progress lives in the results view's bottom bar.
 struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
@@ -29,46 +33,43 @@ struct DiskAnalysisView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !analyzer.isScanning {
-                BreadcrumbBar(
-                    currentPath: currentPath,
-                    rootPath: rootPath,
-                    rootName: rootName,
-                    onNavigate: navigateToPath,
-                    onBack: goBack,
-                    onRootTap: {
-                        if currentPath == rootPath {
-                            onBack()
-                        } else {
-                            navigateToPath(rootPath)
-                        }
-                    },
-                    onRefresh: {
-                        Task { await analyzer.scanDirectory(currentPath) }
+            BreadcrumbBar(
+                currentPath: currentPath,
+                rootPath: rootPath,
+                rootName: rootName,
+                onNavigate: navigateToPath,
+                onBack: goBack,
+                onRootTap: {
+                    if currentPath == rootPath {
+                        onBack()
+                    } else {
+                        navigateToPath(rootPath)
                     }
-                )
-            }
+                },
+                onRefresh: {
+                    Task { await analyzer.scanDirectory(currentPath) }
+                }
+            )
 
-            if analyzer.isScanning {
-                Spacer()
-                ScanningProgressView(
-                    statusDescription: analyzer.statusDescription,
-                    currentScanPath: analyzer.currentScanPath,
-                    filesPerSecond: analyzer.filesPerSecond,
-                    totalDiskScannedBytes: analyzer.totalDiskScannedBytes,
-                    totalUsedDiskSpace: totalUsedDiskSpace
-                )
-                Spacer()
-            } else if analyzer.rootItems.isEmpty {
-                Spacer()
-                emptyStateView
-                Spacer()
-            } else {
+            if !analyzer.rootItems.isEmpty {
                 ScanResultsView(
                     items: analyzer.rootItems,
                     scanDuration: analyzer.scanDuration,
+                    isScanning: analyzer.isScanning,
+                    progressFraction: progressFraction,
+                    scanStatus: analyzer.statusDescription,
+                    filesPerSecond: analyzer.filesPerSecond,
                     onFolderTap: navigateToFolder
                 )
+            } else if analyzer.isScanning {
+                // Only visible for the moments before the skeleton lands.
+                Spacer()
+                ProgressView("Preparing scan…")
+                Spacer()
+            } else {
+                Spacer()
+                emptyStateView
+                Spacer()
             }
         }
         .onAppear {
@@ -79,6 +80,13 @@ struct DiskAnalysisView: View {
         .onDisappear {
             analyzer.cancelCurrentScan()
         }
+    }
+
+    /// Fraction of the device's used space scanned so far, or nil (an
+    /// indeterminate bar) when the device's usage is unknown.
+    private var progressFraction: Double? {
+        guard totalUsedDiskSpace > 0 else { return nil }
+        return min(1.0, Double(analyzer.totalDiskScannedBytes) / Double(totalUsedDiskSpace))
     }
 
     // MARK: - Empty state
@@ -109,19 +117,21 @@ struct DiskAnalysisView: View {
 
     private func navigateToFolder(_ item: FolderItem) {
         guard item.isDirectory else { return }
+        guard showContents(of: item.path) else { return }
         breadcrumbs.append(currentPath)
         currentPath = item.path
-        showContents(of: item.path)
     }
 
     private func goBack() {
-        guard let previousPath = breadcrumbs.popLast() else { return }
+        guard let previousPath = breadcrumbs.last else { return }
+        guard showContents(of: previousPath) else { return }
+        breadcrumbs.removeLast()
         currentPath = previousPath
-        showContents(of: previousPath)
     }
 
     private func navigateToPath(_ path: String) {
         guard path != currentPath else { return }
+        guard showContents(of: path) else { return }
         // Jumping via a breadcrumb can only go to an ancestor: rewind the
         // back stack to it instead of appending, so Back stays coherent.
         if let index = breadcrumbs.firstIndex(of: path) {
@@ -130,16 +140,18 @@ struct DiskAnalysisView: View {
             breadcrumbs.append(currentPath)
         }
         currentPath = path
-        showContents(of: path)
     }
 
-    /// Serves the path from the completed scan when possible; a path
-    /// outside the scanned tree (e.g. an ancestor of a refreshed subtree)
-    /// gets a fresh scan instead.
-    private func showContents(of path: String) {
-        if !analyzer.navigateToPath(path) {
-            Task { await analyzer.scanDirectory(path) }
-        }
+    /// Serves the path from the scanned tree when possible. A path missing
+    /// from the tree gets a fresh scan — unless a scan is already running,
+    /// in which case that path simply has not been discovered yet and the
+    /// navigation is refused (returns false) rather than restarting the
+    /// scan.
+    private func showContents(of path: String) -> Bool {
+        if analyzer.navigateToPath(path) { return true }
+        guard !analyzer.isScanning else { return false }
+        Task { await analyzer.scanDirectory(path) }
+        return true
     }
 }
 

@@ -15,6 +15,11 @@ struct FolderItem: Identifiable, Hashable, Comparable, Sendable {
     let isDirectory: Bool
     /// Number of direct children (directories only; zero for files).
     let itemCount: Int
+    /// False for skeleton rows shown before the scan has produced any
+    /// numbers for this entry; the UI renders a placeholder instead of
+    /// "Zero KB". Rows built from a (partial or final) scan tree are
+    /// always known, even while still growing.
+    var sizeIsKnown: Bool = true
 
     var formattedSize: String {
         ByteFormatter.formatFileSize(size)

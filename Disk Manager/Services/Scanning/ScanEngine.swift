@@ -10,6 +10,40 @@ final class CancellationFlag: Sendable {
     func cancel() { state.withLock { $0 = true } }
 }
 
+/// Assembles displayable snapshots of a scan in flight.
+///
+/// Scanner components register thread-safe partial-tree providers under
+/// stable keys as they start, and the scan plan installs a composer that
+/// combines those snapshots exactly the way the final result is composed —
+/// so a partial snapshot is always a smaller version of the eventual
+/// result, never a differently shaped one.
+private final class PartialResultAssembler: @unchecked Sendable {
+
+    private struct State {
+        var providers: [String: PartialTreeProvider] = [:]
+        var compose: (@Sendable ([String: FileTree]) -> FileTree)?
+    }
+
+    private let state = Locked(State())
+
+    func register(_ key: String, provider: @escaping PartialTreeProvider) {
+        state.withLock { $0.providers[key] = provider }
+    }
+
+    func setComposer(_ compose: @escaping @Sendable ([String: FileTree]) -> FileTree) {
+        state.withLock { $0.compose = compose }
+    }
+
+    /// Snapshots every registered component and composes them, or nil until
+    /// a composer and at least one provider are installed. Blocking (tree
+    /// copies plus an O(n) size roll-up): call from a background queue.
+    func assemble() -> FileTree? {
+        let (providers, compose) = state.withLock { ($0.providers, $0.compose) }
+        guard let compose, !providers.isEmpty else { return nil }
+        return compose(providers.mapValues { $0() })
+    }
+}
+
 /// The production scanner: picks the fastest strategy per volume and
 /// composes the results.
 ///
@@ -23,9 +57,32 @@ final class CancellationFlag: Sendable {
 ///   volume when it supports `searchfs`.
 /// - Subtree rescans and every fallback use the traversal scanner.
 ///
+/// While the scan runs, the engine streams `.partial` snapshots — the
+/// same composition applied to whatever each scanner has discovered so
+/// far — so the UI can show live, monotonically growing results.
+///
 /// All blocking work runs on dedicated dispatch queues, never on the Swift
 /// concurrency cooperative pool.
 final class ScanEngine: DiskScanning {
+
+    /// Cadence of lightweight `.progress` events.
+    private static let progressInterval: Duration = .milliseconds(33)
+    /// Cadence of `.partial` tree snapshots while the tree is small. Each
+    /// snapshot costs an O(n) copy and roll-up of everything scanned so
+    /// far (and the next tree mutation pays a copy-on-write duplication),
+    /// so as the tree grows the cadence backs off — see the multiplier
+    /// below — keeping snapshot overhead a bounded fraction of scan time.
+    private static let minPartialSnapshotInterval: Duration = .milliseconds(500)
+    /// High ceiling by design: on multi-million-node scans one snapshot
+    /// can cost seconds, and a low cap would defeat the overhead bound —
+    /// snapshots simply become sparse late in a huge scan, when the
+    /// top-level picture has already stabilized anyway.
+    private static let maxPartialSnapshotInterval: Duration = .seconds(15)
+    /// The next snapshot waits at least this many times the cost of the
+    /// last one, bounding worst-case overhead to roughly 1/multiplier of
+    /// the scan (assembly time is the best available proxy for the
+    /// copy-on-write stall the snapshot also inflicts on scan workers).
+    private static let snapshotBackoffMultiplier = 8
 
     /// Process-wide tuning, applied once: favor scan I/O and raise the
     /// file-descriptor ceiling for the worker pool.
@@ -43,30 +100,64 @@ final class ScanEngine: DiskScanning {
 
     func scan(
         path: String,
-        onProgress: @escaping @Sendable (ScanProgress) -> Void
+        onEvent: @escaping @Sendable (ScanEvent) -> Void
     ) async -> ScanResult {
         _ = Self.processTuning
 
         let metrics = ScanMetrics()
         metrics.setTotalUsedBytes(VolumeAttributes.usedBytes(ofVolumeContaining: path))
         let cancellation = CancellationFlag()
+        let assembler = PartialResultAssembler()
 
         let progressTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(33))
-                onProgress(metrics.snapshot())
+                try? await Task.sleep(for: Self.progressInterval)
+                onEvent(.progress(metrics.snapshot()))
             }
         }
+
+        // Snapshot assembly is real CPU work; run it on its own queue so it
+        // never blocks the cooperative pool, and serially so a slow
+        // assembly skips ticks instead of piling up.
+        let snapshotQueue = DispatchQueue(
+            label: "DiskManager.ScanEngine.partials", qos: .userInitiated
+        )
+        let partialTask = Task {
+            var sequence = 0
+            var interval = Self.minPartialSnapshotInterval
+            let clock = ContinuousClock()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled else { break }
+                let assembleStart = clock.now
+                let tree: FileTree? = await withCheckedContinuation { continuation in
+                    snapshotQueue.async { continuation.resume(returning: assembler.assemble()) }
+                }
+                interval = min(
+                    Self.maxPartialSnapshotInterval,
+                    max(
+                        Self.minPartialSnapshotInterval,
+                        (clock.now - assembleStart) * Self.snapshotBackoffMultiplier
+                    )
+                )
+                guard let tree, !Task.isCancelled else { continue }
+                sequence += 1
+                onEvent(.partial(PartialScanResult(sequence: sequence, tree: tree)))
+            }
+        }
+
         defer {
             progressTask.cancel()
-            onProgress(metrics.snapshot())
+            partialTask.cancel()
+            onEvent(.progress(metrics.snapshot()))
         }
 
         let tree = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
                     let tree = Self.performScan(
-                        path: path, metrics: metrics, cancellation: cancellation
+                        path: path, metrics: metrics,
+                        cancellation: cancellation, assembler: assembler
                     )
                     continuation.resume(returning: tree)
                 }
@@ -81,12 +172,17 @@ final class ScanEngine: DiskScanning {
     // MARK: - Blocking scan pipeline
 
     private static func performScan(
-        path: String, metrics: ScanMetrics, cancellation: CancellationFlag
+        path: String,
+        metrics: ScanMetrics,
+        cancellation: CancellationFlag,
+        assembler: PartialResultAssembler
     ) -> FileTree {
         let isCancelled: @Sendable () -> Bool = { cancellation.isCancelled }
 
         if path == "/" {
-            return scanBootVolumeGroup(metrics: metrics, isCancelled: isCancelled)
+            return scanBootVolumeGroup(
+                metrics: metrics, isCancelled: isCancelled, assembler: assembler
+            )
         }
 
         // Some entries shown at "/" exist only in the Data volume's
@@ -100,10 +196,18 @@ final class ScanEngine: DiskScanning {
             }
         }
 
+        let subtreeKey = "subtree"
+        assembler.setComposer { trees in
+            var tree = trees[subtreeKey] ?? FileTree(rootName: path)
+            tree.rollUpDirectorySizes()
+            return tree
+        }
+
         var tree = scanVolumeOrTraverse(
             path: scanPath, rootName: path,
             allowedDevices: subtreeAllowedDevices(forScanRoot: scanPath),
-            metrics: metrics, isCancelled: isCancelled
+            metrics: metrics, isCancelled: isCancelled,
+            registerPartial: { assembler.register(subtreeKey, provider: $0) }
         )
         tree.rollUpDirectorySizes()
         return tree
@@ -126,19 +230,25 @@ final class ScanEngine: DiskScanning {
 
     /// Catalog-scans `path` when it is the root of a `searchfs`-capable
     /// volume, otherwise (or on any catalog failure) traverses it.
+    ///
+    /// `registerPartial` receives the running scanner's partial-tree
+    /// provider; on a catalog-to-traversal fallback it is called again and
+    /// the later registration must win.
     private static func scanVolumeOrTraverse(
         path: String,
         rootName: String,
         allowedDevices: Set<dev_t>? = nil,
         metrics: ScanMetrics,
-        isCancelled: @escaping @Sendable () -> Bool
+        isCancelled: @escaping @Sendable () -> Bool,
+        registerPartial: (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
         if VolumeAttributes.isVolumeRoot(path),
            VolumeAttributes.supportsCatalogSearch(atPath: path) {
             do {
                 return try CatalogScanner.scanVolume(
                     mountPoint: path, rootName: rootName,
-                    metrics: metrics, isCancelled: isCancelled
+                    metrics: metrics, isCancelled: isCancelled,
+                    onPartialTreeAvailable: registerPartial
                 )
             } catch CatalogSearchError.cancelled {
                 return FileTree(rootName: rootName)
@@ -148,14 +258,28 @@ final class ScanEngine: DiskScanning {
         }
         return TraversalScanner.scan(
             path: path, rootName: rootName, allowedDevices: allowedDevices,
-            metrics: metrics, isCancelled: isCancelled
+            metrics: metrics, isCancelled: isCancelled,
+            onPartialTreeAvailable: registerPartial
         )
     }
 
+    // MARK: - Boot volume group
+
+    private static let systemTreeKey = "system"
+    private static let dataTreeKey = "data"
+    private static func siblingTreeKey(_ name: String) -> String { "sibling:" + name }
+
     /// Composes the boot volume group into one tree rooted at "/".
     private static func scanBootVolumeGroup(
-        metrics: ScanMetrics, isCancelled: @escaping @Sendable () -> Bool
+        metrics: ScanMetrics,
+        isCancelled: @escaping @Sendable () -> Bool,
+        assembler: PartialResultAssembler
     ) -> FileTree {
+        let siblingNames = siblingVolumeNames()
+        assembler.setComposer { trees in
+            composeBootVolumeGroup(trees, siblingNames: siblingNames)
+        }
+
         let queue = DispatchQueue(
             label: "DiskManager.ScanEngine.volumes",
             qos: .userInitiated,
@@ -164,9 +288,15 @@ final class ScanEngine: DiskScanning {
         let group = DispatchGroup()
 
         let results = Locked<[String: FileTree]>([:])
-        func run(_ key: String, _ work: @escaping @Sendable () -> FileTree) {
+        func run(
+            _ key: String, path: String, rootName: String
+        ) {
             queue.async(group: group) {
-                let tree = work()
+                let tree = scanVolumeOrTraverse(
+                    path: path, rootName: rootName,
+                    metrics: metrics, isCancelled: isCancelled,
+                    registerPartial: { assembler.register(key, provider: $0) }
+                )
                 results.withLock { $0[key] = tree }
             }
         }
@@ -174,46 +304,50 @@ final class ScanEngine: DiskScanning {
         // The System volume: the sealed snapshot mounted at "/". Traversal
         // stays on the system device, so firmlinks into Data, /Volumes and
         // /dev are all cut off automatically.
-        run("system") {
-            scanVolumeOrTraverse(
-                path: "/", rootName: "/", metrics: metrics, isCancelled: isCancelled
-            )
-        }
+        run(systemTreeKey, path: "/", rootName: "/")
 
         // The Data volume, whose root children (Users, Applications, ...)
         // are exactly the firmlink targets shown at "/".
-        run("data") {
-            scanVolumeOrTraverse(
-                path: dataVolumeMountPoint, rootName: "/",
-                metrics: metrics, isCancelled: isCancelled
-            )
-        }
+        run(dataTreeKey, path: dataVolumeMountPoint, rootName: "/")
 
         // Helper volumes of the group (Preboot, VM, Update, ...): real used
         // space, shown where they live under /System/Volumes. They are
         // small, so they run sequentially on one lane — this bounds
         // worst-case thread demand if every volume degrades to traversal.
-        let siblingNames = siblingVolumeNames()
         queue.async(group: group) {
             for name in siblingNames {
                 let mountPoint = systemVolumesDirectory + "/" + name
                 let tree = scanVolumeOrTraverse(
                     path: mountPoint, rootName: mountPoint,
-                    metrics: metrics, isCancelled: isCancelled
+                    metrics: metrics, isCancelled: isCancelled,
+                    registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
                 )
-                results.withLock { $0["sibling:" + name] = tree }
+                results.withLock { $0[siblingTreeKey(name)] = tree }
             }
         }
 
         group.wait()
 
-        var trees = results.withLock { $0 }
-        var merged = trees.removeValue(forKey: "system") ?? FileTree(rootName: "/")
-        if let dataTree = trees.removeValue(forKey: "data") {
+        return composeBootVolumeGroup(
+            results.withLock { $0 }, siblingNames: siblingNames
+        )
+    }
+
+    /// Merges per-volume trees into one rolled-up tree rooted at "/".
+    /// Used for both the final result and every partial snapshot, so live
+    /// results always have the same shape the finished scan will have.
+    /// Volumes without a tree yet (a snapshot taken before every scanner
+    /// registered) are simply absent from that snapshot.
+    private static func composeBootVolumeGroup(
+        _ trees: [String: FileTree], siblingNames: [String]
+    ) -> FileTree {
+        var trees = trees
+        var merged = trees.removeValue(forKey: systemTreeKey) ?? FileTree(rootName: "/")
+        if let dataTree = trees.removeValue(forKey: dataTreeKey) {
             merged.merge(dataTree)
         }
         for name in siblingNames {
-            guard let siblingTree = trees.removeValue(forKey: "sibling:" + name) else {
+            guard let siblingTree = trees.removeValue(forKey: siblingTreeKey(name)) else {
                 continue
             }
             let components = ["System", "Volumes", name].map { Substring($0) }
