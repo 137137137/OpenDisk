@@ -1,21 +1,25 @@
 import SwiftUI
 
 /// Root navigation: a disk-picker screen, pushing the analysis screen for
-/// the selected disk. `NavigationStack` provides the system back button,
-/// title handling and Liquid Glass toolbar treatment.
+/// the selected disk or a user-chosen folder. `NavigationStack` provides
+/// the system back button, title handling and toolbar treatment.
 struct ContentView: View {
     @State private var deviceMonitor = DeviceMonitor()
+    @State private var path: [DeviceInfo] = []
 
     var body: some View {
-        NavigationStack {
-            DevicePickerView(devices: deviceMonitor.devices)
-                .navigationDestination(for: DeviceInfo.self) { device in
-                    DiskAnalysisView(
-                        rootPath: device.path,
-                        rootName: device.name,
-                        totalUsedSpace: device.usedBytes
-                    )
-                }
+        NavigationStack(path: $path) {
+            DevicePickerView(
+                devices: deviceMonitor.devices,
+                onScanFolder: { folderDevice in path.append(folderDevice) }
+            )
+            .navigationDestination(for: DeviceInfo.self) { device in
+                DiskAnalysisView(
+                    rootPath: device.path,
+                    rootName: device.name,
+                    totalUsedSpace: device.usedBytes
+                )
+            }
         }
     }
 }
