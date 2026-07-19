@@ -81,13 +81,25 @@ struct DiskAnalysisView: View {
             )
 
             if !analyzer.rootItems.isEmpty {
-                HSplitView {
-                    ScanResultsView(items: analyzer.rootItems, onFolderTap: navigateToFolder)
-                        .frame(minWidth: 320, idealWidth: 420)
-                        .layoutPriority(1)
+                // The split starts at 60% list / 40% chart (ideal widths
+                // seed HSplitView's initial divider position); the divider
+                // stays user-draggable.
+                GeometryReader { geometry in
+                    HSplitView {
+                        ScanResultsView(items: analyzer.rootItems, onFolderTap: navigateToFolder)
+                            .frame(
+                                minWidth: 320,
+                                idealWidth: geometry.size.width * 0.6,
+                                maxWidth: .infinity, maxHeight: .infinity
+                            )
 
-                    chartPane
-                        .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                        chartPane
+                            .frame(
+                                minWidth: 280,
+                                idealWidth: geometry.size.width * 0.4,
+                                maxWidth: .infinity, maxHeight: .infinity
+                            )
+                    }
                 }
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
