@@ -144,7 +144,7 @@ struct RingsChartView: View {
                 .foregroundStyle(.black.opacity(0.75))
         )
         // Measure single-line: a name that only fits by wrapping is noise.
-        let labelSize = label.measure(in: CGSize(width: .infinity, height: 40))
+        let labelSize = label.measure(in: CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40))
         guard labelSize.width <= maxWidth, labelSize.height <= maxHeight else { return }
 
         let angle = segment.startAngle + segment.sweep / 2
