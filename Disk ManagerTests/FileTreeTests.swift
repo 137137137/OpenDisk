@@ -2,6 +2,47 @@ import Foundation
 import Testing
 @testable import Disk_Manager
 
+@Suite("FileTree serialization")
+struct FileTreeSerializationTests {
+
+    @Test("binary roundtrip preserves structure, sizes and names")
+    func serializationRoundtrip() throws {
+        var tree = FileTree(rootName: "/Volumes/T")
+        let docs = tree.addNode(name: "Documents", parent: FileTree.rootID, size: 0, isDirectory: true)
+        tree.addNode(name: "report — épreuve.pdf", parent: docs, size: 50_000, isDirectory: false)
+        let nested = tree.addNode(name: "nested", parent: docs, size: 0, isDirectory: true)
+        tree.addNode(name: "deep.bin", parent: nested, size: 123, isDirectory: false)
+        tree.addNode(name: "movie.mov", parent: FileTree.rootID, size: 2_000_000, isDirectory: false)
+
+        let decoded = try #require(FileTree(serializedData: tree.serializedData()))
+        #expect(decoded.nodeCount == tree.nodeCount)
+
+        var expected = tree
+        var roundtripped = decoded
+        expected.rollUpDirectorySizes()
+        roundtripped.rollUpDirectorySizes()
+        #expect(roundtripped.size(of: FileTree.rootID) == expected.size(of: FileTree.rootID))
+
+        let decodedDocs = try #require(roundtripped.child(of: FileTree.rootID, named: "Documents"))
+        #expect(roundtripped.isDirectory(decodedDocs))
+        #expect(roundtripped.child(of: decodedDocs, named: "report — épreuve.pdf") != nil)
+        #expect(roundtripped.nodeID(atComponents: "Documents/nested/deep.bin".split(separator: "/")) != nil)
+        #expect(roundtripped.path(of: decodedDocs) == "/Volumes/T/Documents")
+    }
+
+    @Test("malformed blobs are rejected, not crashed on")
+    func malformedDataRejected() {
+        #expect(FileTree(serializedData: Data()) == nil)
+        #expect(FileTree(serializedData: Data([1, 2, 3, 4, 5])) == nil)
+
+        var tree = FileTree(rootName: "/")
+        tree.addNode(name: "a", parent: FileTree.rootID, size: 1, isDirectory: false)
+        var blob = tree.serializedData()
+        blob.removeLast(8)  // Truncated name blob.
+        #expect(FileTree(serializedData: blob) == nil)
+    }
+}
+
 @Suite("FileTree")
 struct FileTreeTests {
 

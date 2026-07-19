@@ -203,7 +203,7 @@ final class ScanEngine: DiskScanning {
             return tree
         }
 
-        var tree = scanVolumeOrTraverse(
+        var tree = scanRootTreeUsingCache(
             path: scanPath, rootName: path,
             allowedDevices: subtreeAllowedDevices(forScanRoot: scanPath),
             metrics: metrics, isCancelled: isCancelled,
@@ -211,6 +211,69 @@ final class ScanEngine: DiskScanning {
         )
         tree.rollUpDirectorySizes()
         return tree
+    }
+
+    // MARK: - Scan cache
+
+    /// Scans `path` through the on-disk cache when possible: a cached
+    /// tree plus an FSEvents journal replay turns a repeat scan into a
+    /// splice of only the directories that changed since — the cached
+    /// tree also appears in full as the very first partial snapshot.
+    /// Falls back to (and refreshes the cache from) a full scan whenever
+    /// the cache or journal cannot answer reliably.
+    private static func scanRootTreeUsingCache(
+        path: String,
+        rootName: String,
+        allowedDevices: Set<dev_t>?,
+        metrics: ScanMetrics,
+        isCancelled: @escaping @Sendable () -> Bool,
+        registerPartial: (@escaping PartialTreeProvider) -> Void
+    ) -> FileTree {
+        // Captured before any reading so changes made during this scan
+        // replay into the next one.
+        let startEventID = FSEventsChangeJournal.currentEventID
+
+        // HFS+ volumes go through the catalog scanner; no cache there.
+        let usesCatalog = VolumeAttributes.isVolumeRoot(path)
+            && VolumeAttributes.filesystemType(ofVolumeContaining: path) == "hfs"
+
+        if !usesCatalog,
+           let cached = ScanCache.load(forRoot: path),
+           cached.tree.name(of: FileTree.rootID) == rootName,
+           let changes = FSEventsChangeJournal.changes(since: cached.eventID, under: path) {
+            let devices = allowedDevices
+                ?? VolumeAttributes.deviceID(ofPath: path).map { [$0] } ?? []
+            let live = Locked(cached.tree)
+            registerPartial { live.withLock { $0 } }
+            if IncrementalUpdater.apply(
+                changes, to: live, rootPath: path,
+                allowedDevices: devices, metrics: metrics, isCancelled: isCancelled
+            ) {
+                let tree = live.withLock { $0 }
+                saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
+                return tree
+            }
+        }
+
+        let tree = scanVolumeOrTraverse(
+            path: path, rootName: rootName, allowedDevices: allowedDevices,
+            metrics: metrics, isCancelled: isCancelled,
+            registerPartial: registerPartial
+        )
+        if !usesCatalog && !isCancelled() {
+            saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
+        }
+        return tree
+    }
+
+    /// Serializing a multi-million-node tree takes hundreds of
+    /// milliseconds; keep it off the scan's critical path.
+    private static func saveCacheInBackground(
+        tree: FileTree, rootPath: String, eventID: UInt64
+    ) {
+        DispatchQueue.global(qos: .utility).async {
+            ScanCache.save(tree: tree, forRoot: rootPath, eventID: eventID)
+        }
     }
 
     /// Devices a subtree scan may descend into: the root's own device,
@@ -314,7 +377,7 @@ final class ScanEngine: DiskScanning {
         // own root (.Spotlight-V100, .fseventsd, ...) are not firmlinked
         // into "/" and are skipped, matching what the live namespace
         // shows.
-        let rootTree = scanVolumeOrTraverse(
+        let rootTree = scanRootTreeUsingCache(
             path: "/", rootName: "/",
             allowedDevices: subtreeAllowedDevices(forScanRoot: "/"),
             metrics: metrics, isCancelled: isCancelled,
