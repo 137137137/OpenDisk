@@ -23,12 +23,20 @@ enum TraversalScanner {
 
     /// In-flight directory reads. APFS serializes directory metadata reads
     /// on kernel locks, so throughput peaks at a handful of readers and
-    /// then falls off a cliff: benchmarked warm-cache on a 16-core machine,
-    /// ~/Library (900k items) scans in 2.1s with 4 workers but 11.8s with
-    /// 32 — the extra threads burn 12x the CPU spinning on those locks.
-    /// Elapsed time is flat across 4-5 workers and degrades from ~6 up.
-    static var workerCount: Int {
+    /// then falls off a cliff — but the peak moves with scan size
+    /// (benchmarked on a 16-core machine):
+    /// - Warm subtree rescans peak at 4-5 readers: ~/Library (900k items)
+    ///   scans in 2.1s with 4 workers, 3.1s with 8, 11.8s with 32.
+    /// - Whole-volume scans peak near 8: the Data volume (4M items) scans
+    ///   in ~12.6s with 8 workers vs ~16s with 4 — colder metadata leaves
+    ///   more latency for extra in-flight reads to hide. It degrades again
+    ///   from ~10 up (19.8s at 16).
+    static var subtreeWorkerCount: Int {
         min(5, max(3, ProcessInfo.processInfo.activeProcessorCount / 4))
+    }
+
+    static var volumeWorkerCount: Int {
+        min(8, max(4, ProcessInfo.processInfo.activeProcessorCount / 2))
     }
 
     private struct WorkItem {
@@ -115,6 +123,7 @@ enum TraversalScanner {
         path: String,
         rootName: String,
         allowedDevices: Set<dev_t>? = nil,
+        workerCount: Int? = nil,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
@@ -123,6 +132,7 @@ enum TraversalScanner {
             return FileTree(rootName: rootName)
         }
         let devices = (allowedDevices ?? []).union([rootDevice])
+        let workerCount = workerCount ?? subtreeWorkerCount
 
         let tree = Locked(FileTree(rootName: rootName))
         onPartialTreeAvailable { tree.withLock { $0 } }
@@ -213,11 +223,20 @@ enum TraversalScanner {
                     )
                     discovered.append(WorkItem(directoryID: id, path: directoryPrefix + name))
                 }
+                // Mount points stay visible as empty stubs but are never
+                // descended into — other volumes are scanned separately.
+                for name in contents.mountPointNames {
+                    tree.addNode(
+                        name: name, parent: item.directoryID,
+                        size: 0, isDirectory: true
+                    )
+                }
             }
 
             metrics.add(
                 bytes: directoryBytes,
-                items: contents.files.count + contents.subdirectoryNames.count,
+                items: contents.files.count + contents.subdirectoryNames.count
+                    + contents.mountPointNames.count,
                 currentPath: item.path
             )
             state.push(discovered)

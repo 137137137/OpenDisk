@@ -41,6 +41,16 @@ enum VolumeAttributes {
             && (reply.capabilities.1 & volCapIntSearchFS) != 0
     }
 
+    /// The filesystem type name ("apfs", "hfs", "exfat", ...) of the
+    /// volume containing `path`, or nil on failure.
+    static func filesystemType(ofVolumeContaining path: String) -> String? {
+        var fs = statfs()
+        guard statfs(path, &fs) == 0 else { return nil }
+        return withUnsafeBytes(of: &fs.f_fstypename) { bytes in
+            String(cString: bytes.bindMemory(to: CChar.self).baseAddress!)
+        }
+    }
+
     /// The mount point of the volume containing `path`, or nil on failure.
     static func mountPoint(ofVolumeContaining path: String) -> String? {
         var fs = statfs()

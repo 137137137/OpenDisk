@@ -228,8 +228,22 @@ final class ScanEngine: DiskScanning {
         return devices
     }
 
-    /// Catalog-scans `path` when it is the root of a `searchfs`-capable
-    /// volume, otherwise (or on any catalog failure) traverses it.
+    /// Scans one volume or subtree with the fastest measured strategy.
+    ///
+    /// Strategy, benchmarked on this hardware (4M-entry APFS Data volume):
+    /// - APFS: parallel `getattrlistbulk` traversal, ~12.6s. `searchfs`
+    ///   measured 27s+ on the same volume (the kernel's APFS catalog walk
+    ///   streams only ~150k entries/s regardless of batch size) and worse,
+    ///   any concurrent volume mutation aborts it with EBUSY and forces a
+    ///   full re-walk — up to 4x on a busy system. The catalog's only
+    ///   advantage is seeing entries inside directories the process cannot
+    ///   open (~0.3% of items here).
+    /// - HFS+ (and anything else advertising `searchfs`): catalog scan —
+    ///   on spinning-disk-era HFS+ the catalog walk is roughly an order of
+    ///   magnitude faster than traversal, and such volumes are usually
+    ///   external/read-mostly, where EBUSY restarts are rare.
+    /// - No `searchfs` support (network mounts, exFAT) or subtree rescans:
+    ///   traversal.
     ///
     /// `registerPartial` receives the running scanner's partial-tree
     /// provider; on a catalog-to-traversal fallback it is called again and
@@ -242,7 +256,9 @@ final class ScanEngine: DiskScanning {
         isCancelled: @escaping @Sendable () -> Bool,
         registerPartial: (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
-        if VolumeAttributes.isVolumeRoot(path),
+        let isVolumeRoot = VolumeAttributes.isVolumeRoot(path)
+        if isVolumeRoot,
+           VolumeAttributes.filesystemType(ofVolumeContaining: path) == "hfs",
            VolumeAttributes.supportsCatalogSearch(atPath: path) {
             do {
                 return try CatalogScanner.scanVolume(
@@ -258,6 +274,9 @@ final class ScanEngine: DiskScanning {
         }
         return TraversalScanner.scan(
             path: path, rootName: rootName, allowedDevices: allowedDevices,
+            workerCount: isVolumeRoot
+                ? TraversalScanner.volumeWorkerCount
+                : TraversalScanner.subtreeWorkerCount,
             metrics: metrics, isCancelled: isCancelled,
             onPartialTreeAvailable: registerPartial
         )
@@ -265,8 +284,7 @@ final class ScanEngine: DiskScanning {
 
     // MARK: - Boot volume group
 
-    private static let systemTreeKey = "system"
-    private static let dataTreeKey = "data"
+    private static let rootTreeKey = "root"
     private static func siblingTreeKey(_ name: String) -> String { "sibling:" + name }
 
     /// Composes the boot volume group into one tree rooted at "/".
@@ -280,53 +298,46 @@ final class ScanEngine: DiskScanning {
             composeBootVolumeGroup(trees, siblingNames: siblingNames)
         }
 
-        let queue = DispatchQueue(
-            label: "DiskManager.ScanEngine.volumes",
-            qos: .userInitiated,
-            attributes: .concurrent
-        )
-        let group = DispatchGroup()
-
         let results = Locked<[String: FileTree]>([:])
-        func run(
-            _ key: String, path: String, rootName: String
-        ) {
-            queue.async(group: group) {
-                let tree = scanVolumeOrTraverse(
-                    path: path, rootName: rootName,
-                    metrics: metrics, isCancelled: isCancelled,
-                    registerPartial: { assembler.register(key, provider: $0) }
-                )
-                results.withLock { $0[key] = tree }
-            }
-        }
 
-        // The System volume: the sealed snapshot mounted at "/". Traversal
-        // stays on the system device, so firmlinks into Data, /Volumes and
-        // /dev are all cut off automatically.
-        run(systemTreeKey, path: "/", rootName: "/")
-
-        // The Data volume, whose root children (Users, Applications, ...)
-        // are exactly the firmlink targets shown at "/".
-        run(dataTreeKey, path: dataVolumeMountPoint, rootName: "/")
+        // One traversal of "/" covers the whole volume group: firmlinks
+        // compose the System and Data volumes into the live namespace
+        // exactly as the user sees it, and per-entry mount-status cutoffs
+        // keep every other volume out — including the booted volume's
+        // /Volumes alias and Time Machine local-snapshot mounts, which can
+        // share the boot volume's device ID (so a device allowlist alone
+        // would count the disk several times over, and scanning the Data
+        // volume separately and merging would double-count it the same
+        // way). The allowlist still matters on systems where firmlink
+        // targets carry the Data volume's distinct device ID.
+        // Known omission: housekeeping directories at the Data volume's
+        // own root (.Spotlight-V100, .fseventsd, ...) are not firmlinked
+        // into "/" and are skipped, matching what the live namespace
+        // shows.
+        let rootTree = scanVolumeOrTraverse(
+            path: "/", rootName: "/",
+            allowedDevices: subtreeAllowedDevices(forScanRoot: "/"),
+            metrics: metrics, isCancelled: isCancelled,
+            registerPartial: { assembler.register(rootTreeKey, provider: $0) }
+        )
+        results.withLock { $0[rootTreeKey] = rootTree }
 
         // Helper volumes of the group (Preboot, VM, Update, ...): real used
         // space, shown where they live under /System/Volumes. They are
-        // small, so they run sequentially on one lane — this bounds
-        // worst-case thread demand if every volume degrades to traversal.
-        queue.async(group: group) {
-            for name in siblingNames {
-                let mountPoint = systemVolumesDirectory + "/" + name
-                let tree = scanVolumeOrTraverse(
-                    path: mountPoint, rootName: mountPoint,
-                    metrics: metrics, isCancelled: isCancelled,
-                    registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
-                )
-                results.withLock { $0[siblingTreeKey(name)] = tree }
-            }
+        // small (well under a second combined) and run after the main
+        // volume so reader concurrency never exceeds one worker pool —
+        // concurrent pools on one APFS container blow past the kernel-lock
+        // contention cliff and slow every scan down.
+        for name in siblingNames {
+            if isCancelled() { break }
+            let mountPoint = systemVolumesDirectory + "/" + name
+            let tree = scanVolumeOrTraverse(
+                path: mountPoint, rootName: mountPoint,
+                metrics: metrics, isCancelled: isCancelled,
+                registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
+            )
+            results.withLock { $0[siblingTreeKey(name)] = tree }
         }
-
-        group.wait()
 
         return composeBootVolumeGroup(
             results.withLock { $0 }, siblingNames: siblingNames
@@ -342,10 +353,7 @@ final class ScanEngine: DiskScanning {
         _ trees: [String: FileTree], siblingNames: [String]
     ) -> FileTree {
         var trees = trees
-        var merged = trees.removeValue(forKey: systemTreeKey) ?? FileTree(rootName: "/")
-        if let dataTree = trees.removeValue(forKey: dataTreeKey) {
-            merged.merge(dataTree)
-        }
+        var merged = trees.removeValue(forKey: rootTreeKey) ?? FileTree(rootName: "/")
         for name in siblingNames {
             guard let siblingTree = trees.removeValue(forKey: siblingTreeKey(name)) else {
                 continue

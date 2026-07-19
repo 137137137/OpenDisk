@@ -3,9 +3,9 @@ import Foundation
 
 /// Raw interface to the `searchfs(2)` syscall: a kernel-side walk of a
 /// volume's catalog B-tree that streams every file and directory on the
-/// volume without opening a single directory. This is the fastest way to
-/// enumerate an entire APFS or HFS+ volume on macOS (the technique behind
-/// DaisyDisk-class scanners).
+/// volume without opening a single directory. On HFS+ this is by far the
+/// fastest way to enumerate a whole volume (the technique behind classic
+/// DaisyDisk-class scanners); on APFS it measures ~2x slower than parallel getattrlistbulk traversal.
 ///
 /// The syscall has no prototype in the public headers; the symbol lives in
 /// libsystem_kernel and is declared here directly. Struct layouts mirror

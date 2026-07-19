@@ -13,7 +13,16 @@ struct DirectoryFileEntry {
 /// The parsed contents of a single directory.
 struct DirectoryContents {
     var files: [DirectoryFileEntry] = []
+    /// Subdirectories a scan may descend into.
     var subdirectoryNames: [String] = []
+    /// Subdirectories that are mount points (or automount triggers):
+    /// shown as empty stubs, never descended into. This is the boundary
+    /// check that still works when `st_dev` cannot tell volumes apart —
+    /// on newer macOS the volume group, the booted volume's `/Volumes`
+    /// alias and Time Machine local snapshot mounts can all share one
+    /// device ID, so a device allowlist alone would wander into them and
+    /// count the disk several times over.
+    var mountPointNames: [String] = []
 }
 
 /// The outcome of attempting to read one directory.
@@ -80,6 +89,11 @@ final class BulkDirectoryReader {
             UInt32(ATTR_CMN_OBJTYPE) |
             UInt32(ATTR_CMN_FILEID)
         )
+        // The kernel flags each child directory that is a mount point, so
+        // volume boundaries are detected during the parent's read — no
+        // extra syscall, and no reliance on st_dev differing across
+        // volumes (it often does not; see DirectoryContents).
+        request.dirattr = attrgroup_t(UInt32(ATTR_DIR_MOUNTSTATUS))
         request.fileattr = attrgroup_t(
             UInt32(ATTR_FILE_LINKCOUNT) | UInt32(ATTR_FILE_ALLOCSIZE)
         )
@@ -118,6 +132,7 @@ final class BulkDirectoryReader {
     ///   24  attrreference    name (dataoffset relative to offset 24)
     ///   32  u32              objtype        - if returned
     ///   ..  u64              fileid         - if returned
+    ///   ..  u32              mountstatus    - directories, if returned
     ///   ..  u32              linkcount      - files, if returned
     ///   ..  s64              allocsize      - files, if returned
     /// Fields after the attribute set only exist when the corresponding
@@ -131,6 +146,7 @@ final class BulkDirectoryReader {
         guard length >= 36 else { return }
 
         let returnedCommon = record.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+        let returnedDir = record.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
         let returnedFile = record.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
 
         let nameDataOffset = Int(record.loadUnaligned(fromByteOffset: 24, as: Int32.self))
@@ -174,7 +190,20 @@ final class BulkDirectoryReader {
         )
 
         if isDirectory {
-            contents.subdirectoryNames.append(name)
+            // Nonzero mount status means a mount point or an automount
+            // trigger (descending into a trigger could mount and hang on a
+            // network share); both are volume boundaries.
+            var mountStatus: UInt32 = 0
+            if returnedDir & UInt32(ATTR_DIR_MOUNTSTATUS) != 0 {
+                guard offset + 4 <= length else { return }
+                mountStatus = record.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
+                offset += 4
+            }
+            if mountStatus != 0 {
+                contents.mountPointNames.append(name)
+            } else {
+                contents.subdirectoryNames.append(name)
+            }
             return
         }
 

@@ -5,13 +5,19 @@ import Foundation
 ///
 /// Instead of opening hundreds of thousands of directories, this asks the
 /// kernel to walk the volume's catalog B-tree directly and stream back
-/// every file and directory with its name, IDs and allocated size — the
-/// technique DaisyDisk-class scanners use. The flat entry stream is then
-/// reassembled into a `FileTree` from the (fileID, parentID) pairs.
+/// every file and directory with its name, IDs and allocated size. The
+/// flat entry stream is then reassembled into a `FileTree` from the
+/// (fileID, parentID) pairs.
 ///
-/// Only works on volumes advertising `VOL_CAP_INT_SEARCHFS` (APFS, HFS+)
-/// and only ever scans a whole volume; callers fall back to
-/// `TraversalScanner` on any failure.
+/// Used for HFS+ volumes, where the catalog walk is roughly an order of
+/// magnitude faster than directory traversal. On APFS it measures ~2x
+/// SLOWER than parallel `getattrlistbulk` traversal (~150k entries/s vs
+/// ~320k/s on a 4M-entry volume) and any concurrent volume mutation
+/// aborts it with EBUSY, so `ScanEngine` prefers traversal there.
+///
+/// Only works on volumes advertising `VOL_CAP_INT_SEARCHFS` and only ever
+/// scans a whole volume; callers fall back to `TraversalScanner` on any
+/// failure.
 enum CatalogScanner {
 
     /// HFS+ and APFS both use inode 2 for the volume's root directory.
