@@ -26,6 +26,11 @@ final class DiskAnalyzer {
     // MARK: - Observable UI state
 
     private(set) var rootItems: [FolderItem] = []
+    /// Depth-limited tree of the viewed directory for the chart views,
+    /// rebuilt from the same (partial or final) snapshot as `rootItems`.
+    /// Nil until the first snapshot arrives (charts show a placeholder
+    /// during the skeleton phase — a shallow listing has no hierarchy).
+    private(set) var chartRoot: ChartItem?
     private(set) var isScanning = false
     /// True when a scan of "/" was refused because Full Disk Access is
     /// missing.
@@ -88,6 +93,7 @@ final class DiskAnalyzer {
         resultIsPartial = false
         lastAppliedPartialSequence = 0
         rootItems = []
+        chartRoot = nil
         let startDate = Date()
 
         // Instant skeleton: one shallow directory read shows the top-level
@@ -141,6 +147,7 @@ final class DiskAnalyzer {
         guard let node = nodeID(forPath: path) else { return false }
         currentPath = path
         rootItems = folderItems(for: node, limit: displayLimit(for: path))
+        rebuildChartRoot(for: node)
         return true
     }
 
@@ -180,10 +187,23 @@ final class DiskAnalyzer {
     private func refreshDisplayedItems() {
         if let node = nodeID(forPath: currentPath) {
             rootItems = folderItems(for: node, limit: displayLimit(for: currentPath))
+            rebuildChartRoot(for: node)
         } else if !resultIsPartial {
             currentPath = scanRootPath
             rootItems = folderItems(for: FileTree.rootID, limit: nil)
+            rebuildChartRoot(for: FileTree.rootID)
         }
+    }
+
+    private func rebuildChartRoot(for node: FileTree.NodeID) {
+        guard let tree = scanResult?.tree, tree.isDirectory(node) else {
+            chartRoot = nil
+            return
+        }
+        let name = node == FileTree.rootID
+            ? currentPath
+            : (currentPath as NSString).lastPathComponent
+        chartRoot = ChartItem.build(from: tree, at: node, name: name, path: currentPath)
     }
 
     // MARK: - Private helpers

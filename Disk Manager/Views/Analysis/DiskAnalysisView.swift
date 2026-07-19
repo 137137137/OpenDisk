@@ -1,12 +1,38 @@
 import AppKit
 import SwiftUI
 
+/// How the current directory's usage is displayed.
+enum AnalysisDisplayMode: String, CaseIterable, Identifiable {
+    case list
+    case rings
+    case treemap
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .list: "list.bullet"
+        case .rings: "chart.pie"
+        case .treemap: "square.grid.2x2"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .list: "List"
+        case .rings: "Rings"
+        case .treemap: "Treemap"
+        }
+    }
+}
+
 /// Detail pane for a selected device: scans it, streams results live, and
-/// hosts breadcrumb navigation through them.
+/// hosts breadcrumb navigation through them, as a list, a rings chart or a
+/// treemap.
 ///
 /// There is no separate "scanning" screen — results render from the first
 /// instant (a skeleton of top-level names, then live sizes) and the scan's
-/// progress lives in the results view's bottom bar.
+/// progress lives in the shared bottom status bar.
 struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
@@ -16,6 +42,7 @@ struct DiskAnalysisView: View {
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
+    @AppStorage("analysisDisplayMode") private var displayModeRaw = AnalysisDisplayMode.list.rawValue
     private let totalUsedDiskSpace: Int64
 
     init(
@@ -29,6 +56,10 @@ struct DiskAnalysisView: View {
         self.totalUsedDiskSpace = totalUsedSpace
         self.onBack = onBack
         self._currentPath = State(initialValue: rootPath)
+    }
+
+    private var displayMode: AnalysisDisplayMode {
+        AnalysisDisplayMode(rawValue: displayModeRaw) ?? .list
     }
 
     var body: some View {
@@ -52,14 +83,16 @@ struct DiskAnalysisView: View {
             )
 
             if !analyzer.rootItems.isEmpty {
-                ScanResultsView(
-                    items: analyzer.rootItems,
-                    scanDuration: analyzer.scanDuration,
+                modePickerBar
+                content
+                ScanStatusBar(
                     isScanning: analyzer.isScanning,
                     progressFraction: progressFraction,
                     scanStatus: analyzer.statusDescription,
                     filesPerSecond: analyzer.filesPerSecond,
-                    onFolderTap: navigateToFolder
+                    scanDuration: analyzer.scanDuration,
+                    totalBytes: analyzer.rootItems.reduce(0) { $0 + $1.size },
+                    itemCount: analyzer.rootItems.count
                 )
             } else if analyzer.isScanning {
                 // Only visible for the moments before the skeleton lands.
@@ -80,6 +113,67 @@ struct DiskAnalysisView: View {
         .onDisappear {
             analyzer.cancelCurrentScan()
         }
+    }
+
+    // MARK: - Content modes
+
+    private var modePickerBar: some View {
+        HStack {
+            Spacer()
+            Picker("Display mode", selection: $displayModeRaw) {
+                ForEach(AnalysisDisplayMode.allCases) { mode in
+                    Label(mode.title, systemImage: mode.symbolName)
+                        .tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch displayMode {
+        case .list:
+            ScanResultsView(items: analyzer.rootItems, onFolderTap: navigateToFolder)
+
+        case .rings:
+            if let chartRoot = analyzer.chartRoot {
+                RingsChartView(
+                    root: chartRoot,
+                    onSelectDirectory: navigateToPath,
+                    onSelectCenter: goBack
+                )
+                .padding(8)
+            } else {
+                chartPlaceholder
+            }
+
+        case .treemap:
+            if let chartRoot = analyzer.chartRoot {
+                TreemapChartView(
+                    root: chartRoot,
+                    onSelectDirectory: navigateToPath
+                )
+                .padding(8)
+            } else {
+                chartPlaceholder
+            }
+        }
+    }
+
+    /// Charts need hierarchy; during the skeleton phase (before the first
+    /// scan snapshot) there is none yet.
+    private var chartPlaceholder: some View {
+        VStack {
+            Spacer()
+            ProgressView("Building chart…")
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     /// Fraction of the device's used space scanned so far, or nil (an
