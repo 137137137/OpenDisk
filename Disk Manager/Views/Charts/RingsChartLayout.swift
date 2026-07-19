@@ -27,6 +27,7 @@ enum RingsChartLayout {
         let depth: Int
         let fractionOfRoot: Double
         let hasHiddenChildren: Bool
+        let isHiddenSpace: Bool
         /// Radians; see the coordinate convention above.
         let startAngle: Double
         let sweep: Double
@@ -88,6 +89,7 @@ enum RingsChartLayout {
             isDirectory: item.isDirectory, depth: item.depth,
             fractionOfRoot: item.fractionOfRoot,
             hasHiddenChildren: item.hasHiddenChildren,
+            isHiddenSpace: item.isHiddenSpace,
             startAngle: startAngle, sweep: sweep,
             innerRadius: innerRadius, outerRadius: innerRadius + thickness,
             colorPosition: (startAngle + sweep / 2) / (2 * .pi) * 200

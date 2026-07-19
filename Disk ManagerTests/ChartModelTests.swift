@@ -92,6 +92,35 @@ struct ChartModelTests {
         }
     }
 
+    @Test("hidden space slice rescales real children and appends gray slice")
+    func hiddenSpaceSlice() {
+        let tree = makeTree()
+        let root = ChartItem.build(
+            from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T"
+        )
+        // Hidden space equal to the scanned total: everything halves.
+        let withHidden = root.appendingHiddenSpace(bytes: 1_000)
+
+        #expect(withHidden.size == 2_000)
+        let big = withHidden.children.first { $0.name == "big" }
+        #expect(big != nil)
+        if let big {
+            #expect(abs(big.relSize - 30) < 0.001)
+            #expect(abs(big.fractionOfRoot - 0.3) < 0.001)
+            // Deeper levels keep their share of the parent; only their
+            // share of the whole chart halves.
+            #expect(abs(big.children[0].relSize - (400.0 / 600.0 * 100)) < 0.001)
+            #expect(abs(big.children[0].fractionOfRoot - 0.2) < 0.001)
+        }
+
+        let hidden = withHidden.children.last
+        #expect(hidden?.isHiddenSpace == true)
+        #expect(hidden?.size == 1_000)
+        #expect(abs((hidden?.relSize ?? 0) - 50) < 0.001)
+        #expect(abs((hidden?.relStart ?? 0) - 50) < 0.001)
+        #expect(hidden?.isDirectory == false)
+    }
+
     @Test("palette: depth dims, highlight restores full brightness")
     func paletteBehavior() {
         let base = ChartPalette.fill(position: 50, depth: 1, highlighted: false)

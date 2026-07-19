@@ -31,6 +31,10 @@ final class DiskAnalyzer {
     /// Nil until the first snapshot arrives (charts show a placeholder
     /// during the skeleton phase — a shallow listing has no hierarchy).
     private(set) var chartRoot: ChartItem?
+    /// The gap between the volume's used space and what the scan saw,
+    /// measured after a completed volume-root scan. Shown (in the list
+    /// and as a gray chart slice) only at the scan root.
+    private(set) var hiddenSpace: HiddenSpaceInfo?
     private(set) var isScanning = false
     /// True when a scan of "/" was refused because Full Disk Access is
     /// missing.
@@ -94,6 +98,7 @@ final class DiskAnalyzer {
         lastAppliedPartialSequence = 0
         rootItems = []
         chartRoot = nil
+        hiddenSpace = nil
         let startDate = Date()
 
         // Instant skeleton: one shallow directory read shows the top-level
@@ -126,6 +131,30 @@ final class DiskAnalyzer {
         refreshDisplayedItems()
         scanDuration = Date().timeIntervalSince(startDate)
         isScanning = false
+        probeHiddenSpace(for: result, generation: generation)
+    }
+
+    /// Whether the currently viewed directory should show the hidden-space
+    /// entry (only the scan root of a volume accounts for whole-volume
+    /// used space).
+    var hiddenSpaceForCurrentDirectory: HiddenSpaceInfo? {
+        currentPath == scanRootPath ? hiddenSpace : nil
+    }
+
+    /// Measures purgeable space, snapshots and the unscanned remainder
+    /// once a volume-root scan finishes.
+    private func probeHiddenSpace(for result: ScanResult, generation: Int) {
+        let path = result.rootPath
+        let scanned = result.tree.size(of: FileTree.rootID)
+        Task { [weak self] in
+            let info = await Task.detached(priority: .utility) { () -> HiddenSpaceInfo? in
+                guard path == "/" || VolumeAttributes.isVolumeRoot(path) else { return nil }
+                return HiddenSpaceProbe.probe(volumePath: path, scannedBytes: scanned)
+            }.value
+            guard let self, self.generation == generation, let info else { return }
+            self.hiddenSpace = info
+            self.refreshDisplayedItems()
+        }
     }
 
     /// Cancels a scan in flight, if any.
@@ -203,7 +232,11 @@ final class DiskAnalyzer {
         let name = node == FileTree.rootID
             ? currentPath
             : (currentPath as NSString).lastPathComponent
-        chartRoot = ChartItem.build(from: tree, at: node, name: name, path: currentPath)
+        var root = ChartItem.build(from: tree, at: node, name: name, path: currentPath)
+        if let hiddenSpace = hiddenSpaceForCurrentDirectory {
+            root = root.appendingHiddenSpace(bytes: hiddenSpace.totalBytes)
+        }
+        chartRoot = root
     }
 
     // MARK: - Private helpers

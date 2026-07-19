@@ -58,11 +58,13 @@ struct RingsChartView: View {
 
         for segment in layout.segments {
             let highlighted = segment.path == hoveredPath
-            let fill = ChartPalette.fill(
-                position: segment.colorPosition,
-                depth: segment.depth,
-                highlighted: highlighted
-            ).color
+            let fill = segment.isHiddenSpace
+                ? ChartPalette.hiddenSpaceFill(highlighted: highlighted).color
+                : ChartPalette.fill(
+                    position: segment.colorPosition,
+                    depth: segment.depth,
+                    highlighted: highlighted
+                ).color
 
             if segment.depth == 0 {
                 let disk = Path(ellipseIn: CGRect(

@@ -27,7 +27,14 @@ struct ChartItem: Equatable, Identifiable, Sendable {
     /// True when children exist but `maxDepth` cut them off; the rings
     /// chart marks such items with an outer "continues" edge.
     let hasHiddenChildren: Bool
+    /// Synthetic "hidden space" slice (purgeable pool, snapshots, unread
+    /// directories) rather than a real filesystem item; drawn gray and
+    /// not navigable.
+    var isHiddenSpace: Bool = false
     let children: [ChartItem]
+
+    /// Sentinel path for the synthetic hidden-space slice.
+    static let hiddenSpacePath = "::hidden-space"
 
     /// Levels shown below the root, matching baobab's MAX_DEPTH.
     static let maxDepth = 5
@@ -46,6 +53,46 @@ struct ChartItem: Equatable, Identifiable, Sendable {
         buildItem(
             tree: tree, node: node, name: name, path: path,
             depth: 0, relStart: 0, relSize: 100, fractionOfRoot: 1
+        )
+    }
+
+    /// A copy of this root with a synthetic "hidden space" slice appended
+    /// after the real children, which keep their proportions relative to
+    /// the enlarged total.
+    func appendingHiddenSpace(bytes: Int64) -> ChartItem {
+        guard depth == 0, bytes > 0 else { return self }
+        let newTotal = size + bytes
+        guard newTotal > 0 else { return self }
+
+        let factor = Double(size) / Double(newTotal)
+        let hiddenShare = Double(bytes) / Double(newTotal) * 100
+        var newChildren = children.map { $0.scaled(by: factor, rescaleShares: true) }
+        newChildren.append(ChartItem(
+            name: "hidden space", path: Self.hiddenSpacePath, size: bytes,
+            depth: 1, relStart: 100 - hiddenShare, relSize: hiddenShare,
+            fractionOfRoot: hiddenShare / 100,
+            isDirectory: false, hasHiddenChildren: false,
+            isHiddenSpace: true, children: []
+        ))
+        return ChartItem(
+            name: name, path: path, size: newTotal,
+            depth: 0, relStart: 0, relSize: 100, fractionOfRoot: 1,
+            isDirectory: isDirectory, hasHiddenChildren: hasHiddenChildren,
+            children: newChildren
+        )
+    }
+
+    /// Scales `fractionOfRoot` through the subtree; only the top level
+    /// also rescales its share of the (enlarged) parent.
+    private func scaled(by factor: Double, rescaleShares: Bool) -> ChartItem {
+        ChartItem(
+            name: name, path: path, size: size, depth: depth,
+            relStart: rescaleShares ? relStart * factor : relStart,
+            relSize: rescaleShares ? relSize * factor : relSize,
+            fractionOfRoot: fractionOfRoot * factor,
+            isDirectory: isDirectory, hasHiddenChildren: hasHiddenChildren,
+            isHiddenSpace: isHiddenSpace,
+            children: children.map { $0.scaled(by: factor, rescaleShares: false) }
         )
     }
 

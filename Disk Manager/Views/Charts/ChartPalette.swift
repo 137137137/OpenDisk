@@ -29,6 +29,19 @@ enum ChartPalette {
     static let level = RGB(red: 0xD3 / 255.0, green: 0xD6 / 255.0, blue: 0xD1 / 255.0)
     static let levelHighlighted = RGB(red: 0xE0 / 255.0, green: 0xE2 / 255.0, blue: 0xDD / 255.0)
 
+    /// Muted gray for the synthetic "hidden space" slice, visually apart
+    /// from the real-folder hues.
+    static let hiddenSpace = RGB(red: 0.58, green: 0.57, blue: 0.62)
+
+    static func hiddenSpaceFill(highlighted: Bool) -> RGB {
+        guard highlighted else { return hiddenSpace }
+        return RGB(
+            red: min(1, hiddenSpace.red * 1.18),
+            green: min(1, hiddenSpace.green * 1.18),
+            blue: min(1, hiddenSpace.blue * 1.18)
+        )
+    }
+
     /// Positions span 0..200, two palette steps per 100 — a full trip
     /// around the six hues over the chart's extent.
     private static let bandWidth = 100.0 / 3.0

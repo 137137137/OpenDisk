@@ -46,7 +46,11 @@ struct DiskAnalysisView: View {
                 // stays user-draggable.
                 GeometryReader { geometry in
                     HSplitView {
-                        ScanResultsView(items: analyzer.rootItems, onFolderTap: navigateToFolder)
+                        ScanResultsView(
+                            items: analyzer.rootItems,
+                            hiddenSpace: analyzer.hiddenSpaceForCurrentDirectory,
+                            onFolderTap: navigateToFolder
+                        )
                             .frame(
                                 minWidth: 320,
                                 idealWidth: geometry.size.width * 0.6,
