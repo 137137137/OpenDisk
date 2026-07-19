@@ -10,18 +10,19 @@ struct PathComponent: Identifiable {
     var id: String { path }
 }
 
-/// Full-width glass navigation bar: back button, scrolling breadcrumb path,
-/// refresh button.
+/// Finder-style path bar in the content layer: clickable segments from the
+/// scan root to the current folder. Navigation *controls* (back, refresh)
+/// live in the window toolbar, not here, and the bar carries no custom
+/// background — per the platform guidance, glass and bar effects belong to
+/// the system's navigation layer.
 struct BreadcrumbBar: View {
     let currentPath: String
     let rootPath: String
     /// Display name of the root segment (device name).
     let rootName: String
     let onNavigate: (String) -> Void
-    let onBack: () -> Void
     /// Tapping the root segment while already at the root.
     let onRootTap: () -> Void
-    let onRefresh: () -> Void
 
     @State private var hoveredComponent: String?
 
@@ -51,28 +52,10 @@ struct BreadcrumbBar: View {
         return result
     }
 
-    private var canGoBack: Bool {
-        currentPath != rootPath
-    }
-
     var body: some View {
-        HStack(spacing: 0) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(canGoBack ? .primary : .tertiary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!canGoBack)
-
-            Divider()
-                .frame(height: 20)
-                .padding(.horizontal, 8)
-
+        VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     ForEach(pathComponents) { component in
                         BreadcrumbSegment(
                             component: component,
@@ -96,25 +79,12 @@ struct BreadcrumbBar: View {
                         }
                     }
                 }
-                .padding(.trailing, 16)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
 
-            Spacer(minLength: 0)
-
-            Button(action: onRefresh) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("r", modifiers: .command)
+            Divider()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity)
-        .glassEffect()
     }
 }
 
@@ -134,19 +104,18 @@ private struct BreadcrumbSegment: View {
                 }
 
                 Text(component.name)
-                    .font(component.isLast ? .body.weight(.semibold) : .body)
+                    .font(component.isLast ? .callout.weight(.semibold) : .callout)
                     .foregroundStyle(component.isLast ? .primary : .secondary)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .background {
                 if isHovered && !component.isLast {
-                    Capsule()
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(.quaternary)
                 }
             }
-            .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.15), value: isHovered)
@@ -154,27 +123,12 @@ private struct BreadcrumbSegment: View {
 }
 
 #Preview {
-    VStack(spacing: 20) {
-        BreadcrumbBar(
-            currentPath: "/",
-            rootPath: "/",
-            rootName: "Computer",
-            onNavigate: { _ in },
-            onBack: {},
-            onRootTap: {},
-            onRefresh: {}
-        )
-
-        BreadcrumbBar(
-            currentPath: "/Volumes/External/Documents/Projects",
-            rootPath: "/Volumes/External",
-            rootName: "External",
-            onNavigate: { _ in },
-            onBack: {},
-            onRootTap: {},
-            onRefresh: {}
-        )
-    }
-    .padding()
+    BreadcrumbBar(
+        currentPath: "/Volumes/External/Documents/Projects",
+        rootPath: "/Volumes/External",
+        rootName: "External",
+        onNavigate: { _ in },
+        onRootTap: {}
+    )
     .frame(width: 600)
 }

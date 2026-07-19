@@ -14,7 +14,6 @@ struct DiskManagerApp: App {
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1000, height: 700)
         .commands {
-            SidebarCommands()
             ToolbarCommands()
         }
 

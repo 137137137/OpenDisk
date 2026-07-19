@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Which chart the right-hand pane shows (the list is always visible).
@@ -17,25 +16,25 @@ enum ChartKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .rings: "Rings Chart"
-        case .treemap: "Treemap Chart"
+        case .rings: "Rings"
+        case .treemap: "Treemap"
         }
     }
 }
 
-/// Detail pane for a selected device: scans it, streams results live, and
-/// hosts breadcrumb navigation through them — a baobab-style split view
-/// with the folder list on the left and a rings or treemap chart on the
-/// right, both updating as the scan runs.
+/// Analysis screen for one disk (pushed from the disk picker): scans it,
+/// streams results live, and hosts breadcrumb navigation through them —
+/// a split view with the folder list on the left and a rings or treemap
+/// chart on the right, both updating as the scan runs.
 ///
-/// There is no separate "scanning" screen — results render from the first
-/// instant (a skeleton of top-level names, then live sizes) and the scan's
-/// progress lives in the shared bottom status bar.
+/// Navigation chrome is standard: the stack's back button returns to the
+/// disk picker, refresh lives in the toolbar, and the breadcrumb path bar
+/// sits in the content layer with no custom background.
 struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
-    let onBack: () -> Void
 
+    @Environment(\.dismiss) private var dismiss
     @State private var analyzer = DiskAnalyzer()
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
@@ -46,13 +45,11 @@ struct DiskAnalysisView: View {
     init(
         rootPath: String,
         rootName: String = "Computer",
-        totalUsedSpace: Int64 = 0,
-        onBack: @escaping () -> Void = {}
+        totalUsedSpace: Int64 = 0
     ) {
         self.rootPath = rootPath
         self.rootName = rootName
         self.totalUsedDiskSpace = totalUsedSpace
-        self.onBack = onBack
         self._currentPath = State(initialValue: rootPath)
     }
 
@@ -67,17 +64,7 @@ struct DiskAnalysisView: View {
                 rootPath: rootPath,
                 rootName: rootName,
                 onNavigate: navigateToPath,
-                onBack: goBack,
-                onRootTap: {
-                    if currentPath == rootPath {
-                        onBack()
-                    } else {
-                        navigateToPath(rootPath)
-                    }
-                },
-                onRefresh: {
-                    Task { await analyzer.scanDirectory(currentPath) }
-                }
+                onRootTap: { dismiss() }
             )
 
             if !analyzer.rootItems.isEmpty {
@@ -121,6 +108,16 @@ struct DiskAnalysisView: View {
                 Spacer()
             }
         }
+        .navigationTitle(rootName)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    Task { await analyzer.scanDirectory(currentPath) }
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .help("Rescan the current folder")
+            }
+        }
         .onAppear {
             guard !hasInitiallyScanned else { return }
             hasInitiallyScanned = true
@@ -135,7 +132,7 @@ struct DiskAnalysisView: View {
 
     @ViewBuilder
     private var chartPane: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .bottom) {
             Group {
                 if let chartRoot = analyzer.chartRoot {
                     switch chartKind {
@@ -161,31 +158,24 @@ struct DiskAnalysisView: View {
             .padding(8)
 
             chartKindSwitcher
-                .padding(12)
+                .padding(.bottom, 12)
         }
     }
 
-    /// Baobab-style chart switcher in the pane's bottom-right corner.
+    /// Standard segmented control floating over the chart; Liquid Glass
+    /// on this one functional element keeps it legible above the colors.
     private var chartKindSwitcher: some View {
-        HStack(spacing: 2) {
+        Picker("Chart", selection: $chartKindRaw) {
             ForEach(ChartKind.allCases) { kind in
-                Button {
-                    chartKindRaw = kind.rawValue
-                } label: {
-                    Label(kind.title, systemImage: kind.symbolName)
-                        .font(.caption)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            chartKind == kind ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear),
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        )
-                }
-                .buttonStyle(.plain)
+                Label(kind.title, systemImage: kind.symbolName)
+                    .tag(kind.rawValue)
             }
         }
-        .padding(3)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .padding(6)
+        .glassEffect()
     }
 
     /// Fraction of the device's used space scanned so far, or nil (an
@@ -214,7 +204,7 @@ struct DiskAnalysisView: View {
             ContentUnavailableView(
                 "Ready to analyze",
                 systemImage: "folder",
-                description: Text("Select a device to begin scanning")
+                description: Text("Select a disk to begin scanning")
             )
         }
     }
@@ -262,5 +252,7 @@ struct DiskAnalysisView: View {
 }
 
 #Preview {
-    DiskAnalysisView(rootPath: "/", totalUsedSpace: 500_000_000_000)
+    NavigationStack {
+        DiskAnalysisView(rootPath: "/", totalUsedSpace: 500_000_000_000)
+    }
 }

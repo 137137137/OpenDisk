@@ -1,38 +1,22 @@
 import SwiftUI
 
+/// Root navigation: a disk-picker screen, pushing the analysis screen for
+/// the selected disk. `NavigationStack` provides the system back button,
+/// title handling and Liquid Glass toolbar treatment.
 struct ContentView: View {
     @State private var deviceMonitor = DeviceMonitor()
-    @State private var selectedDevice: DeviceInfo?
 
     var body: some View {
-        NavigationSplitView {
-            List(deviceMonitor.devices, selection: $selectedDevice) { device in
-                DeviceRow(device: device)
-                    .tag(device)
-            }
-            .listStyle(.sidebar)
-            .navigationTitle("Devices")
-        } detail: {
-            if let selectedDevice {
-                DiskAnalysisView(
-                    rootPath: selectedDevice.path,
-                    rootName: selectedDevice.name,
-                    totalUsedSpace: selectedDevice.usedBytes
-                ) {
-                    self.selectedDevice = nil
+        NavigationStack {
+            DevicePickerView(devices: deviceMonitor.devices)
+                .navigationDestination(for: DeviceInfo.self) { device in
+                    DiskAnalysisView(
+                        rootPath: device.path,
+                        rootName: device.name,
+                        totalUsedSpace: device.usedBytes
+                    )
                 }
-                // Re-key the view per device so its navigation state resets
-                // when the selection jumps directly between devices.
-                .id(selectedDevice.id)
-            } else {
-                ContentUnavailableView(
-                    "Select a device to analyze",
-                    systemImage: "externaldrive",
-                    description: Text("Choose a device from the sidebar to view its disk usage")
-                )
-            }
         }
-        .navigationSplitViewStyle(.balanced)
     }
 }
 
