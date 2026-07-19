@@ -144,7 +144,7 @@ struct RingsChartView: View {
 
         let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40)
         let glyphs = segment.name.map { character in
-            context.resolve(
+d
                 Text(String(character)).font(.caption2)
                     .foregroundStyle(.black.opacity(0.75))
             )
