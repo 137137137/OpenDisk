@@ -36,9 +36,10 @@ struct DevicePickerView: View {
                 chooseFolder()
             }
         }
-        .frame(maxWidth: 520)
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Fixed compact width, natural height: the window (sized to
+        // content) fits snugly around the disk list, DaisyDisk-style.
+        .frame(width: 460)
+        .padding(20)
         .navigationTitle("Select a Disk")
     }
 

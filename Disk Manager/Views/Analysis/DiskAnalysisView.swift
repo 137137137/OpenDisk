@@ -108,6 +108,13 @@ struct DiskAnalysisView: View {
                 Spacer()
             }
         }
+        // With window resizability tracking content size, these bounds
+        // expand the window when this screen is pushed and let the user
+        // resize it freely.
+        .frame(
+            minWidth: 900, idealWidth: 1100, maxWidth: .infinity,
+            minHeight: 600, idealHeight: 720, maxHeight: .infinity
+        )
         .navigationTitle(rootName)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

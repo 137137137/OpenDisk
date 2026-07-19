@@ -8,11 +8,12 @@ struct DiskManagerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 800, minHeight: 600)
                 .onAppear(perform: checkFullDiskAccessAtStartup)
         }
         .windowToolbarStyle(.unified)
-        .defaultSize(width: 1000, height: 700)
+        // The window tracks each screen's content size: compact around the
+        // disk picker, expanding when the analysis screen is pushed.
+        .windowResizability(.contentSize)
         .commands {
             ToolbarCommands()
         }
