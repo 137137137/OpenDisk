@@ -127,11 +127,10 @@ struct RingsChartView: View {
         return path
     }
 
-    /// Labels the larger sectors with text curved along the ring, glyph by
+    /// Names the larger sectors with text curved along the ring, glyph by
     /// glyph at the sector's mid-radius — so a label uses the space the
     /// arc actually offers instead of spilling straight across ring
-    /// boundaries. The richest label that fits wins: name with size and
-    /// share, then name with size, then just the name.
+    /// boundaries. Drawn only when the whole name fits.
     private func drawSectorLabel(
         for segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,
@@ -142,24 +141,11 @@ struct RingsChartView: View {
         let arcLength = CGFloat(segment.sweep) * midRadius
         guard thickness >= 12, arcLength >= 30 else { return }
 
-        let size = ByteFormatter.formatFileSize(segment.size)
-        let percent = segment.fractionOfRoot >= 0.095
-            ? String(format: "%.0f%%", segment.fractionOfRoot * 100)
-            : String(format: "%.1f%%", segment.fractionOfRoot * 100)
-        let candidates = [
-            "\(segment.name) — \(size) · \(percent)",
-            "\(segment.name) — \(size)",
-            segment.name,
-        ]
-        for candidate in candidates {
-            if drawCurvedText(
-                candidate, for: segment, midRadius: midRadius,
-                thickness: thickness, arcLength: arcLength,
-                layout: layout, in: &context
-            ) {
-                return
-            }
-        }
+        _ = drawCurvedText(
+            segment.name, for: segment, midRadius: midRadius,
+            thickness: thickness, arcLength: arcLength,
+            layout: layout, in: &context
+        )
     }
 
     /// Draws `text` curved along the sector's mid-radius arc. Returns
