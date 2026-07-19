@@ -127,11 +127,11 @@ struct RingsChartView: View {
         return path
     }
 
-    /// Names the larger sectors with text curved along the ring, glyph by
+    /// Labels the larger sectors with text curved along the ring, glyph by
     /// glyph at the sector's mid-radius — so a label uses the space the
     /// arc actually offers instead of spilling straight across ring
-    /// boundaries. Drawn only when the whole name fits along the arc and
-    /// within the ring's thickness.
+    /// boundaries. The richest label that fits wins: name with size and
+    /// share, then name with size, then just the name.
     private func drawSectorLabel(
         for segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,
@@ -142,24 +142,55 @@ struct RingsChartView: View {
         let arcLength = CGFloat(segment.sweep) * midRadius
         guard thickness >= 12, arcLength >= 30 else { return }
 
+        let size = ByteFormatter.formatFileSize(segment.size)
+        let percent = segment.fractionOfRoot >= 0.095
+            ? String(format: "%.0f%%", segment.fractionOfRoot * 100)
+            : String(format: "%.1f%%", segment.fractionOfRoot * 100)
+        let candidates = [
+            "\(segment.name) — \(size) · \(percent)",
+            "\(segment.name) — \(size)",
+            segment.name,
+        ]
+        for candidate in candidates {
+            if drawCurvedText(
+                candidate, for: segment, midRadius: midRadius,
+                thickness: thickness, arcLength: arcLength,
+                layout: layout, in: &context
+            ) {
+                return
+            }
+        }
+    }
+
+    /// Draws `text` curved along the sector's mid-radius arc. Returns
+    /// false without drawing when it does not fit.
+    private func drawCurvedText(
+        _ text: String,
+        for segment: RingsChartLayout.Segment,
+        midRadius: CGFloat,
+        thickness: CGFloat,
+        arcLength: CGFloat,
+        layout: RingsChartLayout.Layout,
+        in context: inout GraphicsContext
+    ) -> Bool {
         let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40)
 
-        // Build resolved glyphs one-by-one to avoid resolving and measuring on Text directly.
         var glyphs: [GraphicsContext.ResolvedText] = []
-        glyphs.reserveCapacity(segment.name.count)
-        for character in segment.name {
-            let resolved = context.resolve(
+        glyphs.reserveCapacity(text.count)
+        for character in text {
+            glyphs.append(context.resolve(
                 Text(String(character))
                     .font(.caption2)
                     .foregroundColor(.black.opacity(0.75))
-            )
-            glyphs.append(resolved)
+            ))
         }
 
         let glyphWidths: [CGFloat] = glyphs.map { $0.measure(in: unbounded).width }
         let totalWidth: CGFloat = glyphWidths.reduce(0, +)
         let lineHeight: CGFloat = glyphs.first?.measure(in: unbounded).height ?? 12
-        guard totalWidth <= arcLength * 0.85, lineHeight <= thickness * 0.85 else { return }
+        guard totalWidth <= arcLength * 0.85, lineHeight <= thickness * 0.85 else {
+            return false
+        }
 
         // In the lower half of the circle, glyphs run along decreasing
         // angle with flipped rotation so the text never reads upside down
@@ -181,6 +212,7 @@ struct RingsChartView: View {
             glyphContext.draw(glyph, at: .zero)
             cursor += readsReversed ? -glyphAngle : glyphAngle
         }
+        return true
     }
 
     private func drawCenterLabel(
