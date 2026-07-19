@@ -92,35 +92,6 @@ struct ChartModelTests {
         }
     }
 
-    @Test("treemap layout: children nest inside parents, siblings disjoint")
-    func treemapGeometry() {
-        let tree = makeTree()
-        let root = ChartItem.build(
-            from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T"
-        )
-        let bounds = CGRect(x: 0, y: 0, width: 600, height: 400)
-        let layout = TreemapChartLayout.layout(root: root, in: bounds)
-
-        for block in layout.blocks {
-            #expect(bounds.insetBy(dx: -0.5, dy: -0.5).contains(block.rect))
-        }
-
-        let big = layout.blocks.first { $0.name == "big" }
-        let small = layout.blocks.first { $0.name == "small" }
-        #expect(big != nil && small != nil)
-        if let big, let small {
-            #expect(!big.rect.intersects(small.rect))
-            #expect(!big.isLeafBlock)
-            // Depth-1 blocks split the root's width proportionally.
-            #expect(abs(big.rect.width / (bounds.width - TreemapChartLayout.itemPadding) - 0.6) < 0.02)
-        }
-        if let big, let a = layout.blocks.first(where: { $0.name == "a.bin" }) {
-            #expect(big.rect.insetBy(dx: -0.5, dy: -0.5).contains(a.rect))
-            #expect(a.isLeafBlock)
-            #expect(layout.block(at: CGPoint(x: a.rect.midX, y: a.rect.midY))?.name == "a.bin")
-        }
-    }
-
     @Test("palette: depth dims, highlight restores full brightness")
     func paletteBehavior() {
         let base = ChartPalette.fill(position: 50, depth: 1, highlighted: false)

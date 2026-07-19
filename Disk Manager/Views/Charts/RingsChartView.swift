@@ -80,6 +80,7 @@ struct RingsChartView: View {
             let sector = sectorPath(for: segment, center: layout.center)
             context.fill(sector, with: .color(fill))
             context.stroke(sector, with: border, lineWidth: RingsChartLayout.borderWidth)
+            drawSectorLabel(for: segment, layout: layout, in: &context)
 
             if segment.hasHiddenChildren {
                 // Baobab marks depth-limited directories with a short edge
@@ -122,6 +123,35 @@ struct RingsChartView: View {
         )
         path.closeSubpath()
         return path
+    }
+
+    /// Names the larger sectors in place. A label is drawn only when it
+    /// fits inside the sector: within the ring's thickness vertically and
+    /// the sector's chord at mid-radius horizontally.
+    private func drawSectorLabel(
+        for segment: RingsChartLayout.Segment,
+        layout: RingsChartLayout.Layout,
+        in context: inout GraphicsContext
+    ) {
+        let midRadius = (segment.innerRadius + segment.outerRadius) / 2
+        let chord = 2 * midRadius * sin(min(segment.sweep, .pi) / 2)
+        let maxWidth = chord * 0.9
+        let maxHeight = (segment.outerRadius - segment.innerRadius) * 0.85
+        guard maxWidth >= 28, maxHeight >= 11 else { return }
+
+        let label = context.resolve(
+            Text(segment.name).font(.caption2)
+                .foregroundStyle(.black.opacity(0.75))
+        )
+        // Measure single-line: a name that only fits by wrapping is noise.
+        let labelSize = label.measure(in: CGSize(width: .infinity, height: 40))
+        guard labelSize.width <= maxWidth, labelSize.height <= maxHeight else { return }
+
+        let angle = segment.startAngle + segment.sweep / 2
+        context.draw(label, at: CGPoint(
+            x: layout.center.x + cos(angle) * midRadius,
+            y: layout.center.y + sin(angle) * midRadius
+        ))
     }
 
     private func drawCenterLabel(

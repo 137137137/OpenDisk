@@ -1,12 +1,12 @@
 import Foundation
 
-/// One node of the chart model shared by the rings and treemap views: a
-/// depth-limited, noise-filtered slice of a scan's `FileTree`.
+/// One node of the rings chart's model: a depth-limited, noise-filtered
+/// slice of a scan's `FileTree`.
 ///
 /// Geometry-independent: `relStart`/`relSize` are percentages within the
-/// parent, which the rings chart maps to angles and the treemap maps to
-/// lengths. The design (depth limit, thresholds, proportional layout)
-/// follows GNOME baobab's charts; the implementation is original Swift.
+/// parent, which the rings chart maps to angles. The design (depth limit,
+/// thresholds, proportional layout) follows GNOME baobab's chart; the
+/// implementation is original Swift.
 struct ChartItem: Equatable, Identifiable, Sendable {
     /// Paths are stable across successive live snapshots, so hover state
     /// and SwiftUI diffing can track an item while its size streams in.
@@ -33,7 +33,7 @@ struct ChartItem: Equatable, Identifiable, Sendable {
     static let maxDepth = 5
     /// Items below this share of the whole chart are dropped at build
     /// time — slightly finer than either view's own drawing threshold
-    /// (rings: 0.03 rad ≈ 0.48% of the circle; treemap: 3 px).
+    /// (the rings chart hides sweeps under 0.03 rad ≈ 0.48% of the circle).
     static let minVisibleFraction = 0.0015
 
     /// Builds the chart tree for the directory `node` of `tree`.

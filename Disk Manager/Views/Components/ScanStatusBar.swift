@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Bottom bar shared by every display mode (list, rings, treemap):
+/// Bottom bar under the analysis split view:
 /// live progress + throughput while a scan runs, totals and duration once
 /// it finishes.
 struct ScanStatusBar: View {

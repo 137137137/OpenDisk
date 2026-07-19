@@ -1,31 +1,9 @@
 import SwiftUI
 
-/// Which chart the right-hand pane shows (the list is always visible).
-enum ChartKind: String, CaseIterable, Identifiable {
-    case rings
-    case treemap
-
-    var id: String { rawValue }
-
-    var symbolName: String {
-        switch self {
-        case .rings: "chart.pie"
-        case .treemap: "square.grid.2x2"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .rings: "Rings"
-        case .treemap: "Treemap"
-        }
-    }
-}
-
 /// Analysis screen for one disk (pushed from the disk picker): scans it,
 /// streams results live, and hosts breadcrumb navigation through them —
-/// a split view with the folder list on the left and a rings or treemap
-/// chart on the right, both updating as the scan runs.
+/// a split view with the folder list on the left and the rings chart on
+/// the right, both updating as the scan runs.
 ///
 /// Navigation chrome is standard: the stack's back button returns to the
 /// disk picker, refresh lives in the toolbar, and the breadcrumb path bar
@@ -39,7 +17,6 @@ struct DiskAnalysisView: View {
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
-    @AppStorage("chartKind") private var chartKindRaw = ChartKind.rings.rawValue
     private let totalUsedDiskSpace: Int64
 
     init(
@@ -51,10 +28,6 @@ struct DiskAnalysisView: View {
         self.rootName = rootName
         self.totalUsedDiskSpace = totalUsedSpace
         self._currentPath = State(initialValue: rootPath)
-    }
-
-    private var chartKind: ChartKind {
-        ChartKind(rawValue: chartKindRaw) ?? .rings
     }
 
     var body: some View {
@@ -139,50 +112,21 @@ struct DiskAnalysisView: View {
 
     @ViewBuilder
     private var chartPane: some View {
-        ZStack(alignment: .bottom) {
-            Group {
-                if let chartRoot = analyzer.chartRoot {
-                    switch chartKind {
-                    case .rings:
-                        RingsChartView(
-                            root: chartRoot,
-                            onSelectDirectory: navigateToPath,
-                            onSelectCenter: goBack
-                        )
-                    case .treemap:
-                        TreemapChartView(
-                            root: chartRoot,
-                            onSelectDirectory: navigateToPath
-                        )
-                    }
-                } else {
-                    // Charts need hierarchy; during the skeleton phase
-                    // (before the first scan snapshot) there is none yet.
-                    ProgressView("Building chart…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .padding(8)
-
-            chartKindSwitcher
-                .padding(.bottom, 12)
-        }
-    }
-
-    /// Standard segmented control floating over the chart; Liquid Glass
-    /// on this one functional element keeps it legible above the colors.
-    private var chartKindSwitcher: some View {
-        Picker("Chart", selection: $chartKindRaw) {
-            ForEach(ChartKind.allCases) { kind in
-                Label(kind.title, systemImage: kind.symbolName)
-                    .tag(kind.rawValue)
+        Group {
+            if let chartRoot = analyzer.chartRoot {
+                RingsChartView(
+                    root: chartRoot,
+                    onSelectDirectory: navigateToPath,
+                    onSelectCenter: goBack
+                )
+            } else {
+                // The chart needs hierarchy; during the skeleton phase
+                // (before the first scan snapshot) there is none yet.
+                ProgressView("Building chart…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-        .padding(6)
-        .glassEffect()
+        .padding(8)
     }
 
     /// Fraction of the device's used space scanned so far, or nil (an
