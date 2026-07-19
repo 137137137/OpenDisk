@@ -71,7 +71,10 @@ struct DiskAnalysisView: View {
                     scanStatus: analyzer.statusDescription,
                     filesPerSecond: analyzer.filesPerSecond,
                     scanDuration: analyzer.scanDuration,
-                    totalBytes: analyzer.rootItems.reduce(0) { $0 + $1.size },
+                    // At the scan root, include hidden space so the total
+                    // matches the volume's reported used space.
+                    totalBytes: analyzer.rootItems.reduce(0) { $0 + $1.size }
+                        + (analyzer.hiddenSpaceForCurrentDirectory?.totalBytes ?? 0),
                     itemCount: analyzer.rootItems.count
                 )
             } else if analyzer.isScanning {

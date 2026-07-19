@@ -99,7 +99,7 @@ private struct HiddenSpaceDetails: View {
             detailSection(
                 title: "Purgeable Space",
                 amount: ByteFormatter.formatFileSize(info.purgeableBytes),
-                explanation: "Caches and temporary system data — including local Time Machine snapshots — that macOS frees automatically whenever an app needs the room. No action is required; the system reclaims it on demand."
+                explanation: "Caches and temporary system data — including local Time Machine snapshots — that macOS frees automatically whenever an app needs the room. No action is required; the system reclaims it on demand. Part of this pool overlaps with files the scan already counted, so it can be larger than the hidden total."
             )
 
             detailSection(

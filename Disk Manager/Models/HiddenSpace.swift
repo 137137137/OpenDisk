@@ -41,9 +41,13 @@ enum HiddenSpaceProbe {
             purgeable = max(0, important - Int64(available))
         }
 
+        // Purgeable is reported raw, not clamped to the hidden gap: the
+        // purgeable pool overlaps with files the scan already counted
+        // (caches are ordinary files), so it can legitimately exceed the
+        // unscanned remainder.
         return HiddenSpaceInfo(
             totalBytes: hidden,
-            purgeableBytes: min(purgeable, hidden),
+            purgeableBytes: purgeable,
             snapshotCount: localSnapshotCount(volumePath: volumePath)
         )
     }
