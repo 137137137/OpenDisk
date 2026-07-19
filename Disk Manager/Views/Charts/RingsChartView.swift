@@ -143,15 +143,22 @@ struct RingsChartView: View {
         guard thickness >= 12, arcLength >= 30 else { return }
 
         let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40)
-        let glyphs = segment.name.map { character in
-d
-                Text(String(character)).font(.caption2)
-                    .foregroundStyle(.black.opacity(0.75))
+
+        // Build resolved glyphs one-by-one to avoid resolving and measuring on Text directly.
+        var glyphs: [GraphicsContext.ResolvedText] = []
+        glyphs.reserveCapacity(segment.name.count)
+        for character in segment.name {
+            let resolved = context.resolve(
+                Text(String(character))
+                    .font(.caption2)
+                    .foregroundColor(.black.opacity(0.75))
             )
+            glyphs.append(resolved)
         }
-        let glyphWidths = glyphs.map { $0.measure(in: unbounded).width }
-        let totalWidth = glyphWidths.reduce(0, +)
-        let lineHeight = glyphs.first?.measure(in: unbounded).height ?? 12
+
+        let glyphWidths: [CGFloat] = glyphs.map { $0.measure(in: unbounded).width }
+        let totalWidth: CGFloat = glyphWidths.reduce(0, +)
+        let lineHeight: CGFloat = glyphs.first?.measure(in: unbounded).height ?? 12
         guard totalWidth <= arcLength * 0.85, lineHeight <= thickness * 0.85 else { return }
 
         // In the lower half of the circle, glyphs run along decreasing
@@ -183,11 +190,11 @@ d
     ) {
         let name = context.resolve(
             Text(segment.name).font(.caption).fontWeight(.semibold)
-                .foregroundStyle(.black.opacity(0.75))
+                .foregroundColor(.black.opacity(0.75))
         )
         let size = context.resolve(
             Text(ByteFormatter.formatFileSize(segment.size)).font(.caption2)
-                .foregroundStyle(.black.opacity(0.6))
+                .foregroundColor(.black.opacity(0.6))
         )
         let maxWidth = segment.outerRadius * 1.7
         let nameSize = name.measure(in: CGSize(width: maxWidth, height: 40))
@@ -201,3 +208,4 @@ d
         context.draw(size, at: CGPoint(x: layout.center.x, y: layout.center.y + nameSize.height / 2 + 1))
     }
 }
+
