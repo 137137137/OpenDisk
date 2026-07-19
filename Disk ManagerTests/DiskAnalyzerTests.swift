@@ -12,9 +12,7 @@ private struct FakeScanner: DiskScanning {
     ) async -> ScanResult {
         onEvent(.progress(ScanProgress(
             scannedBytes: result.tree.size(of: FileTree.rootID),
-            totalUsedBytes: 1_000_000,
-            itemsScanned: result.tree.nodeCount,
-            currentPath: path
+            itemsScanned: result.tree.nodeCount
         )))
         return result
     }
@@ -157,7 +155,10 @@ struct DiskAnalyzerTests {
         try Data(count: 4_096).write(to: root.appendingPathComponent("file.bin"))
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let scanner = GatedScanner(partial: nil, final: .empty(rootPath: root.path))
+        let scanner = GatedScanner(
+            partial: nil,
+            final: ScanResult(rootPath: root.path, tree: FileTree(rootName: root.path))
+        )
         let analyzer = DiskAnalyzer(scanner: scanner)
 
         async let scanCompleted: Void = analyzer.scanDirectory(root.path)

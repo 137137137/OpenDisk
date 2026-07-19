@@ -18,13 +18,13 @@ struct FileTree: Sendable {
     static let noNode: NodeID = -1
 
     /// Per-node fixed-size storage; names live in the parallel `names`
-    /// array. 32 bytes per node.
+    /// array. Child counts are derived by walking the sibling chain — the
+    /// few places that need them touch at most ~100 visible rows.
     private struct Node: Sendable {
         var size: Int64
         var parent: NodeID
         var firstChild: NodeID
         var nextSibling: NodeID
-        var childCount: Int32
         var isDirectory: Bool
     }
 
@@ -37,7 +37,7 @@ struct FileTree: Sendable {
     init(rootName: String) {
         nodes = [Node(
             size: 0, parent: Self.noNode, firstChild: Self.noNode,
-            nextSibling: Self.noNode, childCount: 0, isDirectory: true
+            nextSibling: Self.noNode, isDirectory: true
         )]
         names = [rootName]
     }
@@ -66,7 +66,7 @@ struct FileTree: Sendable {
         let id = NodeID(nodes.count)
         nodes.append(Node(
             size: size, parent: Self.noNode, firstChild: Self.noNode,
-            nextSibling: Self.noNode, childCount: 0, isDirectory: isDirectory
+            nextSibling: Self.noNode, isDirectory: isDirectory
         ))
         names.append(name)
         return id
@@ -78,7 +78,6 @@ struct FileTree: Sendable {
         nodes[Int(id)].parent = parent
         nodes[Int(id)].nextSibling = nodes[Int(parent)].firstChild
         nodes[Int(parent)].firstChild = id
-        nodes[Int(parent)].childCount += 1
     }
 
     /// Unlinks every child of `parent`, leaving their subtrees as
@@ -94,7 +93,6 @@ struct FileTree: Sendable {
             current = next
         }
         nodes[Int(parent)].firstChild = Self.noNode
-        nodes[Int(parent)].childCount = 0
     }
 
     /// Unlinks the child named `name` from `parent`, excluding its whole
@@ -110,7 +108,6 @@ struct FileTree: Sendable {
                 } else {
                     nodes[Int(previous)].nextSibling = nodes[Int(current)].nextSibling
                 }
-                nodes[Int(parent)].childCount -= 1
                 nodes[Int(current)].parent = Self.noNode
                 nodes[Int(current)].nextSibling = Self.noNode
                 return current
@@ -119,6 +116,27 @@ struct FileTree: Sendable {
             current = nodes[Int(current)].nextSibling
         }
         return nil
+    }
+
+    /// Resolves a node from an absolute path against the scan root the
+    /// tree was built for. Every layer that maps paths back to nodes
+    /// (navigation, incremental updates) shares this one implementation.
+    func nodeID(forPath path: String, rootPath: String) -> NodeID? {
+        if path == rootPath { return Self.rootID }
+        let prefix = rootPath.directoryPrefix
+        guard path.hasPrefix(prefix) else { return nil }
+        return nodeID(atComponents: path.dropFirst(prefix.count).split(separator: "/"))
+    }
+
+    /// Children ordered the one way the app displays them — size
+    /// descending, name ascending on ties so successive live snapshots
+    /// never shuffle equal-sized rows. The list and the chart both use
+    /// this, keeping their orders identical by construction.
+    func childrenSortedForDisplay(of id: NodeID) -> [NodeID] {
+        children(of: id).sorted {
+            let (a, b) = (size(of: $0), size(of: $1))
+            return a == b ? name(of: $0) < name(of: $1) : a > b
+        }
     }
 
     // MARK: - Queries
@@ -131,11 +149,18 @@ struct FileTree: Sendable {
     func parent(of id: NodeID) -> NodeID { nodes[Int(id)].parent }
 
     /// Number of direct children (files and directories).
-    func childCount(of id: NodeID) -> Int { Int(nodes[Int(id)].childCount) }
+    func childCount(of id: NodeID) -> Int {
+        var count = 0
+        var current = nodes[Int(id)].firstChild
+        while current != Self.noNode {
+            count += 1
+            current = nodes[Int(current)].nextSibling
+        }
+        return count
+    }
 
     func children(of id: NodeID) -> [NodeID] {
         var result: [NodeID] = []
-        result.reserveCapacity(childCount(of: id))
         var current = nodes[Int(id)].firstChild
         while current != Self.noNode {
             result.append(current)
@@ -176,9 +201,7 @@ struct FileTree: Sendable {
             components.append(names[Int(current)])
             current = nodes[Int(current)].parent
         }
-        let rootName = names[0]
-        let prefix = rootName.hasSuffix("/") ? rootName : rootName + "/"
-        return prefix + components.reversed().joined(separator: "/")
+        return names[0].directoryPrefix + components.reversed().joined(separator: "/")
     }
 
     // MARK: - Finalization
@@ -270,11 +293,36 @@ struct FileTree: Sendable {
 
     /// Compact binary form for the on-disk scan cache: fixed-width field
     /// arrays plus one UTF-8 name blob. Encoding a multi-million-node
-    /// tree is a handful of memcpys.
+    /// tree is one pass over the nodes plus a handful of memcpys.
     func serializedData() -> Data {
         let count = nodes.count
-        var data = Data(capacity: count * 40)
 
+        // One pass fills every per-node field array (no map temporaries).
+        var sizes = [Int64](repeating: 0, count: count)
+        var parents = [NodeID](repeating: 0, count: count)
+        var firstChildren = [NodeID](repeating: 0, count: count)
+        var nextSiblings = [NodeID](repeating: 0, count: count)
+        var directoryFlags = [UInt8](repeating: 0, count: count)
+        for index in 0..<count {
+            let node = nodes[index]
+            sizes[index] = node.size
+            parents[index] = node.parent
+            firstChildren[index] = node.firstChild
+            nextSiblings[index] = node.nextSibling
+            directoryFlags[index] = node.isDirectory ? 1 : 0
+        }
+
+        // Names: first pass records lengths and the blob's total size so
+        // the blob is appended into preallocated storage.
+        var nameLengths = [UInt32](repeating: 0, count: count)
+        var blobLength = 0
+        for index in 0..<count {
+            let length = names[index].utf8.count
+            nameLengths[index] = UInt32(length)
+            blobLength += length
+        }
+
+        var data = Data(capacity: count * 29 + blobLength + 16)
         func append<T>(_ value: T) {
             withUnsafeBytes(of: value) { data.append(contentsOf: $0) }
         }
@@ -286,94 +334,92 @@ struct FileTree: Sendable {
 
         append(Self.serializationMagic)
         append(UInt32(count))
-        appendArray(nodes.map(\.size))
-        appendArray(nodes.map(\.parent))
-        appendArray(nodes.map(\.firstChild))
-        appendArray(nodes.map(\.nextSibling))
-        appendArray(nodes.map(\.childCount))
-        appendArray(nodes.map { UInt8($0.isDirectory ? 1 : 0) })
-
-        var nameBlob = Data()
-        var nameLengths = [UInt32]()
-        nameLengths.reserveCapacity(count)
-        for name in names {
-            let utf8 = Data(name.utf8)
-            nameLengths.append(UInt32(utf8.count))
-            nameBlob.append(utf8)
-        }
+        appendArray(sizes)
+        appendArray(parents)
+        appendArray(firstChildren)
+        appendArray(nextSiblings)
+        appendArray(directoryFlags)
         appendArray(nameLengths)
-        append(UInt32(nameBlob.count))
-        data.append(nameBlob)
+        append(UInt32(blobLength))
+        for name in names {
+            data.append(contentsOf: name.utf8)
+        }
         return data
     }
 
     /// Rebuilds a tree from `serializedData()` output; nil when the blob
-    /// is malformed or from a different format version.
+    /// is malformed or from a different format version. Accepts slices
+    /// (offsets are relative to `data.startIndex`), so callers can pass a
+    /// no-copy view into a larger mapped file.
     init?(serializedData data: Data) {
-        var offset = 0
-        func read<T>(_ type: T.Type) -> T? {
-            let size = MemoryLayout<T>.size
-            guard offset + size <= data.count else { return nil }
-            defer { offset += size }
-            return data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: T.self) }
-        }
-        func readArray<T>(_ type: T.Type, count: Int) -> [T]? {
-            let size = MemoryLayout<T>.stride * count
-            guard offset + size <= data.count else { return nil }
-            defer { offset += size }
-            return data.withUnsafeBytes { raw in
-                Array(UnsafeBufferPointer(
-                    start: raw.baseAddress!.advanced(by: offset).assumingMemoryBound(to: T.self),
-                    count: count
+        let result: (nodes: [Node], names: [String])? = data.withUnsafeBytes { raw in
+            var offset = 0
+            func read<T>(_ type: T.Type) -> T? {
+                let size = MemoryLayout<T>.size
+                guard offset + size <= raw.count else { return nil }
+                defer { offset += size }
+                return raw.loadUnaligned(fromByteOffset: offset, as: T.self)
+            }
+            func readArray<T>(_ type: T.Type, count: Int) -> [T]? {
+                let size = MemoryLayout<T>.stride * count
+                guard offset + size <= raw.count else { return nil }
+                defer { offset += size }
+                return [T](unsafeUninitializedCapacity: count) { buffer, initialized in
+                    raw.copyBytes(
+                        to: UnsafeMutableRawBufferPointer(buffer),
+                        from: offset..<(offset + size)
+                    )
+                    initialized = count
+                }
+            }
+
+            guard read(UInt32.self) == Self.serializationMagic,
+                  let count32 = read(UInt32.self), count32 > 0 else { return nil }
+            let count = Int(count32)
+            guard let sizes = readArray(Int64.self, count: count),
+                  let parents = readArray(NodeID.self, count: count),
+                  let firstChildren = readArray(NodeID.self, count: count),
+                  let nextSiblings = readArray(NodeID.self, count: count),
+                  let directoryFlags = readArray(UInt8.self, count: count),
+                  let nameLengths = readArray(UInt32.self, count: count),
+                  let blobLength = read(UInt32.self),
+                  offset + Int(blobLength) <= raw.count else { return nil }
+
+            var rebuiltNames = [String]()
+            rebuiltNames.reserveCapacity(count)
+            for length in nameLengths {
+                let end = offset + Int(length)
+                guard end <= raw.count else { return nil }
+                rebuiltNames.append(String(
+                    decoding: UnsafeRawBufferPointer(rebasing: raw[offset..<end]),
+                    as: UTF8.self
+                ))
+                offset = end
+            }
+
+            var rebuiltNodes = [Node]()
+            rebuiltNodes.reserveCapacity(count)
+            let bound = NodeID(count)
+            for index in 0..<count {
+                // Malformed links would corrupt traversal; validate range.
+                guard parents[index] < bound, firstChildren[index] < bound,
+                      nextSiblings[index] < bound else { return nil }
+                rebuiltNodes.append(Node(
+                    size: sizes[index],
+                    parent: parents[index],
+                    firstChild: firstChildren[index],
+                    nextSibling: nextSiblings[index],
+                    isDirectory: directoryFlags[index] != 0
                 ))
             }
+            return (rebuiltNodes, rebuiltNames)
         }
-
-        guard read(UInt32.self) == Self.serializationMagic,
-              let count32 = read(UInt32.self), count32 > 0 else { return nil }
-        let count = Int(count32)
-        guard let sizes = readArray(Int64.self, count: count),
-              let parents = readArray(NodeID.self, count: count),
-              let firstChildren = readArray(NodeID.self, count: count),
-              let nextSiblings = readArray(NodeID.self, count: count),
-              let childCounts = readArray(Int32.self, count: count),
-              let directoryFlags = readArray(UInt8.self, count: count),
-              let nameLengths = readArray(UInt32.self, count: count),
-              let blobLength = read(UInt32.self),
-              offset + Int(blobLength) <= data.count else { return nil }
-
-        var rebuiltNames = [String]()
-        rebuiltNames.reserveCapacity(count)
-        var nameOffset = offset
-        for length in nameLengths {
-            let end = nameOffset + Int(length)
-            guard end <= data.count else { return nil }
-            rebuiltNames.append(String(decoding: data[nameOffset..<end], as: UTF8.self))
-            nameOffset = end
-        }
-        guard rebuiltNames.count == count else { return nil }
-
-        var rebuiltNodes = [Node]()
-        rebuiltNodes.reserveCapacity(count)
-        for index in 0..<count {
-            let bound = NodeID(count)
-            // Malformed links would corrupt traversal; validate range.
-            guard parents[index] < bound, firstChildren[index] < bound,
-                  nextSiblings[index] < bound else { return nil }
-            rebuiltNodes.append(Node(
-                size: sizes[index],
-                parent: parents[index],
-                firstChild: firstChildren[index],
-                nextSibling: nextSiblings[index],
-                childCount: childCounts[index],
-                isDirectory: directoryFlags[index] != 0
-            ))
-        }
-        nodes = rebuiltNodes
-        names = rebuiltNames
+        guard let result else { return nil }
+        nodes = result.nodes
+        names = result.names
     }
 
-    private static let serializationMagic: UInt32 = 0x444D_5431 // "DMT1"
+    private static let serializationMagic: UInt32 = 0x444D_5432 // "DMT2"
 
     /// Copies a whole subtree from another tree under `parent`.
     /// Iterative to survive arbitrarily deep hierarchies.

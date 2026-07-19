@@ -4,8 +4,11 @@ import SwiftUI
 /// disk, each depth level a concentric ring, sector sweep proportional to
 /// size. Redraws live as scan snapshots stream in.
 ///
-/// Everything — including the hover tip — is drawn inside one `Canvas`,
-/// so hover state changes can only trigger repaints, never re-layout.
+/// Split into two stacked canvases so pointer movement stays cheap: the
+/// static layer (every sector, border and curved label) repaints only
+/// when a new snapshot or resize produces a new layout, and a thin hover
+/// overlay repaints the single highlighted segment plus the tip. The
+/// layout itself is cached in state — hover events never rebuild it.
 struct RingsChartView: View {
     let root: ChartItem
     /// Called with a directory segment's path when it is clicked.
@@ -13,21 +16,19 @@ struct RingsChartView: View {
     /// Called when the center (the viewed directory itself) is clicked.
     let onSelectCenter: () -> Void
 
+    @State private var layout: RingsChartLayout.Layout?
     @State private var hoveredPath: String?
     @State private var hoverLocation: CGPoint = .zero
 
     var body: some View {
         GeometryReader { geometry in
-            let layout = RingsChartLayout.layout(root: root, in: geometry.size)
-            Canvas { context, size in
-                draw(layout: layout, in: &context)
-                if let hoveredPath,
-                   let segment = layout.segments.first(where: { $0.path == hoveredPath }) {
-                    ChartTipRenderer.draw(
-                        name: segment.name, size: segment.size,
-                        fractionOfRoot: segment.fractionOfRoot,
-                        near: hoverLocation, in: &context, bounds: size
-                    )
+            ZStack {
+                if let layout {
+                    StaticChartLayer(layout: layout)
+                        .equatable()
+                    Canvas { context, size in
+                        drawHoverOverlay(layout: layout, in: &context, bounds: size)
+                    }
                 }
             }
             .contentShape(Rectangle())
@@ -35,75 +36,126 @@ struct RingsChartView: View {
                 switch phase {
                 case .active(let location):
                     hoverLocation = location
-                    hoveredPath = layout.segment(at: location)?.path
+                    hoveredPath = layout?.segment(at: location)?.path
                 case .ended:
                     hoveredPath = nil
                 }
             }
             .onTapGesture { location in
-                guard let segment = layout.segment(at: location) else { return }
+                guard let segment = layout?.segment(at: location) else { return }
                 if segment.depth == 0 {
                     onSelectCenter()
-                } else if segment.isDirectory {
+                } else if segment.kind == .directory {
                     onSelectDirectory(segment.path)
                 }
             }
+            .onChange(of: root, initial: true) {
+                layout = RingsChartLayout.layout(root: root, in: geometry.size)
+            }
+            .onChange(of: geometry.size) {
+                layout = RingsChartLayout.layout(root: root, in: geometry.size)
+            }
         }
     }
 
-    // MARK: - Drawing
+    // MARK: - Hover overlay
 
-    private func draw(layout: RingsChartLayout.Layout, in context: inout GraphicsContext) {
+    /// Repaints just the hovered segment in its highlight color (with its
+    /// label, which the fill would otherwise cover) and the hover tip.
+    private func drawHoverOverlay(
+        layout: RingsChartLayout.Layout,
+        in context: inout GraphicsContext,
+        bounds: CGSize
+    ) {
+        guard let hoveredPath,
+              let segment = layout.segments.first(where: { $0.path == hoveredPath }) else {
+            return
+        }
+        ChartDrawing.draw(
+            segment, layout: layout, highlighted: true, in: &context
+        )
+        ChartTipRenderer.draw(
+            name: segment.name, size: segment.size,
+            fractionOfRoot: segment.fractionOfRoot,
+            near: hoverLocation, in: &context, bounds: bounds
+        )
+    }
+}
+
+/// The chart body. `Equatable` on the layout so SwiftUI skips repainting
+/// it while only hover state changes (segment arrays are small — the
+/// chart model is depth- and fraction-limited).
+private struct StaticChartLayer: View, Equatable {
+    let layout: RingsChartLayout.Layout
+
+    var body: some View {
+        Canvas { context, _ in
+            for segment in layout.segments {
+                ChartDrawing.draw(
+                    segment, layout: layout, highlighted: false, in: &context
+                )
+            }
+        }
+    }
+}
+
+/// Segment rendering shared by the static layer and the hover overlay.
+private enum ChartDrawing {
+
+    static func draw(
+        _ segment: RingsChartLayout.Segment,
+        layout: RingsChartLayout.Layout,
+        highlighted: Bool,
+        in context: inout GraphicsContext
+    ) {
         let border = GraphicsContext.Shading.color(.black.opacity(0.35))
+        let fill = segment.kind == .synthetic
+            ? ChartPalette.hiddenSpaceFill(highlighted: highlighted).color
+            : ChartPalette.fill(
+                position: segment.colorPosition,
+                depth: segment.depth,
+                highlighted: highlighted
+            ).color
 
-        for segment in layout.segments {
-            let highlighted = segment.path == hoveredPath
-            let fill = segment.isHiddenSpace
-                ? ChartPalette.hiddenSpaceFill(highlighted: highlighted).color
-                : ChartPalette.fill(
-                    position: segment.colorPosition,
-                    depth: segment.depth,
-                    highlighted: highlighted
-                ).color
+        if segment.depth == 0 {
+            let disk = Path(ellipseIn: CGRect(
+                x: layout.center.x - segment.outerRadius,
+                y: layout.center.y - segment.outerRadius,
+                width: segment.outerRadius * 2,
+                height: segment.outerRadius * 2
+            ))
+            context.fill(disk, with: .color(fill))
+            context.stroke(disk, with: border, lineWidth: RingsChartLayout.borderWidth)
+            drawCenterLabel(for: segment, layout: layout, in: &context)
+            return
+        }
 
-            if segment.depth == 0 {
-                let disk = Path(ellipseIn: CGRect(
-                    x: layout.center.x - segment.outerRadius,
-                    y: layout.center.y - segment.outerRadius,
-                    width: segment.outerRadius * 2,
-                    height: segment.outerRadius * 2
-                ))
-                context.fill(disk, with: .color(fill))
-                context.stroke(disk, with: border, lineWidth: RingsChartLayout.borderWidth)
-                drawCenterLabel(for: segment, layout: layout, in: &context)
-                continue
-            }
+        let sector = sectorPath(for: segment, center: layout.center)
+        context.fill(sector, with: .color(fill))
+        context.stroke(sector, with: border, lineWidth: RingsChartLayout.borderWidth)
+        drawSectorLabel(for: segment, layout: layout, in: &context)
 
-            let sector = sectorPath(for: segment, center: layout.center)
-            context.fill(sector, with: .color(fill))
-            context.stroke(sector, with: border, lineWidth: RingsChartLayout.borderWidth)
-            drawSectorLabel(for: segment, layout: layout, in: &context)
-
-            if segment.hasHiddenChildren {
-                // Baobab marks depth-limited directories with a short edge
-                // just outside the sector: "there is more in here".
-                var edge = Path()
-                edge.addArc(
-                    center: layout.center,
-                    radius: segment.outerRadius + RingsChartLayout.continuedEdgeGap,
-                    startAngle: .radians(segment.startAngle),
-                    endAngle: .radians(segment.startAngle + segment.sweep),
-                    clockwise: false
-                )
-                context.stroke(
-                    edge, with: .color(fill),
-                    lineWidth: RingsChartLayout.continuedEdgeWidth
-                )
-            }
+        if segment.hasHiddenChildren {
+            // Baobab marks depth-limited directories with a short edge
+            // just outside the sector: "there is more in here".
+            var edge = Path()
+            edge.addArc(
+                center: layout.center,
+                radius: segment.outerRadius + RingsChartLayout.continuedEdgeGap,
+                startAngle: .radians(segment.startAngle),
+                endAngle: .radians(segment.startAngle + segment.sweep),
+                clockwise: false
+            )
+            context.stroke(
+                edge, with: .color(fill),
+                lineWidth: RingsChartLayout.continuedEdgeWidth
+            )
         }
     }
 
-    private func sectorPath(for segment: RingsChartLayout.Segment, center: CGPoint) -> Path {
+    private static func sectorPath(
+        for segment: RingsChartLayout.Segment, center: CGPoint
+    ) -> Path {
         var path = Path()
         let a0 = segment.startAngle
         let a1 = segment.startAngle + segment.sweep
@@ -130,8 +182,9 @@ struct RingsChartView: View {
     /// Names the larger sectors with text curved along the ring, glyph by
     /// glyph at the sector's mid-radius — so a label uses the space the
     /// arc actually offers instead of spilling straight across ring
-    /// boundaries. Drawn only when the whole name fits.
-    private func drawSectorLabel(
+    /// boundaries. Drawn only when the whole name fits along the arc and
+    /// within the ring's thickness.
+    private static func drawSectorLabel(
         for segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,
         in context: inout GraphicsContext
@@ -141,29 +194,10 @@ struct RingsChartView: View {
         let arcLength = CGFloat(segment.sweep) * midRadius
         guard thickness >= 12, arcLength >= 30 else { return }
 
-        _ = drawCurvedText(
-            segment.name, for: segment, midRadius: midRadius,
-            thickness: thickness, arcLength: arcLength,
-            layout: layout, in: &context
-        )
-    }
-
-    /// Draws `text` curved along the sector's mid-radius arc. Returns
-    /// false without drawing when it does not fit.
-    private func drawCurvedText(
-        _ text: String,
-        for segment: RingsChartLayout.Segment,
-        midRadius: CGFloat,
-        thickness: CGFloat,
-        arcLength: CGFloat,
-        layout: RingsChartLayout.Layout,
-        in context: inout GraphicsContext
-    ) -> Bool {
         let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40)
-
         var glyphs: [GraphicsContext.ResolvedText] = []
-        glyphs.reserveCapacity(text.count)
-        for character in text {
+        glyphs.reserveCapacity(segment.name.count)
+        for character in segment.name {
             glyphs.append(context.resolve(
                 Text(String(character))
                     .font(.caption2)
@@ -174,9 +208,7 @@ struct RingsChartView: View {
         let glyphWidths: [CGFloat] = glyphs.map { $0.measure(in: unbounded).width }
         let totalWidth: CGFloat = glyphWidths.reduce(0, +)
         let lineHeight: CGFloat = glyphs.first?.measure(in: unbounded).height ?? 12
-        guard totalWidth <= arcLength * 0.85, lineHeight <= thickness * 0.85 else {
-            return false
-        }
+        guard totalWidth <= arcLength * 0.85, lineHeight <= thickness * 0.85 else { return }
 
         // In the lower half of the circle, glyphs run along decreasing
         // angle with flipped rotation so the text never reads upside down
@@ -198,10 +230,9 @@ struct RingsChartView: View {
             glyphContext.draw(glyph, at: .zero)
             cursor += readsReversed ? -glyphAngle : glyphAngle
         }
-        return true
     }
 
-    private func drawCenterLabel(
+    private static func drawCenterLabel(
         for segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,
         in context: inout GraphicsContext
@@ -226,4 +257,3 @@ struct RingsChartView: View {
         context.draw(size, at: CGPoint(x: layout.center.x, y: layout.center.y + nameSize.height / 2 + 1))
     }
 }
-

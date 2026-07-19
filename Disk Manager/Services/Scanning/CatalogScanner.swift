@@ -20,8 +20,6 @@ import Foundation
 /// failure.
 enum CatalogScanner {
 
-    /// HFS+ and APFS both use inode 2 for the volume's root directory.
-    private static let rootDirectoryFileID = CatalogTreeBuilder.volumeRootFileID
     /// Metrics are flushed once per this many entries, not per entry.
     private static let metricsBatchSize = 8_192
 
@@ -69,15 +67,15 @@ enum CatalogScanner {
                     (flushedBytes, flushedItems) = (0, 0)
                 },
                 body: { entry in
-                    guard entry.fileID != rootDirectoryFileID, entry.fileID > 1 else {
+                    guard entry.fileID != CatalogTreeBuilder.volumeRootFileID,
+                          entry.fileID > 1 else {
                         return
                     }
                     let countedBytes = builder.withLock { $0.add(entry) }
                     batchBytes += countedBytes
                     batchItems += 1
                     if batchItems >= metricsBatchSize {
-                        metrics.add(bytes: batchBytes, items: batchItems,
-                                    currentPath: mountPoint)
+                        metrics.add(bytes: batchBytes, items: batchItems)
                         flushedBytes += batchBytes
                         flushedItems += batchItems
                         (batchBytes, batchItems) = (0, 0)
@@ -91,7 +89,7 @@ enum CatalogScanner {
         }
 
         if batchItems > 0 {
-            metrics.add(bytes: batchBytes, items: batchItems, currentPath: mountPoint)
+            metrics.add(bytes: batchBytes, items: batchItems)
         }
         return builder.withLock { $0 }.buildTree()
     }

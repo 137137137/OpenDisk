@@ -7,7 +7,6 @@ struct HiddenSpaceRow: View {
     let info: HiddenSpaceInfo
 
     @State private var showingDetails = false
-    @State private var isHovered = false
 
     var body: some View {
         Button {
@@ -16,11 +15,7 @@ struct HiddenSpaceRow: View {
             HStack(spacing: 10) {
                 Image(systemName: "eye.slash.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(Color(
-                        red: ChartPalette.hiddenSpace.red,
-                        green: ChartPalette.hiddenSpace.green,
-                        blue: ChartPalette.hiddenSpace.blue
-                    ))
+                    .foregroundStyle(ChartPalette.hiddenSpace.color)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -44,20 +39,9 @@ struct HiddenSpaceRow: View {
             .padding(.vertical, 6)
             .padding(.horizontal, 16)
             .contentShape(Rectangle())
-            .background {
-                if isHovered {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.quaternary)
-                        .padding(.horizontal, 8)
-                }
-            }
+            .hoverHighlight()
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
         .popover(isPresented: $showingDetails, arrowEdge: .top) {
             HiddenSpaceDetails(info: info)
         }

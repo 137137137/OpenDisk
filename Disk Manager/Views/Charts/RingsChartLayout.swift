@@ -23,11 +23,10 @@ enum RingsChartLayout {
         let path: String
         let name: String
         let size: Int64
-        let isDirectory: Bool
+        let kind: ChartItem.Kind
         let depth: Int
         let fractionOfRoot: Double
         let hasHiddenChildren: Bool
-        let isHiddenSpace: Bool
         /// Radians; see the coordinate convention above.
         let startAngle: Double
         let sweep: Double
@@ -86,10 +85,9 @@ enum RingsChartLayout {
         let innerRadius = CGFloat(item.depth) * thickness
         segments.append(Segment(
             path: item.path, name: item.name, size: item.size,
-            isDirectory: item.isDirectory, depth: item.depth,
+            kind: item.kind, depth: item.depth,
             fractionOfRoot: item.fractionOfRoot,
             hasHiddenChildren: item.hasHiddenChildren,
-            isHiddenSpace: item.isHiddenSpace,
             startAngle: startAngle, sweep: sweep,
             innerRadius: innerRadius, outerRadius: innerRadius + thickness,
             colorPosition: (startAngle + sweep / 2) / (2 * .pi) * 200

@@ -58,8 +58,7 @@ struct DevicePickerView: View {
             icon: "folder",
             path: url.path,
             totalBytes: 0,
-            availableBytes: 0,
-            isBootVolume: false
+            availableBytes: 0
         ))
     }
 }
@@ -67,8 +66,6 @@ struct DevicePickerView: View {
 /// One disk row: pushes the analysis screen when clicked.
 private struct DevicePickerRow: View {
     let device: DeviceInfo
-
-    @State private var isHovered = false
 
     var body: some View {
         NavigationLink(value: device) {
@@ -82,18 +79,8 @@ private struct DevicePickerRow: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 10)
             .contentShape(Rectangle())
-            .background {
-                if isHovered {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.quaternary)
-                }
-            }
+            .hoverHighlight()
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
     }
 }

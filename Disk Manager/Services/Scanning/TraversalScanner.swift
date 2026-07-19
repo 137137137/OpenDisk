@@ -205,7 +205,7 @@ enum TraversalScanner {
                 directoryBytes += file.size
             }
 
-            let directoryPrefix = item.path.hasSuffix("/") ? item.path : item.path + "/"
+            let directoryPrefix = item.path.directoryPrefix
             var discovered: [WorkItem] = []
             discovered.reserveCapacity(contents.subdirectoryNames.count)
 
@@ -236,8 +236,7 @@ enum TraversalScanner {
             metrics.add(
                 bytes: directoryBytes,
                 items: contents.files.count + contents.subdirectoryNames.count
-                    + contents.mountPointNames.count,
-                currentPath: item.path
+                    + contents.mountPointNames.count
             )
             state.push(discovered)
         }

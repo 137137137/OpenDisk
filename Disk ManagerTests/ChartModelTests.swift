@@ -92,14 +92,14 @@ struct ChartModelTests {
         }
     }
 
-    @Test("hidden space slice rescales real children and appends gray slice")
+    @Test("extra slice enlarges the total and appends a synthetic child")
     func hiddenSpaceSlice() {
         let tree = makeTree()
-        let root = ChartItem.build(
-            from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T"
+        // Hidden space equal to the scanned total: every share halves.
+        let withHidden = ChartItem.build(
+            from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T",
+            extraSlice: ("hidden space", 1_000)
         )
-        // Hidden space equal to the scanned total: everything halves.
-        let withHidden = root.appendingHiddenSpace(bytes: 1_000)
 
         #expect(withHidden.size == 2_000)
         let big = withHidden.children.first { $0.name == "big" }
@@ -114,11 +114,17 @@ struct ChartModelTests {
         }
 
         let hidden = withHidden.children.last
-        #expect(hidden?.isHiddenSpace == true)
+        #expect(hidden?.kind == .synthetic)
         #expect(hidden?.size == 1_000)
         #expect(abs((hidden?.relSize ?? 0) - 50) < 0.001)
         #expect(abs((hidden?.relStart ?? 0) - 50) < 0.001)
-        #expect(hidden?.isDirectory == false)
+
+        // Without the slice the build is unchanged.
+        let plain = ChartItem.build(
+            from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T"
+        )
+        #expect(plain.size == 1_000)
+        #expect(plain.children.allSatisfy { $0.kind != .synthetic })
     }
 
     @Test("palette: depth dims, highlight restores full brightness")

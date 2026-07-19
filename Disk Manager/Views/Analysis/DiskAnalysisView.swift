@@ -48,6 +48,7 @@ struct DiskAnalysisView: View {
                     HSplitView {
                         ScanResultsView(
                             items: analyzer.rootItems,
+                            displayVersion: analyzer.displayVersion,
                             hiddenSpace: analyzer.hiddenSpaceForCurrentDirectory,
                             onFolderTap: navigateToFolder
                         )
@@ -68,13 +69,11 @@ struct DiskAnalysisView: View {
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
                     progressFraction: progressFraction,
-                    scanStatus: analyzer.statusDescription,
-                    filesPerSecond: analyzer.filesPerSecond,
+                    scannedBytes: analyzer.totalDiskScannedBytes,
+                    itemsScanned: analyzer.itemsScanned,
+                    scanStartDate: analyzer.scanStartDate,
                     scanDuration: analyzer.scanDuration,
-                    // At the scan root, include hidden space so the total
-                    // matches the volume's reported used space.
-                    totalBytes: analyzer.rootItems.reduce(0) { $0 + $1.size }
-                        + (analyzer.hiddenSpaceForCurrentDirectory?.totalBytes ?? 0),
+                    totalBytes: analyzer.displayedTotalBytes,
                     itemCount: analyzer.rootItems.count
                 )
             } else if analyzer.isScanning {

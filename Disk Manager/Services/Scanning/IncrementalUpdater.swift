@@ -22,12 +22,11 @@ enum IncrementalUpdater {
         isCancelled: @escaping @Sendable () -> Bool
     ) -> Bool {
         let reader = BulkDirectoryReader()
-        let prefixLength = (rootPath.hasSuffix("/") ? rootPath : rootPath + "/").count
 
         for directoryPath in changes.changedDirectories {
             if isCancelled() { return false }
             updateDirectory(
-                at: directoryPath, prefixLength: prefixLength, rootPath: rootPath,
+                at: directoryPath, rootPath: rootPath,
                 tree: tree, reader: reader, allowedDevices: allowedDevices,
                 metrics: metrics, isCancelled: isCancelled
             )
@@ -36,7 +35,7 @@ enum IncrementalUpdater {
         for subtreePath in changes.subtreesToRescan {
             if isCancelled() { return false }
             rescanSubtree(
-                at: subtreePath, prefixLength: prefixLength, rootPath: rootPath,
+                at: subtreePath, rootPath: rootPath,
                 tree: tree, allowedDevices: allowedDevices,
                 metrics: metrics, isCancelled: isCancelled
             )
@@ -46,13 +45,26 @@ enum IncrementalUpdater {
 
     // MARK: - Splicing
 
-    private static func nodeID(
-        forPath path: String, prefixLength: Int, rootPath: String, in tree: FileTree
+    /// Resolves a changed path to its directory node, or nil when the
+    /// path must not or cannot be spliced.
+    ///
+    /// Never touches a mount root other than the scan root: FSEvents on
+    /// "/" also reports paths under /Volumes aliases and snapshot mounts,
+    /// which can share the boot volume's device ID — reading into one
+    /// would drag another whole volume into this tree.
+    ///
+    /// A directory created after the cached scan has no node yet — its
+    /// nearest cached ancestor also got an event and adopts it there
+    /// (changed paths are processed parents-first).
+    private static func resolveTarget(
+        at path: String, rootPath: String, in tree: Locked<FileTree>
     ) -> FileTree.NodeID? {
-        if path == rootPath { return FileTree.rootID }
-        guard path.count > prefixLength else { return nil }
-        let relative = path.dropFirst(prefixLength)
-        return tree.nodeID(atComponents: relative.split(separator: "/"))
+        guard path == rootPath || !VolumeAttributes.isVolumeRoot(path) else { return nil }
+        return tree.withLock { current in
+            guard let id = current.nodeID(forPath: path, rootPath: rootPath),
+                  current.isDirectory(id) else { return nil }
+            return id
+        }
     }
 
     /// Shallow reconciliation of one changed directory: files are
@@ -60,7 +72,6 @@ enum IncrementalUpdater {
     /// their whole subtrees; new subdirectories are scanned fresh.
     private static func updateDirectory(
         at path: String,
-        prefixLength: Int,
         rootPath: String,
         tree: Locked<FileTree>,
         reader: BulkDirectoryReader,
@@ -68,22 +79,7 @@ enum IncrementalUpdater {
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) {
-        // Never touch a mount root other than the scan root: FSEvents on
-        // "/" also reports paths under /Volumes aliases and snapshot
-        // mounts, which can share the boot volume's device ID — reading
-        // into one would drag another whole volume into this tree.
-        guard path == rootPath || !VolumeAttributes.isVolumeRoot(path) else { return }
-
-        // Resolve first: a directory created after the cached scan has no
-        // node yet — its nearest cached ancestor also got an event and
-        // adopts it there (changed paths are processed parents-first).
-        let node: FileTree.NodeID? = tree.withLock { current in
-            guard let id = nodeID(
-                forPath: path, prefixLength: prefixLength, rootPath: rootPath, in: current
-            ), current.isDirectory(id) else { return nil }
-            return id
-        }
-        guard let node else { return }
+        guard let node = resolveTarget(at: path, rootPath: rootPath, in: tree) else { return }
 
         guard case .contents(let contents, _) = reader.read(
             directoryAt: path, allowedDevices: allowedDevices
@@ -127,12 +123,11 @@ enum IncrementalUpdater {
 
         metrics.add(
             bytes: updatedBytes,
-            items: contents.files.count + contents.subdirectoryNames.count,
-            currentPath: path
+            items: contents.files.count + contents.subdirectoryNames.count
         )
 
         // Brand-new directories get full subtree scans, spliced in.
-        let prefix = path.hasSuffix("/") ? path : path + "/"
+        let prefix = path.directoryPrefix
         for (name, id) in newSubdirectories {
             if isCancelled() { return }
             adoptScannedSubtree(
@@ -146,21 +141,13 @@ enum IncrementalUpdater {
     /// replaces the node's contents with the fresh scan.
     private static func rescanSubtree(
         at path: String,
-        prefixLength: Int,
         rootPath: String,
         tree: Locked<FileTree>,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) {
-        guard path == rootPath || !VolumeAttributes.isVolumeRoot(path) else { return }
-        let node: FileTree.NodeID? = tree.withLock { current in
-            guard let id = nodeID(
-                forPath: path, prefixLength: prefixLength, rootPath: rootPath, in: current
-            ), current.isDirectory(id) else { return nil }
-            return id
-        }
-        guard let node else { return }
+        guard let node = resolveTarget(at: path, rootPath: rootPath, in: tree) else { return }
         tree.withLock { $0.removeAllChildren(of: node) }
         adoptScannedSubtree(
             ofPath: path, under: node, tree: tree,

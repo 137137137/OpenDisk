@@ -4,10 +4,6 @@ import Foundation
 struct ScanResult: Sendable {
     let rootPath: String
     let tree: FileTree
-
-    static func empty(rootPath: String) -> ScanResult {
-        ScanResult(rootPath: rootPath, tree: FileTree(rootName: rootPath))
-    }
 }
 
 /// A partial snapshot of a scan in flight: the tree as discovered so far,

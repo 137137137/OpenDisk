@@ -24,8 +24,6 @@ struct BreadcrumbBar: View {
     /// Tapping the root segment while already at the root.
     let onRootTap: () -> Void
 
-    @State private var hoveredComponent: String?
-
     /// Segments relative to the scanned root, so external volumes don't
     /// grow phantom "/Volumes" crumbs pointing outside the scan.
     private var pathComponents: [PathComponent] {
@@ -33,7 +31,7 @@ struct BreadcrumbBar: View {
             name: rootName, path: rootPath, isRoot: true, isLast: currentPath == rootPath
         )]
 
-        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        let prefix = rootPath.directoryPrefix
         guard currentPath.hasPrefix(prefix) else { return result }
 
         let components = currentPath.dropFirst(prefix.count).split(separator: "/")
@@ -59,18 +57,14 @@ struct BreadcrumbBar: View {
                     ForEach(pathComponents) { component in
                         BreadcrumbSegment(
                             component: component,
-                            isHovered: hoveredComponent == component.id,
                             onTap: {
-                                if component.isRoot && currentPath == rootPath {
+                                if component.isRoot && component.isLast {
                                     onRootTap()
                                 } else {
                                     onNavigate(component.path)
                                 }
                             }
                         )
-                        .onHover { isHovered in
-                            hoveredComponent = isHovered ? component.id : nil
-                        }
 
                         if !component.isLast {
                             Image(systemName: "chevron.right")
@@ -88,10 +82,10 @@ struct BreadcrumbBar: View {
     }
 }
 
-/// Individual breadcrumb segment with hover effect.
+/// Individual breadcrumb segment with hover effect (owned locally, so
+/// hovering never invalidates the whole bar).
 private struct BreadcrumbSegment: View {
     let component: PathComponent
-    let isHovered: Bool
     let onTap: () -> Void
 
     var body: some View {
@@ -110,15 +104,9 @@ private struct BreadcrumbSegment: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background {
-                if isHovered && !component.isLast {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.quaternary)
-                }
-            }
+            .hoverHighlight(cornerRadius: 6, isEnabled: !component.isLast)
         }
         .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
     }
 }
 

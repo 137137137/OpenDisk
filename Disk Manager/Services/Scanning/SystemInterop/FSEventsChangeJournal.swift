@@ -44,8 +44,7 @@ enum FSEventsChangeJournal {
     /// dropped, too many changes, replay too slow) — callers then run a
     /// full scan.
     static func changes(since eventID: UInt64, under rootPath: String) -> Changes? {
-        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-        let collector = Collector(rootPrefix: prefix)
+        let collector = Collector(rootPrefix: rootPath.directoryPrefix)
 
         var context = FSEventStreamContext(
             version: 0,
@@ -79,9 +78,9 @@ enum FSEventsChangeJournal {
                 guard index < paths.count else { continue }
                 let path = paths[index]
                 // Keep events inside the scan root (mount points below the
-                // root are cut by the scanners themselves).
-                guard path == collector.rootPrefix
-                        || path.hasPrefix(collector.rootPrefix)
+                // root are cut by the scanners themselves). rootPrefix ends
+                // in "/", so hasPrefix also covers exact equality.
+                guard path.hasPrefix(collector.rootPrefix)
                         || path + "/" == collector.rootPrefix else { continue }
 
                 let normalized = path.hasSuffix("/") && path.count > 1

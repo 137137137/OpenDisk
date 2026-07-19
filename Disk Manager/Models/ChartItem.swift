@@ -8,6 +8,17 @@ import Foundation
 /// thresholds, proportional layout) follows GNOME baobab's chart; the
 /// implementation is original Swift.
 struct ChartItem: Equatable, Identifiable, Sendable {
+
+    /// What a chart node represents; palette and interaction dispatch on
+    /// this (synthetic slices draw gray and are not navigable).
+    enum Kind: Equatable, Sendable {
+        case file
+        case directory
+        /// Not a real filesystem item — e.g. the "hidden space" slice for
+        /// bytes outside the scan.
+        case synthetic
+    }
+
     /// Paths are stable across successive live snapshots, so hover state
     /// and SwiftUI diffing can track an item while its size streams in.
     var id: String { path }
@@ -23,18 +34,11 @@ struct ChartItem: Equatable, Identifiable, Sendable {
     let relSize: Double
     /// Share of the whole chart, 0..1.
     let fractionOfRoot: Double
-    let isDirectory: Bool
+    let kind: Kind
     /// True when children exist but `maxDepth` cut them off; the rings
     /// chart marks such items with an outer "continues" edge.
     let hasHiddenChildren: Bool
-    /// Synthetic "hidden space" slice (purgeable pool, snapshots, unread
-    /// directories) rather than a real filesystem item; drawn gray and
-    /// not navigable.
-    var isHiddenSpace: Bool = false
     let children: [ChartItem]
-
-    /// Sentinel path for the synthetic hidden-space slice.
-    static let hiddenSpacePath = "::hidden-space"
 
     /// Levels shown below the root, matching baobab's MAX_DEPTH.
     static let maxDepth = 5
@@ -44,55 +48,22 @@ struct ChartItem: Equatable, Identifiable, Sendable {
     static let minVisibleFraction = 0.0015
 
     /// Builds the chart tree for the directory `node` of `tree`.
+    ///
+    /// `extraSlice` appends one synthetic child after the real ones (the
+    /// "hidden space" wedge); the root's total grows by its bytes so the
+    /// single proportional pass sizes everything consistently.
     static func build(
         from tree: FileTree,
         at node: FileTree.NodeID,
         name: String,
-        path: String
+        path: String,
+        extraSlice: (name: String, bytes: Int64)? = nil
     ) -> ChartItem {
-        buildItem(
+        let extra = (extraSlice?.bytes ?? 0) > 0 ? extraSlice : nil
+        return buildItem(
             tree: tree, node: node, name: name, path: path,
-            depth: 0, relStart: 0, relSize: 100, fractionOfRoot: 1
-        )
-    }
-
-    /// A copy of this root with a synthetic "hidden space" slice appended
-    /// after the real children, which keep their proportions relative to
-    /// the enlarged total.
-    func appendingHiddenSpace(bytes: Int64) -> ChartItem {
-        guard depth == 0, bytes > 0 else { return self }
-        let newTotal = size + bytes
-        guard newTotal > 0 else { return self }
-
-        let factor = Double(size) / Double(newTotal)
-        let hiddenShare = Double(bytes) / Double(newTotal) * 100
-        var newChildren = children.map { $0.scaled(by: factor, rescaleShares: true) }
-        newChildren.append(ChartItem(
-            name: "hidden space", path: Self.hiddenSpacePath, size: bytes,
-            depth: 1, relStart: 100 - hiddenShare, relSize: hiddenShare,
-            fractionOfRoot: hiddenShare / 100,
-            isDirectory: false, hasHiddenChildren: false,
-            isHiddenSpace: true, children: []
-        ))
-        return ChartItem(
-            name: name, path: path, size: newTotal,
             depth: 0, relStart: 0, relSize: 100, fractionOfRoot: 1,
-            isDirectory: isDirectory, hasHiddenChildren: hasHiddenChildren,
-            children: newChildren
-        )
-    }
-
-    /// Scales `fractionOfRoot` through the subtree; only the top level
-    /// also rescales its share of the (enlarged) parent.
-    private func scaled(by factor: Double, rescaleShares: Bool) -> ChartItem {
-        ChartItem(
-            name: name, path: path, size: size, depth: depth,
-            relStart: rescaleShares ? relStart * factor : relStart,
-            relSize: rescaleShares ? relSize * factor : relSize,
-            fractionOfRoot: fractionOfRoot * factor,
-            isDirectory: isDirectory, hasHiddenChildren: hasHiddenChildren,
-            isHiddenSpace: isHiddenSpace,
-            children: children.map { $0.scaled(by: factor, rescaleShares: false) }
+            extraSlice: extra
         )
     }
 
@@ -104,23 +75,20 @@ struct ChartItem: Equatable, Identifiable, Sendable {
         depth: Int,
         relStart: Double,
         relSize: Double,
-        fractionOfRoot: Double
+        fractionOfRoot: Double,
+        extraSlice: (name: String, bytes: Int64)? = nil
     ) -> ChartItem {
         let isDirectory = tree.isDirectory(node)
+        let extraBytes = extraSlice?.bytes ?? 0
+        let totalSize = tree.size(of: node) + extraBytes
         let hasChildren = isDirectory && tree.childCount(of: node) > 0
         var children: [ChartItem] = []
 
         if hasChildren && depth < maxDepth {
-            let parentSize = max(tree.size(of: node), 1)
-            let prefix = path.hasSuffix("/") ? path : path + "/"
-            // Largest first (name as a deterministic tiebreak); matches
-            // the list view and keeps successive live snapshots stable.
-            let ordered = tree.children(of: node).sorted {
-                let (a, b) = (tree.size(of: $0), tree.size(of: $1))
-                return a == b ? tree.name(of: $0) < tree.name(of: $1) : a > b
-            }
+            let parentSize = max(totalSize, 1)
+            let prefix = path.directoryPrefix
             var cursor = 0.0
-            for child in ordered {
+            for child in tree.childrenSortedForDisplay(of: node) {
                 let childSize = tree.size(of: child)
                 guard childSize > 0 else { break }
                 let share = Double(childSize) / Double(parentSize) * 100
@@ -139,11 +107,23 @@ struct ChartItem: Equatable, Identifiable, Sendable {
             }
         }
 
+        if let extraSlice, extraBytes > 0 {
+            // End-anchored so the synthetic wedge always closes the circle.
+            let share = Double(extraBytes) / Double(max(totalSize, 1)) * 100
+            children.append(ChartItem(
+                name: extraSlice.name, path: "::" + extraSlice.name,
+                size: extraBytes,
+                depth: depth + 1, relStart: 100 - share, relSize: share,
+                fractionOfRoot: fractionOfRoot * share / 100,
+                kind: .synthetic, hasHiddenChildren: false, children: []
+            ))
+        }
+
         return ChartItem(
-            name: name, path: path, size: tree.size(of: node),
+            name: name, path: path, size: totalSize,
             depth: depth, relStart: relStart, relSize: relSize,
             fractionOfRoot: fractionOfRoot,
-            isDirectory: isDirectory,
+            kind: isDirectory ? .directory : .file,
             hasHiddenChildren: hasChildren && depth >= maxDepth,
             children: children
         )

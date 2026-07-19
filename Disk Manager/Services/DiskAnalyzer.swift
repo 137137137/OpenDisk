@@ -39,11 +39,17 @@ final class DiskAnalyzer {
     /// True when a scan of "/" was refused because Full Disk Access is
     /// missing.
     private(set) var needsFullDiskAccess = false
-    private(set) var statusDescription = ""
-    private(set) var currentScanPath = ""
-    private(set) var filesPerSecond = ""
     private(set) var totalDiskScannedBytes: Int64 = 0
+    private(set) var itemsScanned = 0
+    /// When the running scan started; views derive throughput from it.
+    private(set) var scanStartDate: Date?
     private(set) var scanDuration: TimeInterval = 0
+    /// Total for the status bar: the viewed directory's actual size (plus
+    /// hidden space at the scan root), not a sum of trimmed visible rows.
+    private(set) var displayedTotalBytes: Int64 = 0
+    /// Bumped whenever the displayed rows are replaced — a cheap value
+    /// for views to animate on instead of diffing whole row arrays.
+    private(set) var displayVersion = 0
 
     // MARK: - Dependencies & state
 
@@ -86,10 +92,8 @@ final class DiskAnalyzer {
 
         needsFullDiskAccess = false
         isScanning = true
-        statusDescription = "Preparing scan…"
-        currentScanPath = ""
-        filesPerSecond = ""
         totalDiskScannedBytes = 0
+        itemsScanned = 0
         scanDuration = 0
         scanRootPath = path
         currentPath = path
@@ -99,7 +103,10 @@ final class DiskAnalyzer {
         rootItems = []
         chartRoot = nil
         hiddenSpace = nil
+        displayedTotalBytes = 0
+        displayVersion += 1
         let startDate = Date()
+        scanStartDate = startDate
 
         // Instant skeleton: one shallow directory read shows the top-level
         // names right away, before the scan has produced any numbers.
@@ -108,6 +115,8 @@ final class DiskAnalyzer {
             guard let self, self.generation == generation, self.isScanning,
                   self.scanResult == nil else { return }
             self.rootItems = items
+            self.displayedTotalBytes = items.reduce(0) { $0 + $1.size }
+            self.displayVersion += 1
         }
 
         let scanner = self.scanner
@@ -175,8 +184,7 @@ final class DiskAnalyzer {
     func navigateToPath(_ path: String) -> Bool {
         guard let node = nodeID(forPath: path) else { return false }
         currentPath = path
-        rootItems = folderItems(for: node, limit: displayLimit(for: path))
-        rebuildChartRoot(for: node)
+        display(node: node)
         return true
     }
 
@@ -199,14 +207,8 @@ final class DiskAnalyzer {
     }
 
     private func apply(_ progress: ScanProgress, startedAt: Date) {
-        statusDescription = "Scanning: \(ByteFormatter.formatFileSize(progress.scannedBytes)) (\(progress.itemsScanned.formatted()) items)"
-        currentScanPath = progress.currentPath
         totalDiskScannedBytes = progress.scannedBytes
-
-        let elapsed = Date().timeIntervalSince(startedAt)
-        if elapsed > 0 {
-            filesPerSecond = "\(Int(Double(progress.itemsScanned) / elapsed).formatted()) files/sec"
-        }
+        itemsScanned = progress.itemsScanned
     }
 
     /// Re-materializes the on-screen rows from the current tree, keeping
@@ -215,13 +217,21 @@ final class DiskAnalyzer {
     /// snapshot) stays put rather than flashing empty.
     private func refreshDisplayedItems() {
         if let node = nodeID(forPath: currentPath) {
-            rootItems = folderItems(for: node, limit: displayLimit(for: currentPath))
-            rebuildChartRoot(for: node)
+            display(node: node)
         } else if !resultIsPartial {
             currentPath = scanRootPath
-            rootItems = folderItems(for: FileTree.rootID, limit: nil)
-            rebuildChartRoot(for: FileTree.rootID)
+            display(node: FileTree.rootID)
         }
+    }
+
+    /// Replaces the on-screen rows, chart and totals with `node`'s
+    /// contents — the one place display state is derived from the tree.
+    private func display(node: FileTree.NodeID) {
+        rootItems = folderItems(for: node, limit: displayLimit(for: currentPath))
+        let hiddenBytes = hiddenSpaceForCurrentDirectory?.totalBytes ?? 0
+        displayedTotalBytes = (scanResult?.tree.size(of: node) ?? 0) + hiddenBytes
+        displayVersion += 1
+        rebuildChartRoot(for: node)
     }
 
     private func rebuildChartRoot(for node: FileTree.NodeID) {
@@ -232,11 +242,11 @@ final class DiskAnalyzer {
         let name = node == FileTree.rootID
             ? currentPath
             : (currentPath as NSString).lastPathComponent
-        var root = ChartItem.build(from: tree, at: node, name: name, path: currentPath)
-        if let hiddenSpace = hiddenSpaceForCurrentDirectory {
-            root = root.appendingHiddenSpace(bytes: hiddenSpace.totalBytes)
-        }
-        chartRoot = root
+        let hiddenBytes = hiddenSpaceForCurrentDirectory?.totalBytes ?? 0
+        chartRoot = ChartItem.build(
+            from: tree, at: node, name: name, path: currentPath,
+            extraSlice: hiddenBytes > 0 ? ("hidden space", hiddenBytes) : nil
+        )
     }
 
     // MARK: - Private helpers
@@ -250,10 +260,7 @@ final class DiskAnalyzer {
 
     private func nodeID(forPath path: String) -> FileTree.NodeID? {
         guard let result = scanResult else { return nil }
-        if path == result.rootPath { return FileTree.rootID }
-        let prefix = result.rootPath.hasSuffix("/") ? result.rootPath : result.rootPath + "/"
-        guard path.hasPrefix(prefix) else { return nil }
-        return result.tree.nodeID(atComponents: path.dropFirst(prefix.count).split(separator: "/"))
+        return result.tree.nodeID(forPath: path, rootPath: result.rootPath)
     }
 
     private func folderItems(for node: FileTree.NodeID, limit: Int?) -> [FolderItem] {
@@ -262,13 +269,8 @@ final class DiskAnalyzer {
         // arriving); finished results hide sub-1KB noise.
         let minVisibleSize = resultIsPartial ? Int64(-1) : Self.minVisibleSize
         // Sort and trim on node IDs first so only the visible rows ever
-        // materialize path strings. Ties break by name so successive live
-        // snapshots do not shuffle equal-sized rows.
-        return tree.children(of: node)
-            .sorted {
-                let (a, b) = (tree.size(of: $0), tree.size(of: $1))
-                return a == b ? tree.name(of: $0) < tree.name(of: $1) : a > b
-            }
+        // materialize path strings.
+        return tree.childrenSortedForDisplay(of: node)
             .prefix(limit ?? Int.max)
             .filter { tree.size(of: $0) > minVisibleSize }
             .map { child in
@@ -306,7 +308,7 @@ final class DiskAnalyzer {
             return []
         }
 
-        let prefix = path.hasSuffix("/") ? path : path + "/"
+        let prefix = path.directoryPrefix
         var directories: [FolderItem] = []
         var files: [FolderItem] = []
         for url in urls {

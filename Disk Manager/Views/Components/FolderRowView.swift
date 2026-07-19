@@ -5,8 +5,6 @@ struct FolderRowView: View {
     let item: FolderItem
     let onTap: () -> Void
 
-    @State private var isHovered = false
-
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 10) {
@@ -49,20 +47,10 @@ struct FolderRowView: View {
             }
             .padding(.vertical, 4)
             .padding(.horizontal, 8)
-            .background {
-                if isHovered {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(.quaternary)
-                }
-            }
+            .hoverHighlight()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-        }
         .contextMenu {
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])

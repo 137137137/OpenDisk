@@ -20,33 +20,38 @@ enum ScanCache {
     // MARK: - Public API
 
     static func load(forRoot rootPath: String) -> Entry? {
+        // Mapping keeps the decode reading straight from the page cache
+        // instead of copying the whole file up front.
         guard let url = cacheFileURL(forRoot: rootPath),
-              let data = try? Data(contentsOf: url) else { return nil }
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
 
-        var offset = 0
+        var offset = data.startIndex
         func read<T>(_ type: T.Type) -> T? {
             let size = MemoryLayout<T>.size
-            guard offset + size <= data.count else { return nil }
+            guard offset + size <= data.endIndex else { return nil }
             defer { offset += size }
-            return data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: T.self) }
+            return data.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: offset - data.startIndex, as: T.self)
+            }
         }
 
         guard read(UInt32.self) == formatVersion,
               let eventID = read(UInt64.self),
               let savedDevice = read(UInt64.self),
               let pathLength = read(UInt32.self),
-              offset + Int(pathLength) <= data.count else { return nil }
+              offset + Int(pathLength) <= data.endIndex else { return nil }
 
         let savedPath = String(decoding: data[offset..<(offset + Int(pathLength))], as: UTF8.self)
         offset += Int(pathLength)
 
         // The cache must describe this exact root on this exact volume —
         // a re-formatted or different disk mounted at the same place must
-        // not resurrect a stale tree.
+        // not resurrect a stale tree. The tree decodes from a no-copy
+        // slice of the mapped file.
         guard savedPath == rootPath,
               let device = VolumeAttributes.deviceID(ofPath: rootPath),
               UInt64(bitPattern: Int64(device)) == savedDevice,
-              let tree = FileTree(serializedData: data.subdata(in: offset..<data.count)) else {
+              let tree = FileTree(serializedData: data[offset...]) else {
             return nil
         }
         return Entry(tree: tree, eventID: eventID)
@@ -58,22 +63,36 @@ enum ScanCache {
         guard let url = cacheFileURL(forRoot: rootPath),
               let device = VolumeAttributes.deviceID(ofPath: rootPath) else { return }
 
-        var data = Data()
+        var header = Data()
         func append<T>(_ value: T) {
-            withUnsafeBytes(of: value) { data.append(contentsOf: $0) }
+            withUnsafeBytes(of: value) { header.append(contentsOf: $0) }
         }
         append(formatVersion)
         append(eventID)
         append(UInt64(bitPattern: Int64(device)))
         let pathBytes = Data(rootPath.utf8)
         append(UInt32(pathBytes.count))
-        data.append(pathBytes)
-        data.append(tree.serializedData())
+        header.append(pathBytes)
 
+        // Header and tree blob are written sequentially (to a temp file
+        // swapped in whole) so the big blob is never copied into a second
+        // combined Data just to prepend a few bytes.
+        let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            at: directory, withIntermediateDirectories: true
         )
-        try? data.write(to: url, options: .atomic)
+        let temporary = directory.appendingPathComponent(UUID().uuidString + ".tmp")
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil),
+              let handle = try? FileHandle(forWritingTo: temporary) else { return }
+        do {
+            try handle.write(contentsOf: header)
+            try handle.write(contentsOf: tree.serializedData())
+            try handle.close()
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+        } catch {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: temporary)
+        }
     }
 
     // MARK: - Location

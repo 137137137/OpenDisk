@@ -5,6 +5,9 @@ import SwiftUI
 /// the containing view (shared with the chart modes).
 struct ScanResultsView: View {
     let items: [FolderItem]
+    /// Bumped by the analyzer whenever `items` is replaced — a cheap
+    /// animation trigger that avoids diffing the whole row array.
+    let displayVersion: Int
     /// Present only at a volume's scan root, after the scan completes.
     var hiddenSpace: HiddenSpaceInfo?
     let onFolderTap: (FolderItem) -> Void
@@ -17,7 +20,7 @@ struct ScanResultsView: View {
                 }
             }
             .listStyle(.plain)
-            .animation(.default, value: items)
+            .animation(.default, value: displayVersion)
 
             if let hiddenSpace {
                 Divider()

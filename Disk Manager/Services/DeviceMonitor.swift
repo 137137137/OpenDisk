@@ -31,16 +31,20 @@ final class DeviceMonitor {
                 icon: "desktopcomputer",
                 path: "/",
                 totalBytes: capacity.total,
-                availableBytes: capacity.available,
-                isBootVolume: true
+                availableBytes: capacity.available
             ))
         }
 
+        let bootDevice = VolumeAttributes.deviceID(ofPath: "/")
         let volumeNames = (try? FileManager.default.contentsOfDirectory(atPath: "/Volumes")) ?? []
         for name in volumeNames.sorted() {
             guard !shouldSkipVolume(named: name) else { continue }
             let path = "/Volumes/" + name
-            guard FileManager.default.isReadableFile(atPath: path),
+            // The boot volume mounts an alias of itself under /Volumes
+            // (whatever its display name); a device-ID match identifies
+            // it without hardcoding names.
+            guard VolumeAttributes.deviceID(ofPath: path) != bootDevice,
+                  FileManager.default.isReadableFile(atPath: path),
                   let capacity = volumeCapacity(ofPath: path) else {
                 continue
             }
@@ -49,8 +53,7 @@ final class DeviceMonitor {
                 icon: "externaldrive",
                 path: path,
                 totalBytes: capacity.total,
-                availableBytes: capacity.available,
-                isBootVolume: false
+                availableBytes: capacity.available
             ))
         }
 
@@ -58,11 +61,9 @@ final class DeviceMonitor {
     }
 
     private nonisolated static func shouldSkipVolume(named name: String) -> Bool {
-        // Hidden volumes, the boot volume's own mount alias, and Time
-        // Machine snapshots are not separately scannable devices.
-        name.hasPrefix(".")
-            || name == "Macintosh HD"
-            || name.contains("com.apple.TimeMachine")
+        // Hidden volumes and Time Machine snapshots are not separately
+        // scannable devices.
+        name.hasPrefix(".") || name.contains("com.apple.TimeMachine")
     }
 
     private nonisolated static func volumeCapacity(

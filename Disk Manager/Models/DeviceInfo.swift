@@ -14,8 +14,6 @@ struct DeviceInfo: Identifiable, Hashable, Sendable {
     let path: String
     let totalBytes: Int64
     let availableBytes: Int64
-    /// True for the "whole Mac" entry that scans "/".
-    let isBootVolume: Bool
 
     var usedBytes: Int64 { totalBytes - availableBytes }
 

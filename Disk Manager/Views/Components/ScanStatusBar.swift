@@ -8,11 +8,24 @@ struct ScanStatusBar: View {
     /// Fraction of the volume's used bytes scanned so far; nil shows an
     /// indeterminate bar.
     let progressFraction: Double?
-    let scanStatus: String
-    let filesPerSecond: String
+    /// Raw scan counters; this view owns their formatting.
+    let scannedBytes: Int64
+    let itemsScanned: Int
+    let scanStartDate: Date?
     let scanDuration: TimeInterval
     let totalBytes: Int64
     let itemCount: Int
+
+    private var scanStatus: String {
+        "Scanning: \(ByteFormatter.formatFileSize(scannedBytes)) (\(itemsScanned.formatted()) items)"
+    }
+
+    private var filesPerSecond: String {
+        guard let scanStartDate, itemsScanned > 0 else { return "" }
+        let elapsed = Date().timeIntervalSince(scanStartDate)
+        guard elapsed > 0 else { return "" }
+        return "\(Int(Double(itemsScanned) / elapsed).formatted()) files/sec"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,7 +42,7 @@ struct ScanStatusBar: View {
                     HStack(spacing: 6) {
                         ProgressView()
                             .controlSize(.mini)
-                        Text(scanStatus.isEmpty ? "Scanning…" : scanStatus)
+                        Text(itemsScanned > 0 ? scanStatus : "Scanning…")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

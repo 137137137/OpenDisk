@@ -105,14 +105,19 @@ final class ScanEngine: DiskScanning {
         _ = Self.processTuning
 
         let metrics = ScanMetrics()
-        metrics.setTotalUsedBytes(VolumeAttributes.usedBytes(ofVolumeContaining: path))
         let cancellation = CancellationFlag()
         let assembler = PartialResultAssembler()
 
         let progressTask = Task {
+            var lastEmitted: ScanProgress?
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.progressInterval)
-                onEvent(.progress(metrics.snapshot()))
+                let snapshot = metrics.snapshot()
+                // Quiet stretches (e.g. one worker stuck in a huge
+                // directory) emit nothing new; skip the no-op event.
+                guard snapshot != lastEmitted else { continue }
+                lastEmitted = snapshot
+                onEvent(.progress(snapshot))
             }
         }
 
@@ -185,17 +190,7 @@ final class ScanEngine: DiskScanning {
             )
         }
 
-        // Some entries shown at "/" exist only in the Data volume's
-        // namespace; translate so rescanning them works, while presenting
-        // results under the requested path.
-        var scanPath = path
-        if !FileManager.default.fileExists(atPath: scanPath) {
-            let dataPath = dataVolumeMountPoint + path
-            if FileManager.default.fileExists(atPath: dataPath) {
-                scanPath = dataPath
-            }
-        }
-
+        let scanPath = resolveDataVolumeAlias(path)
         let subtreeKey = "subtree"
         assembler.setComposer { trees in
             var tree = trees[subtreeKey] ?? FileTree(rootName: path)
@@ -213,6 +208,24 @@ final class ScanEngine: DiskScanning {
         return tree
     }
 
+    /// Some entries shown at "/" exist only in the Data volume's
+    /// namespace; translate so rescanning them works, while presenting
+    /// results under the requested path.
+    private static func resolveDataVolumeAlias(_ path: String) -> String {
+        guard !FileManager.default.fileExists(atPath: path) else { return path }
+        let dataPath = dataVolumeMountPoint + path
+        return FileManager.default.fileExists(atPath: dataPath) ? dataPath : path
+    }
+
+    /// Whether the volume rooted at `path` scans through the catalog
+    /// scanner. One predicate feeds both strategy selection and cache
+    /// eligibility (the cache only backs traversal scans).
+    private static func usesCatalogScan(forRoot path: String) -> Bool {
+        VolumeAttributes.isVolumeRoot(path)
+            && VolumeAttributes.filesystemType(ofVolumeContaining: path) == "hfs"
+            && VolumeAttributes.supportsCatalogSearch(atPath: path)
+    }
+
     // MARK: - Scan cache
 
     /// Scans `path` through the on-disk cache when possible: a cached
@@ -224,7 +237,7 @@ final class ScanEngine: DiskScanning {
     private static func scanRootTreeUsingCache(
         path: String,
         rootName: String,
-        allowedDevices: Set<dev_t>?,
+        allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         registerPartial: (@escaping PartialTreeProvider) -> Void
@@ -234,20 +247,17 @@ final class ScanEngine: DiskScanning {
         let startEventID = FSEventsChangeJournal.currentEventID
 
         // HFS+ volumes go through the catalog scanner; no cache there.
-        let usesCatalog = VolumeAttributes.isVolumeRoot(path)
-            && VolumeAttributes.filesystemType(ofVolumeContaining: path) == "hfs"
+        let usesCatalog = usesCatalogScan(forRoot: path)
 
         if !usesCatalog,
            let cached = ScanCache.load(forRoot: path),
            cached.tree.name(of: FileTree.rootID) == rootName,
            let changes = FSEventsChangeJournal.changes(since: cached.eventID, under: path) {
-            let devices = allowedDevices
-                ?? VolumeAttributes.deviceID(ofPath: path).map { [$0] } ?? []
             let live = Locked(cached.tree)
             registerPartial { live.withLock { $0 } }
             if IncrementalUpdater.apply(
                 changes, to: live, rootPath: path,
-                allowedDevices: devices, metrics: metrics, isCancelled: isCancelled
+                allowedDevices: allowedDevices, metrics: metrics, isCancelled: isCancelled
             ) {
                 let tree = live.withLock { $0 }
                 saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
@@ -320,9 +330,7 @@ final class ScanEngine: DiskScanning {
         registerPartial: (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
         let isVolumeRoot = VolumeAttributes.isVolumeRoot(path)
-        if isVolumeRoot,
-           VolumeAttributes.filesystemType(ofVolumeContaining: path) == "hfs",
-           VolumeAttributes.supportsCatalogSearch(atPath: path) {
+        if usesCatalogScan(forRoot: path) {
             do {
                 return try CatalogScanner.scanVolume(
                     mountPoint: path, rootName: rootName,
