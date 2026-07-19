@@ -1,9 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// How the current directory's usage is displayed.
-enum AnalysisDisplayMode: String, CaseIterable, Identifiable {
-    case list
+/// Which chart the right-hand pane shows (the list is always visible).
+enum ChartKind: String, CaseIterable, Identifiable {
     case rings
     case treemap
 
@@ -11,7 +10,6 @@ enum AnalysisDisplayMode: String, CaseIterable, Identifiable {
 
     var symbolName: String {
         switch self {
-        case .list: "list.bullet"
         case .rings: "chart.pie"
         case .treemap: "square.grid.2x2"
         }
@@ -19,16 +17,16 @@ enum AnalysisDisplayMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .list: "List"
-        case .rings: "Rings"
-        case .treemap: "Treemap"
+        case .rings: "Rings Chart"
+        case .treemap: "Treemap Chart"
         }
     }
 }
 
 /// Detail pane for a selected device: scans it, streams results live, and
-/// hosts breadcrumb navigation through them, as a list, a rings chart or a
-/// treemap.
+/// hosts breadcrumb navigation through them — a baobab-style split view
+/// with the folder list on the left and a rings or treemap chart on the
+/// right, both updating as the scan runs.
 ///
 /// There is no separate "scanning" screen — results render from the first
 /// instant (a skeleton of top-level names, then live sizes) and the scan's
@@ -42,7 +40,7 @@ struct DiskAnalysisView: View {
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
-    @AppStorage("analysisDisplayMode") private var displayModeRaw = AnalysisDisplayMode.list.rawValue
+    @AppStorage("chartKind") private var chartKindRaw = ChartKind.rings.rawValue
     private let totalUsedDiskSpace: Int64
 
     init(
@@ -58,8 +56,8 @@ struct DiskAnalysisView: View {
         self._currentPath = State(initialValue: rootPath)
     }
 
-    private var displayMode: AnalysisDisplayMode {
-        AnalysisDisplayMode(rawValue: displayModeRaw) ?? .list
+    private var chartKind: ChartKind {
+        ChartKind(rawValue: chartKindRaw) ?? .rings
     }
 
     var body: some View {
@@ -83,8 +81,14 @@ struct DiskAnalysisView: View {
             )
 
             if !analyzer.rootItems.isEmpty {
-                modePickerBar
-                content
+                HSplitView {
+                    ScanResultsView(items: analyzer.rootItems, onFolderTap: navigateToFolder)
+                        .frame(minWidth: 320, idealWidth: 420)
+                        .layoutPriority(1)
+
+                    chartPane
+                        .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                }
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
                     progressFraction: progressFraction,
@@ -115,65 +119,61 @@ struct DiskAnalysisView: View {
         }
     }
 
-    // MARK: - Content modes
-
-    private var modePickerBar: some View {
-        HStack {
-            Spacer()
-            Picker("Display mode", selection: $displayModeRaw) {
-                ForEach(AnalysisDisplayMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.symbolName)
-                        .tag(mode.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-    }
+    // MARK: - Chart pane
 
     @ViewBuilder
-    private var content: some View {
-        switch displayMode {
-        case .list:
-            ScanResultsView(items: analyzer.rootItems, onFolderTap: navigateToFolder)
-
-        case .rings:
-            if let chartRoot = analyzer.chartRoot {
-                RingsChartView(
-                    root: chartRoot,
-                    onSelectDirectory: navigateToPath,
-                    onSelectCenter: goBack
-                )
-                .padding(8)
-            } else {
-                chartPlaceholder
+    private var chartPane: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let chartRoot = analyzer.chartRoot {
+                    switch chartKind {
+                    case .rings:
+                        RingsChartView(
+                            root: chartRoot,
+                            onSelectDirectory: navigateToPath,
+                            onSelectCenter: goBack
+                        )
+                    case .treemap:
+                        TreemapChartView(
+                            root: chartRoot,
+                            onSelectDirectory: navigateToPath
+                        )
+                    }
+                } else {
+                    // Charts need hierarchy; during the skeleton phase
+                    // (before the first scan snapshot) there is none yet.
+                    ProgressView("Building chart…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
+            .padding(8)
 
-        case .treemap:
-            if let chartRoot = analyzer.chartRoot {
-                TreemapChartView(
-                    root: chartRoot,
-                    onSelectDirectory: navigateToPath
-                )
-                .padding(8)
-            } else {
-                chartPlaceholder
-            }
+            chartKindSwitcher
+                .padding(12)
         }
     }
 
-    /// Charts need hierarchy; during the skeleton phase (before the first
-    /// scan snapshot) there is none yet.
-    private var chartPlaceholder: some View {
-        VStack {
-            Spacer()
-            ProgressView("Building chart…")
-            Spacer()
+    /// Baobab-style chart switcher in the pane's bottom-right corner.
+    private var chartKindSwitcher: some View {
+        HStack(spacing: 2) {
+            ForEach(ChartKind.allCases) { kind in
+                Button {
+                    chartKindRaw = kind.rawValue
+                } label: {
+                    Label(kind.title, systemImage: kind.symbolName)
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            chartKind == kind ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear),
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .frame(maxWidth: .infinity)
+        .padding(3)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     /// Fraction of the device's used space scanned so far, or nil (an

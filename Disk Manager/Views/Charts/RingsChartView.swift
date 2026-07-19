@@ -3,6 +3,9 @@ import SwiftUI
 /// Baobab-style rings chart (sunburst): the viewed directory as a center
 /// disk, each depth level a concentric ring, sector sweep proportional to
 /// size. Redraws live as scan snapshots stream in.
+///
+/// Everything — including the hover tip — is drawn inside one `Canvas`,
+/// so hover state changes can only trigger repaints, never re-layout.
 struct RingsChartView: View {
     let root: ChartItem
     /// Called with a directory segment's path when it is clicked.
@@ -16,16 +19,14 @@ struct RingsChartView: View {
     var body: some View {
         GeometryReader { geometry in
             let layout = RingsChartLayout.layout(root: root, in: geometry.size)
-            ZStack(alignment: .topLeading) {
-                Canvas { context, _ in
-                    draw(layout: layout, in: &context)
-                }
+            Canvas { context, size in
+                draw(layout: layout, in: &context)
                 if let hoveredPath,
                    let segment = layout.segments.first(where: { $0.path == hoveredPath }) {
-                    ChartHoverTipOverlay(
+                    ChartTipRenderer.draw(
                         name: segment.name, size: segment.size,
                         fractionOfRoot: segment.fractionOfRoot,
-                        location: hoverLocation, bounds: geometry.size
+                        near: hoverLocation, in: &context, bounds: size
                     )
                 }
             }

@@ -3,6 +3,9 @@ import SwiftUI
 /// Baobab-style treemap: nested slice-and-dice blocks, alternating split
 /// axis per depth, block area proportional to size. Redraws live as scan
 /// snapshots stream in.
+///
+/// Everything — including the hover tip — is drawn inside one `Canvas`,
+/// so hover state changes can only trigger repaints, never re-layout.
 struct TreemapChartView: View {
     let root: ChartItem
     /// Called with a directory block's path when it is clicked.
@@ -16,16 +19,14 @@ struct TreemapChartView: View {
             let layout = TreemapChartLayout.layout(
                 root: root, in: CGRect(origin: .zero, size: geometry.size)
             )
-            ZStack(alignment: .topLeading) {
-                Canvas { context, _ in
-                    draw(layout: layout, in: &context)
-                }
+            Canvas { context, size in
+                draw(layout: layout, in: &context)
                 if let hoveredPath,
                    let block = layout.blocks.last(where: { $0.path == hoveredPath }) {
-                    ChartHoverTipOverlay(
+                    ChartTipRenderer.draw(
                         name: block.name, size: block.size,
                         fractionOfRoot: block.fractionOfRoot,
-                        location: hoverLocation, bounds: geometry.size
+                        near: hoverLocation, in: &context, bounds: size
                     )
                 }
             }
