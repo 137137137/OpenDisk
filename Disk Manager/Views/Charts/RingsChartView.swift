@@ -125,33 +125,53 @@ struct RingsChartView: View {
         return path
     }
 
-    /// Names the larger sectors in place. A label is drawn only when it
-    /// fits inside the sector: within the ring's thickness vertically and
-    /// the sector's chord at mid-radius horizontally.
+    /// Names the larger sectors with text curved along the ring, glyph by
+    /// glyph at the sector's mid-radius — so a label uses the space the
+    /// arc actually offers instead of spilling straight across ring
+    /// boundaries. Drawn only when the whole name fits along the arc and
+    /// within the ring's thickness.
     private func drawSectorLabel(
         for segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,
         in context: inout GraphicsContext
     ) {
         let midRadius = (segment.innerRadius + segment.outerRadius) / 2
-        let chord = 2 * midRadius * sin(min(segment.sweep, .pi) / 2)
-        let maxWidth = chord * 0.9
-        let maxHeight = (segment.outerRadius - segment.innerRadius) * 0.85
-        guard maxWidth >= 28, maxHeight >= 11 else { return }
+        let thickness = segment.outerRadius - segment.innerRadius
+        let arcLength = CGFloat(segment.sweep) * midRadius
+        guard thickness >= 12, arcLength >= 30 else { return }
 
-        let label = context.resolve(
-            Text(segment.name).font(.caption2)
-                .foregroundStyle(.black.opacity(0.75))
-        )
-        // Measure single-line: a name that only fits by wrapping is noise.
-        let labelSize = label.measure(in: CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40))
-        guard labelSize.width <= maxWidth, labelSize.height <= maxHeight else { return }
+        let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40)
+        let glyphs = segment.name.map { character in
+            context.resolve(
+                Text(String(character)).font(.caption2)
+                    .foregroundStyle(.black.opacity(0.75))
+            )
+        }
+        let glyphWidths = glyphs.map { $0.measure(in: unbounded).width }
+        let totalWidth = glyphWidths.reduce(0, +)
+        let lineHeight = glyphs.first?.measure(in: unbounded).height ?? 12
+        guard totalWidth <= arcLength * 0.85, lineHeight <= thickness * 0.85 else { return }
 
-        let angle = segment.startAngle + segment.sweep / 2
-        context.draw(label, at: CGPoint(
-            x: layout.center.x + cos(angle) * midRadius,
-            y: layout.center.y + sin(angle) * midRadius
-        ))
+        // In the lower half of the circle, glyphs run along decreasing
+        // angle with flipped rotation so the text never reads upside down
+        // (arch on top, bowl on the bottom).
+        let bisector = segment.startAngle + segment.sweep / 2
+        let readsReversed = sin(bisector) > 0
+        let totalAngle = Double(totalWidth / midRadius)
+        var cursor = readsReversed ? bisector + totalAngle / 2 : bisector - totalAngle / 2
+
+        for (index, glyph) in glyphs.enumerated() {
+            let glyphAngle = Double(glyphWidths[index] / midRadius)
+            let angle = readsReversed ? cursor - glyphAngle / 2 : cursor + glyphAngle / 2
+            var glyphContext = context
+            glyphContext.translateBy(
+                x: layout.center.x + cos(angle) * midRadius,
+                y: layout.center.y + sin(angle) * midRadius
+            )
+            glyphContext.rotate(by: .radians(readsReversed ? angle - .pi / 2 : angle + .pi / 2))
+            glyphContext.draw(glyph, at: .zero)
+            cursor += readsReversed ? -glyphAngle : glyphAngle
+        }
     }
 
     private func drawCenterLabel(
