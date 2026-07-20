@@ -2,7 +2,7 @@
 
 <h1>OpenDisk</h1>
 
-Analyzes your disk usage on macOS and shows it as an interactive sunburst chart. Scans a full drive in seconds and streams results live while it runs.
+A fast, free, and **open-source** disk space analyzer for macOS — an open alternative to DaisyDisk. Maps your drive as an interactive sunburst chart, scanning a full disk in seconds and streaming results live as it runs.
 
 [![downloads](https://img.shields.io/github/downloads/137137137/OpenDisk/total.svg?style=flat)](https://github.com/137137137/OpenDisk/releases)
 [![release](https://img.shields.io/github/release/137137137/OpenDisk.svg?style=flat)](https://github.com/137137137/OpenDisk/releases/latest)
@@ -24,6 +24,17 @@ Analyzes your disk usage on macOS and shows it as an interactive sunburst chart.
 - Incremental rescans reuse the previous scan and replay filesystem events, so a repeat scan is 20–28x faster than a cold one.
 - Understands APFS volume groups, firmlinks, purgeable space, and system volumes, so the total matches what your Mac reports as used.
 - External drives appear automatically when connected.
+
+## Why OpenDisk?
+
+The DaisyDisk-style sunburst you know — but **free**, **open source**, and just as fast.
+
+| | OpenDisk | DaisyDisk |
+| :-- | :-: | :-: |
+| Price | **Free** | Paid |
+| License | **Open source (MIT)** | Proprietary |
+| Interactive sunburst | ✓ | ✓ |
+| 1 TB cold scan | **17s** | 37s |
 
 ## Benchmarks
 
@@ -58,6 +69,13 @@ Open `OpenDisk.xcodeproj` in Xcode and run, or build from the command line:
 ```sh
 xcodebuild -project "OpenDisk.xcodeproj" -scheme "OpenDisk" build
 ```
+
+## Usage
+
+1. Launch OpenDisk and grant **Full Disk Access** when prompted, so nothing is hidden from the scan.
+2. Pick a drive, or choose **Scan Folder…** to analyze any directory.
+3. Explore the sunburst — hover a slice for its exact size, click to zoom in, and use the breadcrumbs or folder list to step back out.
+4. Open **Purgeable Space** to see caches and other reclaimable storage broken down.
 
 ## How it works
 
