@@ -20,7 +20,7 @@ private struct FakeScanner: DiskScanning {
 
 /// Optionally emits one partial snapshot, then blocks until the test calls
 /// `release()`, so mid-scan UI state can be asserted deterministically.
-private final class GatedScanner: DiskScanning, @unchecked Sendable {
+private final class GatedScanner: DiskScanning, Sendable {
     private let partialTree: FileTree?
     private let finalResult: ScanResult
     private let stream: AsyncStream<Void>

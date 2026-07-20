@@ -415,7 +415,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -451,7 +451,7 @@
 				STRIP_STYLE = all;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -468,7 +468,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "ideals.Disk-ManagerTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Disk Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Disk Manager";
 			};
 			name = Debug;
@@ -486,7 +486,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "ideals.Disk-ManagerTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Disk Manager.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Disk Manager";
 			};
 			name = Release;
@@ -502,7 +502,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "ideals.Disk-ManagerUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = "Disk Manager";
 			};
 			name = Debug;
@@ -518,7 +518,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "ideals.Disk-ManagerUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_TARGET_NAME = "Disk Manager";
 			};
 			name = Release;
