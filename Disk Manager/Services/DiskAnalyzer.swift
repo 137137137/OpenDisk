@@ -182,10 +182,78 @@ final class DiskAnalyzer {
     /// callers decide whether that warrants a fresh scan.
     @discardableResult
     func navigateToPath(_ path: String) -> Bool {
+        if path == HiddenSpaceInfo.sentinelPath {
+            guard let hidden = hiddenSpace else { return false }
+            currentPath = path
+            displayCleanableSpace(hidden)
+            return true
+        }
         guard let node = nodeID(forPath: path) else { return false }
         currentPath = path
         display(node: node)
         return true
+    }
+
+    /// Contents of the synthetic "Purgeable Space" folder: the system's
+    /// auto-managed purgeable pool, plus curated cache locations resolved
+    /// against the scanned tree. Cache entries are real folders (navigable
+    /// onward); their bytes also live under their true parents, so this
+    /// view is a curated lens, not a disjoint partition of the disk.
+    private func displayCleanableSpace(_ hidden: HiddenSpaceInfo) {
+        let caches = cleanableCacheEntries()
+        var items = [FolderItem(
+            name: "macOS Purgeable (auto-managed)",
+            path: HiddenSpaceInfo.systemLeafPath,
+            size: hidden.totalBytes,
+            isDirectory: false,
+            itemCount: 0
+        )]
+        items.append(contentsOf: caches.map {
+            FolderItem(name: $0.name, path: $0.path, size: $0.size, isDirectory: true, itemCount: 0)
+        })
+        items.sort { $0.size == $1.size ? $0.name < $1.name : $0.size > $1.size }
+        rootItems = items
+        displayedTotalBytes = items.reduce(0) { $0 + $1.size }
+        displayVersion += 1
+        chartRoot = cleanableChartRoot(items: items, total: displayedTotalBytes)
+    }
+
+    /// One-ring chart of the cleanable view: cache slices are real
+    /// directories (clickable), the purgeable pool is a plain slice.
+    private func cleanableChartRoot(items: [FolderItem], total: Int64) -> ChartItem? {
+        guard total > 0 else { return nil }
+        var children: [ChartItem] = []
+        var cursor = 0.0
+        for item in items {
+            let share = Double(item.size) / Double(total) * 100
+            children.append(ChartItem(
+                name: item.name, path: item.path, size: item.size,
+                depth: 1, relStart: cursor, relSize: share,
+                fractionOfRoot: share / 100,
+                kind: item.isDirectory ? .directory : .file,
+                hasHiddenChildren: false, children: []
+            ))
+            cursor += share
+        }
+        return ChartItem(
+            name: HiddenSpaceInfo.folderName,
+            path: HiddenSpaceInfo.sentinelPath,
+            size: total, depth: 0, relStart: 0, relSize: 100,
+            fractionOfRoot: 1, kind: .synthetic,
+            hasHiddenChildren: false, children: children
+        )
+    }
+
+    /// Catalog locations that exist in the scanned tree with nonzero size.
+    private func cleanableCacheEntries() -> [(name: String, path: String, size: Int64)] {
+        guard let result = scanResult else { return [] }
+        return CleanableCacheCatalog.locations.compactMap { location in
+            guard let node = result.tree.nodeID(forPath: location.path, rootPath: result.rootPath),
+                  result.tree.isDirectory(node) else { return nil }
+            let size = result.tree.size(of: node)
+            guard size > 0 else { return nil }
+            return (location.name, location.path, size)
+        }
     }
 
     // MARK: - Event handling
@@ -231,16 +299,16 @@ final class DiskAnalyzer {
         let hiddenBytes = hiddenSpaceForCurrentDirectory?.totalBytes ?? 0
         if hiddenBytes > 0 {
             // Purgeable/hidden space rides along as an ordinary folder row
-            // in its size-ordered place (rows are sorted largest-first).
+            // pinned to the very top; navigating into it shows the
+            // system-purgeable pool plus curated cache locations.
             let row = FolderItem(
                 name: HiddenSpaceInfo.folderName,
                 path: HiddenSpaceInfo.sentinelPath,
                 size: hiddenBytes,
                 isDirectory: true,
-                itemCount: 0
+                itemCount: cleanableCacheEntries().count + 1
             )
-            let index = rootItems.firstIndex { $0.size < hiddenBytes } ?? rootItems.endIndex
-            rootItems.insert(row, at: index)
+            rootItems.insert(row, at: 0)
         }
         displayedTotalBytes = (scanResult?.tree.size(of: node) ?? 0) + hiddenBytes
         displayVersion += 1

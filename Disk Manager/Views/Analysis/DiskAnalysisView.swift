@@ -97,7 +97,13 @@ struct DiskAnalysisView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise") {
-                    Task { await analyzer.scanDirectory(currentPath) }
+                    // Refreshing inside the synthetic purgeable view
+                    // rescans the disk it belongs to.
+                    Task {
+                        await analyzer.scanDirectory(
+                            currentPath.hasPrefix("::") ? rootPath : currentPath
+                        )
+                    }
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .help("Rescan the current folder")
@@ -168,10 +174,7 @@ struct DiskAnalysisView: View {
     // MARK: - Navigation
 
     private func navigateToFolder(_ item: FolderItem) {
-        // Synthetic rows ("::"-prefixed paths, e.g. purgeable space) have
-        // no contents to navigate into — and must never reach showContents,
-        // which would start a scan of a nonexistent path.
-        guard item.isDirectory, !item.path.hasPrefix("::") else { return }
+        guard item.isDirectory else { return }
         guard showContents(of: item.path) else { return }
         breadcrumbs.append(currentPath)
         currentPath = item.path
@@ -204,7 +207,9 @@ struct DiskAnalysisView: View {
     /// scan.
     private func showContents(of path: String) -> Bool {
         if analyzer.navigateToPath(path) { return true }
-        guard !analyzer.isScanning else { return false }
+        // Synthetic paths ("::"-prefixed) resolve in the analyzer or not
+        // at all — they must never fall through to a filesystem scan.
+        guard !analyzer.isScanning, !path.hasPrefix("::") else { return false }
         Task { await analyzer.scanDirectory(path) }
         return true
     }

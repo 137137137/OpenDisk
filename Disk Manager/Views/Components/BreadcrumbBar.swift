@@ -31,6 +31,16 @@ struct BreadcrumbBar: View {
             name: rootName, path: rootPath, isRoot: true, isLast: currentPath == rootPath
         )]
 
+        // Synthetic locations ("::Name") aren't under the scan root; show
+        // them as a single crumb after the root.
+        if currentPath.hasPrefix("::") {
+            result.append(PathComponent(
+                name: String(currentPath.dropFirst(2)),
+                path: currentPath, isRoot: false, isLast: true
+            ))
+            return result
+        }
+
         let prefix = rootPath.directoryPrefix
         guard currentPath.hasPrefix(prefix) else { return result }
 
