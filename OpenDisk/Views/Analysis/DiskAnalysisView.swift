@@ -66,19 +66,6 @@ struct DiskAnalysisView: View {
                             )
                     }
                 }
-                .dropDestination(for: CollectedFile.self) { files, _ in
-                    collector.add(files)
-                    return true
-                }
-
-                CollectorBar(collector: collector) { _ in
-                    // Files were removed — rescan the root and return to the
-                    // top so the freed space is reflected immediately.
-                    breadcrumbs = []
-                    currentPath = rootPath
-                    Task { await analyzer.scanDirectory(rootPath) }
-                }
-
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
                     progressFraction: progressFraction,
@@ -139,21 +126,39 @@ struct DiskAnalysisView: View {
 
     @ViewBuilder
     private var chartPane: some View {
-        Group {
-            if let chartRoot = analyzer.chartRoot {
-                RingsChartView(
-                    root: chartRoot,
-                    onSelectDirectory: navigateToPath,
-                    onSelectCenter: goBack
-                )
-            } else {
-                // The chart needs hierarchy; during the skeleton phase
-                // (before the first scan snapshot) there is none yet.
-                ProgressView("Building chart…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            Group {
+                if let chartRoot = analyzer.chartRoot {
+                    RingsChartView(
+                        root: chartRoot,
+                        onSelectDirectory: navigateToPath,
+                        onSelectCenter: goBack
+                    )
+                } else {
+                    // The chart needs hierarchy; during the skeleton phase
+                    // (before the first scan snapshot) there is none yet.
+                    ProgressView("Building chart…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(8)
+
+            // Centered under the graph: a drop target that invites files from
+            // the list and expands into the deletion tray once it holds any.
+            CollectorBar(collector: collector) { _ in
+                // Files were removed — rescan the root and return to the top
+                // so the freed space is reflected immediately.
+                breadcrumbs = []
+                currentPath = rootPath
+                Task { await analyzer.scanDirectory(rootPath) }
             }
         }
-        .padding(8)
+        // Dropping anywhere on the chart side collects the file.
+        .dropDestination(for: CollectedFile.self) { files, _ in
+            collector.add(files)
+            return true
+        }
     }
 
     /// Fraction of the device's used space scanned so far, or nil (an

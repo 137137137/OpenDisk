@@ -29,7 +29,8 @@ struct OpenDiskApp: App {
         guard showPromptAtStartup else { return }
 
         // Slightly delayed so the window is on screen before the alert.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.5))
             FullDiskAccess.promptIfNotGranted(
                 title: "Full Disk Access Required",
                 message: "OpenDisk needs Full Disk Access to analyze all files and folders on your system. You can grant this permission in System Settings > Privacy & Security > Full Disk Access."

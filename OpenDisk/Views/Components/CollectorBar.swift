@@ -23,21 +23,15 @@ struct CollectorBar: View {
     private enum Phase: Equatable { case idle, countdown, deleting, done }
 
     var body: some View {
-        Group {
-            if collector.isEmpty && phase == .idle {
-                EmptyView()
-            } else {
-                GlassEffectContainer {
-                    content
-                        .padding(12)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+        GlassEffectContainer {
+            content
+                .frame(maxWidth: .infinity)
+                .padding(12)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .animation(.spring(duration: 0.3), value: collector.isEmpty)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
+        .animation(.spring(duration: 0.3), value: collector.count)
         .animation(.spring(duration: 0.3), value: phase)
         .sheet(item: $previewItem) { item in
             QuickLookSheet(url: item.url)
@@ -49,11 +43,24 @@ struct CollectorBar: View {
     @ViewBuilder
     private var content: some View {
         switch phase {
-        case .idle:      collectingView
+        case .idle:
+            if collector.isEmpty { hintView } else { collectingView }
         case .countdown: countdownView
         case .deleting:  deletingView
         case .done:      doneView
         }
+    }
+
+    /// Shown when nothing is collected yet: the persistent drop-target hint.
+    private var hintView: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.down.circle.dotted")
+            Text("Drag files here to collect them for deletion")
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
     }
 
     private var collectingView: some View {

@@ -30,15 +30,10 @@ struct CollectedFile: Codable, Transferable, Identifiable, Hashable, Sendable {
     }
 
     static var transferRepresentation: some TransferRepresentation {
-        // Private in-app content type; in-process drags need no Info.plist
-        // registration. Also expose a fileURL proxy so an item could be
-        // dragged out to Finder/other apps if desired.
-        CodableRepresentation(contentType: .openDiskCollectedFile)
+        // Encode as JSON — a standard, already-declared UTI — so the in-app
+        // drag needs no custom exported type in the Info.plist. Also expose a
+        // fileURL proxy so an item can be dragged out to Finder if desired.
+        CodableRepresentation(contentType: .json)
         ProxyRepresentation(exporting: \.url)
     }
-}
-
-extension UTType {
-    /// Dynamically-declared type for the Collector's in-app drags.
-    static let openDiskCollectedFile = UTType(exportedAs: "ideals.OpenDisk.collected-file")
 }
