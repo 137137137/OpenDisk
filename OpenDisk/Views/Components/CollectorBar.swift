@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Quartz
 
 /// DaisyDisk-style deletion tray, rendered in the functional layer with
 /// Liquid Glass. Lists the collected files, shows a running total, arms a
@@ -16,7 +17,7 @@ struct CollectorBar: View {
     @State private var phase: Phase = .idle
     @State private var secondsLeft = CollectorBar.countdownSeconds
     @State private var countdownTask: Task<Void, Never>?
-    @State private var previewURL: URL?
+    @State private var previewItem: PreviewItem?
     @State private var lastResult: Collector.Result?
 
     private enum Phase: Equatable { case idle, countdown, deleting, done }
@@ -38,7 +39,9 @@ struct CollectorBar: View {
         }
         .animation(.spring(duration: 0.3), value: collector.isEmpty)
         .animation(.spring(duration: 0.3), value: phase)
-        .quickLookPreview($previewURL)
+        .sheet(item: $previewItem) { item in
+            QuickLookSheet(url: item.url)
+        }
     }
 
     // MARK: - Phase content
@@ -61,7 +64,7 @@ struct CollectorBar: View {
                         CollectedRow(
                             file: file,
                             onRemove: { collector.remove(file) },
-                            onPreview: { previewURL = file.url }
+                            onPreview: { previewItem = PreviewItem(url: file.url) }
                         )
                     }
                 }
@@ -73,8 +76,10 @@ struct CollectorBar: View {
 
             HStack(spacing: 12) {
                 totalBadge
-                Text(totalParts.unit).fontWeight(.semibold)
-                    + Text(" collected").foregroundColor(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(totalParts.unit).fontWeight(.semibold)
+                    Text(" collected").foregroundStyle(.secondary)
+                }
                 Spacer()
                 Button(role: .destructive) {
                     arm()
@@ -92,9 +97,11 @@ struct CollectorBar: View {
     private var countdownView: some View {
         HStack(spacing: 14) {
             countdownRing
-            Text("\(secondsLeft) ").fontWeight(.semibold).monospacedDigit()
-                + Text("seconds to start. The files will be ").foregroundColor(.secondary)
-                + Text("deleted forever!").foregroundColor(.red).fontWeight(.semibold)
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("\(secondsLeft) ").fontWeight(.semibold).monospacedDigit()
+                Text("seconds to start. The files will be ").foregroundStyle(.secondary)
+                Text("deleted forever!").foregroundStyle(.red).fontWeight(.semibold)
+            }
             Spacer()
             Button("Stop") { cancelCountdown() }
                 .buttonStyle(.glass)
@@ -118,10 +125,12 @@ struct CollectorBar: View {
                 .font(.title2)
                 .foregroundStyle(.green)
             if let result = lastResult {
-                Text("Freed ").foregroundColor(.secondary)
-                    + Text(ByteFormatter.formatFileSize(result.freedBytes)).fontWeight(.semibold)
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text("Freed ").foregroundStyle(.secondary)
+                    Text(ByteFormatter.formatFileSize(result.freedBytes)).fontWeight(.semibold)
+                }
                 if !result.failures.isEmpty {
-                    Text(" · \(result.failures.count) couldn't be removed")
+                    Text("· \(result.failures.count) couldn't be removed")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -200,6 +209,12 @@ struct CollectorBar: View {
     }
 }
 
+/// Identifiable wrapper so a URL can drive a `.sheet(item:)`.
+private struct PreviewItem: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
 /// A single collected file inside the tray: native icon, name, size, and the
 /// Preview / Show in Finder / Open in Terminal / Remove context menu.
 private struct CollectedRow: View {
@@ -271,5 +286,58 @@ private struct CollectedRow: View {
             withApplicationAt: terminal,
             configuration: NSWorkspace.OpenConfiguration()
         )
+    }
+}
+
+/// Native Quick Look preview shown in a sheet, wrapping AppKit's
+/// `QLPreviewView` (SwiftUI's `quickLookPreview` modifier is iOS-only).
+private struct QuickLookSheet: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            QuickLookView(url: url)
+            Divider()
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(10)
+        }
+        .frame(width: 680, height: 520)
+    }
+}
+
+private struct QuickLookView: NSViewRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        if let preview = QLPreviewView(frame: .zero, style: .normal) {
+            preview.autostarts = true
+            preview.previewItem = url as NSURL
+            preview.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(preview)
+            NSLayoutConstraint.activate([
+                preview.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                preview.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                preview.topAnchor.constraint(equalTo: container.topAnchor),
+                preview.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            ])
+            context.coordinator.preview = preview
+        }
+        return container
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.preview?.previewItem = url as NSURL
+    }
+
+    final class Coordinator {
+        var preview: QLPreviewView?
     }
 }

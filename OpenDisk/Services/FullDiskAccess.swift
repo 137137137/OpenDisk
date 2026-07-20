@@ -43,6 +43,8 @@ enum FullDiskAccess {
 
     /// Shows a one-time alert offering to open System Settings when Full
     /// Disk Access is missing. Honors the user's "do not ask again" choice.
+    /// Main-actor isolated: it builds and runs an `NSAlert` and reads `NSApp`.
+    @MainActor
     static func promptIfNotGranted(title: String, message: String) {
         guard !promptSuppressed, !isGranted else { return }
 
