@@ -1,15 +1,15 @@
 <div align="center">
 
-<h1>Disk Manager</h1>
+<h1>OpenDisk</h1>
 
 Analyzes your disk usage on macOS and shows it as an interactive sunburst chart. Scans a full drive in seconds and streams results live while it runs.
 
-[![downloads](https://img.shields.io/github/downloads/137137137/Disk-Manager/total.svg?style=flat)](https://github.com/137137137/Disk-Manager/releases)
-[![release](https://img.shields.io/github/release/137137137/Disk-Manager.svg?style=flat)](https://github.com/137137137/Disk-Manager/releases/latest)
-[![license](https://img.shields.io/github/license/137137137/Disk-Manager.svg?style=flat)](LICENSE)
+[![downloads](https://img.shields.io/github/downloads/137137137/OpenDisk/total.svg?style=flat)](https://github.com/137137137/OpenDisk/releases)
+[![release](https://img.shields.io/github/release/137137137/OpenDisk.svg?style=flat)](https://github.com/137137137/OpenDisk/releases/latest)
+[![license](https://img.shields.io/github/license/137137137/OpenDisk.svg?style=flat)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS-blue.svg?style=flat)](https://www.apple.com/macos/)
 
-<img src="docs/screenshot.png" alt="Disk Manager showing an interactive sunburst chart beside a sortable folder list" width="900"/>
+<img src="docs/screenshot.png" alt="OpenDisk showing an interactive sunburst chart beside a sortable folder list" width="900"/>
 
 </div>
 
@@ -33,7 +33,7 @@ Full scan of a 1 TB Apple Silicon volume, cold cache.
 
 | Tool          | 1 TB scan | Relative    |
 | :------------ | :-------: | :---------- |
-| Disk Manager  | 17s       | 1x          |
+| OpenDisk  | 17s       | 1x          |
 | DaisyDisk     | 37s       | 2.2x slower |
 | Baobab        | 2m 15s    | ~8x slower  |
 
@@ -44,10 +44,10 @@ Full scan of a 1 TB Apple Silicon volume, cold cache.
 
 ## Building
 
-Open `Disk Manager.xcodeproj` in Xcode and run, or build from the command line:
+Open `OpenDisk.xcodeproj` in Xcode and run, or build from the command line:
 
 ```sh
-xcodebuild -project "Disk Manager.xcodeproj" -scheme "Disk Manager" build
+xcodebuild -project "OpenDisk.xcodeproj" -scheme "OpenDisk" build
 ```
 
 ## How it works
@@ -64,7 +64,7 @@ If you want, you can fork the code, make improvements and submit a pull request 
 ## Project layout
 
 ```
-Disk Manager/
+OpenDisk/
 ├── App/                    App entry point
 ├── Models/                 Folder items, chart data, scan progress
 ├── Services/

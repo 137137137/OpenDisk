@@ -1,13 +1,13 @@
 //
-//  Disk_ManagerUITestsLaunchTests.swift
-//  Disk ManagerUITests
+//  OpenDiskUITestsLaunchTests.swift
+//  OpenDiskUITests
 //
 //  Created by 137137137 on 9/2/25.
 //
 
 import XCTest
 
-final class Disk_ManagerUITestsLaunchTests: XCTestCase {
+final class OpenDiskUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

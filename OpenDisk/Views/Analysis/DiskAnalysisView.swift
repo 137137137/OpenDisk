@@ -155,7 +155,7 @@ struct DiskAnalysisView: View {
             ContentUnavailableView {
                 Label("Full Disk Access Required", systemImage: "exclamationmark.shield")
             } description: {
-                Text("Disk Manager needs Full Disk Access to analyze your entire system.")
+                Text("OpenDisk needs Full Disk Access to analyze your entire system.")
             } actions: {
                 Button("Open System Settings") {
                     FullDiskAccess.openSystemSettings()

@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct DiskManagerApp: App {
+struct OpenDiskApp: App {
     @AppStorage("fda_show_prompt_at_startup") private var showPromptAtStartup = true
     @State private var hasCheckedFullDiskAccess = false
 
@@ -32,7 +32,7 @@ struct DiskManagerApp: App {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             FullDiskAccess.promptIfNotGranted(
                 title: "Full Disk Access Required",
-                message: "Disk Manager needs Full Disk Access to analyze all files and folders on your system. You can grant this permission in System Settings > Privacy & Security > Full Disk Access."
+                message: "OpenDisk needs Full Disk Access to analyze all files and folders on your system. You can grant this permission in System Settings > Privacy & Security > Full Disk Access."
             )
         }
     }

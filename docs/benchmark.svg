@@ -36,7 +36,7 @@
 
   <!-- category labels -->
   <g fill="#333333" font-size="13" text-anchor="middle">
-    <text x="140" y="300">Disk Manager</text>
+    <text x="140" y="300">OpenDisk</text>
     <text x="280" y="300">DaisyDisk</text>
     <text x="420" y="300">Baobab</text>
   </g>

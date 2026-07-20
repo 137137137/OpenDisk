@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Disk_Manager
+@testable import OpenDisk
 
 /// Integration tests: run the real traversal scanner against a real
 /// temporary directory tree.

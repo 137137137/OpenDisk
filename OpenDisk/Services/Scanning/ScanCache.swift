@@ -101,7 +101,7 @@ enum ScanCache {
         guard let caches = FileManager.default.urls(
             for: .cachesDirectory, in: .userDomainMask
         ).first else { return nil }
-        let bundle = Bundle.main.bundleIdentifier ?? "DiskManager"
+        let bundle = Bundle.main.bundleIdentifier ?? "OpenDisk"
         return caches
             .appendingPathComponent(bundle, isDirectory: true)
             .appendingPathComponent("ScanCache", isDirectory: true)

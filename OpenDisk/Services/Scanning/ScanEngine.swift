@@ -128,7 +128,7 @@ final class ScanEngine: DiskScanning {
         // never blocks the cooperative pool, and serially so a slow
         // assembly skips ticks instead of piling up.
         let snapshotQueue = DispatchQueue(
-            label: "DiskManager.ScanEngine.partials", qos: .userInitiated
+            label: "OpenDisk.ScanEngine.partials", qos: .userInitiated
         )
         let partialTask = Task {
             var sequence = 0

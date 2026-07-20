@@ -1,13 +1,13 @@
 //
-//  Disk_ManagerUITests.swift
-//  Disk ManagerUITests
+//  OpenDiskUITests.swift
+//  OpenDiskUITests
 //
 //  Created by 137137137 on 9/2/25.
 //
 
 import XCTest
 
-final class Disk_ManagerUITests: XCTestCase {
+final class OpenDiskUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

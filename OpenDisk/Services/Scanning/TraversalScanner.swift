@@ -142,7 +142,7 @@ enum TraversalScanner {
         state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))
 
         let queue = DispatchQueue(
-            label: "DiskManager.TraversalScanner",
+            label: "OpenDisk.TraversalScanner",
             qos: .userInitiated,
             attributes: .concurrent
         )

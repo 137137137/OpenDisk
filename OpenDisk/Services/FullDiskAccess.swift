@@ -10,7 +10,7 @@ import OSLog
 enum FullDiskAccess {
 
     private static let log = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "DiskManager",
+        subsystem: Bundle.main.bundleIdentifier ?? "OpenDisk",
         category: "FullDiskAccess"
     )
 

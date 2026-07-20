@@ -107,7 +107,7 @@ enum FSEventsChangeJournal {
             return nil
         }
 
-        let queue = DispatchQueue(label: "DiskManager.FSEventsChangeJournal")
+        let queue = DispatchQueue(label: "OpenDisk.FSEventsChangeJournal")
         FSEventStreamSetDispatchQueue(stream, queue)
         guard FSEventStreamStart(stream) else {
             FSEventStreamInvalidate(stream)

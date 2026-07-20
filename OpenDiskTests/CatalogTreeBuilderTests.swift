@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Disk_Manager
+@testable import OpenDisk
 
 @Suite("CatalogTreeBuilder")
 struct CatalogTreeBuilderTests {

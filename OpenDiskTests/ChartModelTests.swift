@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 import Testing
-@testable import Disk_Manager
+@testable import OpenDisk
 
 @Suite("Chart model and layouts")
 struct ChartModelTests {

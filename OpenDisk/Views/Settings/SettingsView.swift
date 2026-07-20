@@ -26,7 +26,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Full Disk Access allows Disk Manager to analyze all files and folders on your system for accurate disk usage information.")
+                Text("Full Disk Access allows OpenDisk to analyze all files and folders on your system for accurate disk usage information.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -67,7 +67,7 @@ struct SettingsView: View {
 
             Section {
                 Text("""
-                Why does Disk Manager need Full Disk Access?
+                Why does OpenDisk need Full Disk Access?
 
                 • Analyze system files and protected folders
                 • Calculate accurate disk usage across all directories
