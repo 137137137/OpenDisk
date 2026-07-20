@@ -15,6 +15,7 @@ struct DiskAnalysisView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var analyzer = DiskAnalyzer()
     @State private var collector = Collector()
+    @State private var isCollectorTargeted = false
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
@@ -146,7 +147,7 @@ struct DiskAnalysisView: View {
 
             // Centered under the graph: a drop target that invites files from
             // the list and expands into the deletion tray once it holds any.
-            CollectorBar(collector: collector) { _ in
+            CollectorBar(collector: collector, isTargeted: isCollectorTargeted) { _ in
                 // Files were removed — rescan the root and return to the top
                 // so the freed space is reflected immediately.
                 breadcrumbs = []
@@ -154,11 +155,12 @@ struct DiskAnalysisView: View {
                 Task { await analyzer.scanDirectory(rootPath) }
             }
         }
-        // Dropping anywhere on the chart side collects the file.
+        // Dropping anywhere on the chart side collects the file; the collector
+        // bar below the graph lights up while a drag hovers.
         .dropDestination(for: CollectedFile.self) { files, _ in
             collector.add(files)
             return true
-        }
+        } isTargeted: { isCollectorTargeted = $0 }
     }
 
     /// Fraction of the device's used space scanned so far, or nil (an
