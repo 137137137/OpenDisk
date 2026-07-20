@@ -14,6 +14,7 @@ struct DiskAnalysisView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var analyzer = DiskAnalyzer()
+    @State private var collector = Collector()
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
@@ -65,6 +66,19 @@ struct DiskAnalysisView: View {
                             )
                     }
                 }
+                .dropDestination(for: CollectedFile.self) { files, _ in
+                    collector.add(files)
+                    return true
+                }
+
+                CollectorBar(collector: collector) { _ in
+                    // Files were removed — rescan the root and return to the
+                    // top so the freed space is reflected immediately.
+                    breadcrumbs = []
+                    currentPath = rootPath
+                    Task { await analyzer.scanDirectory(rootPath) }
+                }
+
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
                     progressFraction: progressFraction,
@@ -117,6 +131,8 @@ struct DiskAnalysisView: View {
         .onDisappear {
             analyzer.cancelCurrentScan()
         }
+        // Make the Collector reachable from the row context menus in the list.
+        .environment(collector)
     }
 
     // MARK: - Chart pane

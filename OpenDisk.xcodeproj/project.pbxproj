@@ -12,37 +12,37 @@
 			containerPortal = 1AE9EBEC2E67533B00E04C69 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 1AE9EBF32E67533B00E04C69;
-			remoteInfo = "OpenDisk";
+			remoteInfo = OpenDisk;
 		};
 		1AE9EC0D2E67533D00E04C69 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 1AE9EBEC2E67533B00E04C69 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 1AE9EBF32E67533B00E04C69;
-			remoteInfo = "OpenDisk";
+			remoteInfo = OpenDisk;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		1AE9EBF42E67533B00E04C69 /* OpenDisk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenDisk.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		1AE9EC022E67533D00E04C69 /* OpenDiskTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenDiskTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		1AE9EC0C2E67533D00E04C69 /* OpenDiskUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenDiskUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1AE9EBF42E67533B00E04C69 /* OpenDisk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenDisk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1AE9EC022E67533D00E04C69 /* OpenDiskTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenDiskTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1AE9EC0C2E67533D00E04C69 /* OpenDiskUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenDiskUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1AE9EBF62E67533B00E04C69 /* OpenDisk */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "OpenDisk";
+			path = OpenDisk;
 			sourceTree = "<group>";
 		};
 		1AE9EC052E67533D00E04C69 /* OpenDiskTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "OpenDiskTests";
+			path = OpenDiskTests;
 			sourceTree = "<group>";
 		};
 		1AE9EC0F2E67533D00E04C69 /* OpenDiskUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "OpenDiskUITests";
+			path = OpenDiskUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -110,10 +110,10 @@
 			fileSystemSynchronizedGroups = (
 				1AE9EBF62E67533B00E04C69 /* OpenDisk */,
 			);
-			name = "OpenDisk";
+			name = OpenDisk;
 			packageProductDependencies = (
 			);
-			productName = "OpenDisk";
+			productName = OpenDisk;
 			productReference = 1AE9EBF42E67533B00E04C69 /* OpenDisk.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -133,10 +133,10 @@
 			fileSystemSynchronizedGroups = (
 				1AE9EC052E67533D00E04C69 /* OpenDiskTests */,
 			);
-			name = "OpenDiskTests";
+			name = OpenDiskTests;
 			packageProductDependencies = (
 			);
-			productName = "OpenDiskTests";
+			productName = OpenDiskTests;
 			productReference = 1AE9EC022E67533D00E04C69 /* OpenDiskTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
@@ -156,10 +156,10 @@
 			fileSystemSynchronizedGroups = (
 				1AE9EC0F2E67533D00E04C69 /* OpenDiskUITests */,
 			);
-			name = "OpenDiskUITests";
+			name = OpenDiskUITests;
 			packageProductDependencies = (
 			);
-			productName = "OpenDiskUITests";
+			productName = OpenDiskUITests;
 			productReference = 1AE9EC0C2E67533D00E04C69 /* OpenDiskUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
@@ -396,7 +396,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "OpenDisk/Resources/OpenDisk.entitlements";
+				CODE_SIGN_ENTITLEMENTS = OpenDisk/Resources/OpenDisk.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -411,7 +411,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "ideals.OpenDisk";
+				PRODUCT_BUNDLE_IDENTIFIER = ideals.OpenDisk;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -426,7 +426,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_COVERAGE_MAPPING = NO;
 				CLANG_ENABLE_CODE_COVERAGE = NO;
-				CODE_SIGN_ENTITLEMENTS = "OpenDisk/Resources/OpenDisk.entitlements";
+				CODE_SIGN_ENTITLEMENTS = OpenDisk/Resources/OpenDisk.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -444,7 +444,7 @@
 				);
 				LLVM_LTO = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "ideals.OpenDisk";
+				PRODUCT_BUNDLE_IDENTIFIER = ideals.OpenDisk;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRIP_INSTALLED_PRODUCT = YES;
@@ -465,7 +465,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "ideals.OpenDiskTests";
+				PRODUCT_BUNDLE_IDENTIFIER = ideals.OpenDiskTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
@@ -483,7 +483,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.5;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "ideals.OpenDiskTests";
+				PRODUCT_BUNDLE_IDENTIFIER = ideals.OpenDiskTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
@@ -499,11 +499,11 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "ideals.OpenDiskUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = ideals.OpenDiskUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = "OpenDisk";
+				TEST_TARGET_NAME = OpenDisk;
 			};
 			name = Debug;
 		};
@@ -515,11 +515,11 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "ideals.OpenDiskUITests";
+				PRODUCT_BUNDLE_IDENTIFIER = ideals.OpenDiskUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = "OpenDisk";
+				TEST_TARGET_NAME = OpenDisk;
 			};
 			name = Release;
 		};

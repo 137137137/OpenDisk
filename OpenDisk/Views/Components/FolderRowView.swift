@@ -1,17 +1,33 @@
 import SwiftUI
 import AppKit
 
+/// One row in the results list. Uses the real Finder icon for the file/folder
+/// (via NSWorkspace) so the list reads as native, and is draggable into the
+/// Collector for deletion.
 struct FolderRowView: View {
     let item: FolderItem
     let onTap: () -> Void
 
+    @Environment(Collector.self) private var collector
+
+    /// Synthetic rows ("::"-prefixed, e.g. Purgeable Space) have no on-disk
+    /// location, so they can't be dragged, collected, or revealed.
+    private var isSynthetic: Bool { item.path.hasPrefix("::") }
+    private var fileURL: URL { URL(fileURLWithPath: item.path) }
+
     var body: some View {
+        if isSynthetic {
+            rowButton
+        } else {
+            rowButton
+                .draggable(CollectedFile(item)) { dragPreview }
+        }
+    }
+
+    private var rowButton: some View {
         Button(action: onTap) {
             HStack(spacing: 10) {
-                Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
-                    .font(.title3)
-                    .foregroundStyle(item.isDirectory ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                    .frame(width: 24)
+                icon
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name)
@@ -51,22 +67,61 @@ struct FolderRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            // Synthetic rows ("::"-prefixed paths) have no on-disk location.
-            if !item.path.hasPrefix("::") {
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
-                } label: {
-                    Label("Show in Finder", systemImage: "folder")
-                }
+        .contextMenu { menuContent }
+    }
 
-                Button {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(item.path, forType: .string)
-                } label: {
-                    Label("Copy Path", systemImage: "doc.on.doc")
-                }
+    /// Real Finder icon for on-disk items; a symbol for synthetic rows.
+    @ViewBuilder
+    private var icon: some View {
+        if isSynthetic {
+            Image(systemName: "sparkles")
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 24, height: 22)
+        } else {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 22, height: 22)
+        }
+    }
+
+    private var dragPreview: some View {
+        HStack(spacing: 6) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
+                .resizable()
+                .frame(width: 16, height: 16)
+            Text(item.name).lineLimit(1)
+            Text(item.formattedSize)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+    }
+
+    @ViewBuilder
+    private var menuContent: some View {
+        if !isSynthetic {
+            Button {
+                collector.add(CollectedFile(item))
+            } label: {
+                Label("Collect for Deletion", systemImage: "trash")
+            }
+
+            Divider()
+
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+            } label: {
+                Label("Show in Finder", systemImage: "folder")
+            }
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(item.path, forType: .string)
+            } label: {
+                Label("Copy Path", systemImage: "doc.on.doc")
             }
         }
     }
