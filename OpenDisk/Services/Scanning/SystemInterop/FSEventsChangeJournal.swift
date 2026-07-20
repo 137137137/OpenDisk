@@ -107,7 +107,10 @@ enum FSEventsChangeJournal {
             return nil
         }
 
-        let queue = DispatchQueue(label: "OpenDisk.FSEventsChangeJournal")
+        // Match the waiting thread's QoS: the caller blocks on `done.wait`
+        // below at user-initiated priority, so the FSEvents callback queue
+        // must run at least as high, or the wait is a priority inversion.
+        let queue = DispatchQueue(label: "OpenDisk.FSEventsChangeJournal", qos: .userInitiated)
         FSEventStreamSetDispatchQueue(stream, queue)
         guard FSEventStreamStart(stream) else {
             FSEventStreamInvalidate(stream)
