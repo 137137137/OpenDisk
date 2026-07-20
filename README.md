@@ -30,14 +30,21 @@ Analyzes your disk usage on macOS and shows it as an interactive sunburst chart.
 Full scan of a 1 TB Apple Silicon volume, cold cache.
 
 <div align="center">
-<img src="docs/benchmark.svg" alt="Bar chart comparing full-scan time on a 1 TB drive" width="520"/>
-</div>
 
-| Tool          | 1 TB scan | Relative    |
-| :------------ | :-------: | :---------- |
-| OpenDisk  | 17s       | 1x          |
-| DaisyDisk     | 37s       | 2.2x slower |
-| Baobab        | 2m 15s    | ~8x slower  |
+<img src="docs/benchmark.svg" alt="Bar chart comparing full-scan time on a 1 TB drive" width="520"/>
+
+<table align="center">
+<thead>
+<tr><th align="left">Tool</th><th align="center">1 TB scan</th><th align="left">Relative</th></tr>
+</thead>
+<tbody>
+<tr><td align="left">OpenDisk</td><td align="center">17s</td><td align="left">1x</td></tr>
+<tr><td align="left">DaisyDisk</td><td align="center">37s</td><td align="left">2.2x slower</td></tr>
+<tr><td align="left">Baobab</td><td align="center">2m 15s</td><td align="left">~8x slower</td></tr>
+</tbody>
+</table>
+
+</div>
 
 ## Requirements
 
