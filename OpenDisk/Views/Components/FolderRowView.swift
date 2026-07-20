@@ -9,6 +9,7 @@ struct FolderRowView: View {
     let onTap: () -> Void
 
     @Environment(Collector.self) private var collector
+    @State private var isHovered = false
 
     /// Synthetic rows ("::"-prefixed, e.g. Purgeable Space) have no on-disk
     /// location, so they can't be dragged, collected, or revealed.
@@ -63,8 +64,16 @@ struct FolderRowView: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
-        .hoverHighlight()
+        // No per-row .onHover here: it fires (and animates) on every row that
+        // slides under the cursor while scrolling, which makes fast scrolling
+        // of a big list stutter. Row highlight is handled cheaply below.
+        .background {
+            if isHovered {
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary)
+            }
+        }
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         // simultaneousGesture (not onTapGesture) so the tap doesn't
         // exclusively capture the gesture and starve `.draggable`.
         .simultaneousGesture(TapGesture().onEnded { onTap() })
@@ -80,7 +89,7 @@ struct FolderRowView: View {
                 .foregroundStyle(.tint)
                 .frame(width: 24, height: 22)
         } else {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
+            Image(nsImage: FileIcon.icon(for: item.path))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 22, height: 22)
@@ -89,7 +98,7 @@ struct FolderRowView: View {
 
     private var dragPreview: some View {
         HStack(spacing: 6) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
+            Image(nsImage: FileIcon.icon(for: item.path))
                 .resizable()
                 .frame(width: 16, height: 16)
             Text(item.name).lineLimit(1)

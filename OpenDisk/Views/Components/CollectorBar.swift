@@ -15,18 +15,15 @@ struct CollectorBar: View {
     /// rescan and bring the updated usage back to the top.
     var onDeleted: (Int64) -> Void
 
-    private static let countdownSeconds = 5
-
     @State private var phase: Phase = .idle
     @State private var footerHovered = false
     @State private var listHovered = false
     @State private var footerHeight: CGFloat = 0
-    @State private var secondsLeft = CollectorBar.countdownSeconds
-    @State private var countdownTask: Task<Void, Never>?
+    @State private var showConfirm = false
     @State private var previewItem: PreviewItem?
     @State private var lastResult: Collector.Result?
 
-    private enum Phase: Equatable { case idle, countdown, deleting, done }
+    private enum Phase: Equatable { case idle, deleting, done }
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -68,6 +65,19 @@ struct CollectorBar: View {
             .sheet(item: $previewItem) { item in
                 QuickLookSheet(url: item.url)
             }
+            // Native double-confirmation instead of a countdown.
+            .confirmationDialog(
+                "Delete \(collector.count) item\(collector.count == 1 ? "" : "s")?",
+                isPresented: $showConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Delete \(collector.formattedTotal)", role: .destructive) {
+                    Task { await performDeletion() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This permanently deletes the collected items and can’t be undone.")
+            }
     }
 
     // MARK: - Footer (always in layout)
@@ -90,7 +100,6 @@ struct CollectorBar: View {
         switch phase {
         case .idle:
             if collector.isEmpty { hintView } else { footerRow }
-        case .countdown: countdownView
         case .deleting:  deletingView
         case .done:      doneView
         }
@@ -108,10 +117,18 @@ struct CollectorBar: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Delete") { arm() }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(collector.isEmpty)
+            Button {
+                showConfirm = true
+            } label: {
+                Text("Delete")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Color(nsColor: .systemRed), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(collector.isEmpty)
         }
     }
 
@@ -127,21 +144,6 @@ struct CollectorBar: View {
         .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
-    }
-
-    private var countdownView: some View {
-        HStack(spacing: 12) {
-            countdownRing
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text("\(secondsLeft) ").fontWeight(.semibold).monospacedDigit()
-                Text("seconds to start. The files will be ").foregroundStyle(.secondary)
-                Text("deleted forever!").foregroundStyle(.red).fontWeight(.semibold)
-            }
-            .font(.callout)
-            Spacer()
-            Button("Stop") { cancelCountdown() }
-                .buttonStyle(.bordered)
-        }
     }
 
     private var deletingView: some View {
@@ -207,41 +209,7 @@ struct CollectorBar: View {
         .glassEffect(.regular.tint(.orange), in: shape)
     }
 
-    private var countdownRing: some View {
-        ZStack {
-            Circle().stroke(.quaternary, lineWidth: 2.5)
-            Circle()
-                .trim(from: 0, to: CGFloat(secondsLeft) / CGFloat(Self.countdownSeconds))
-                .stroke(.red, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(.linear(duration: 1), value: secondsLeft)
-            Text("\(secondsLeft)").font(.subheadline.weight(.semibold)).monospacedDigit()
-        }
-        .frame(width: 34, height: 34)
-    }
-
     // MARK: - Actions
-
-    private func arm() {
-        guard !collector.isEmpty else { return }
-        secondsLeft = Self.countdownSeconds
-        phase = .countdown
-        countdownTask = Task {
-            for _ in 0..<Self.countdownSeconds {
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-                secondsLeft -= 1
-            }
-            if Task.isCancelled { return }
-            await performDeletion()
-        }
-    }
-
-    private func cancelCountdown() {
-        countdownTask?.cancel()
-        countdownTask = nil
-        phase = .idle
-    }
 
     private func performDeletion() async {
         phase = .deleting
