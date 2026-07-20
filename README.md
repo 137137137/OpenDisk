@@ -7,7 +7,9 @@ Analyzes your disk usage on macOS and shows it as an interactive sunburst chart.
 [![downloads](https://img.shields.io/github/downloads/137137137/OpenDisk/total.svg?style=flat)](https://github.com/137137137/OpenDisk/releases)
 [![release](https://img.shields.io/github/release/137137137/OpenDisk.svg?style=flat)](https://github.com/137137137/OpenDisk/releases/latest)
 [![license](https://img.shields.io/github/license/137137137/OpenDisk.svg?style=flat)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-macOS-blue.svg?style=flat)](https://www.apple.com/macos/)
+[![platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue.svg?style=flat)](https://www.apple.com/macos/)
+
+**[⬇&nbsp;&nbsp;Download for macOS](https://github.com/137137137/OpenDisk/releases/latest)**
 
 <img src="docs/screenshot.png" alt="OpenDisk showing an interactive sunburst chart beside a sortable folder list" width="900"/>
 
@@ -39,7 +41,7 @@ Full scan of a 1 TB Apple Silicon volume, cold cache.
 
 ## Requirements
 
-- macOS on Apple Silicon or Intel.
+- macOS 26 (Tahoe) or later, on Apple Silicon or Intel.
 - Full Disk Access, otherwise macOS hides parts of the filesystem and the totals come up short. Grant it in **System Settings → Privacy & Security → Full Disk Access**. The app prompts for it on first launch.
 
 ## Building
