@@ -2,10 +2,11 @@ import SwiftUI
 import AppKit
 import Quartz
 
-/// DaisyDisk-style deletion tray, rendered in the functional layer with
-/// Liquid Glass. A compact footer (total + Delete) always sits in the layout
-/// below the chart; hovering reveals the collected-file list, which floats
-/// *upward* over the chart as an overlay so it never resizes the graph.
+/// DaisyDisk-style deletion tray in the Liquid Glass functional layer. A
+/// compact footer (total + Delete) sits in the layout below the chart;
+/// hovering reveals the collected-file list, which floats *upward* over the
+/// chart — anchored just above the footer so it never covers the controls or
+/// resizes the graph.
 struct CollectorBar: View {
     let collector: Collector
     /// True while a drag is hovering the drop target — drives the highlight.
@@ -19,6 +20,7 @@ struct CollectorBar: View {
     @State private var phase: Phase = .idle
     @State private var footerHovered = false
     @State private var listHovered = false
+    @State private var footerHeight: CGFloat = 0
     @State private var secondsLeft = CollectorBar.countdownSeconds
     @State private var countdownTask: Task<Void, Never>?
     @State private var previewItem: PreviewItem?
@@ -27,11 +29,9 @@ struct CollectorBar: View {
     private enum Phase: Equatable { case idle, countdown, deleting, done }
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
     }
 
-    /// The file list is revealed only while idle, non-empty, and hovered (or
-    /// while a drag is over the target).
     private var showsList: Bool {
         phase == .idle && !collector.isEmpty && (footerHovered || listHovered || isTargeted)
     }
@@ -39,15 +39,22 @@ struct CollectorBar: View {
     var body: some View {
         footerBar
             .onHover { footerHovered = $0 }
-            // The list floats directly above the footer (over the chart), so
-            // revealing it overlaps the graph instead of pushing anything
-            // down. Kept adjacent (no gap) so moving from footer to list never
-            // crosses a dead zone that would collapse it.
-            .overlay(alignment: .top) {
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
+            // Floating layers are anchored to the footer's bottom, then pushed
+            // up by the footer's own height so they sit fully above it (over
+            // the graph) without covering the Delete button.
+            .overlay(alignment: .bottom) {
                 if showsList {
                     listPanel
                         .onHover { listHovered = $0 }
-                        .alignmentGuide(.top) { $0[.bottom] }
+                        .offset(y: -(footerHeight + 8))
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let notice = collector.blockedNotice {
+                    noticeBanner(notice)
+                        .offset(y: -(footerHeight + 8))
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
@@ -57,6 +64,7 @@ struct CollectorBar: View {
             .animation(.easeInOut(duration: 0.15), value: isTargeted)
             .animation(.spring(duration: 0.3), value: collector.count)
             .animation(.spring(duration: 0.3), value: phase)
+            .animation(.spring(duration: 0.3), value: collector.blockedNotice)
             .sheet(item: $previewItem) { item in
                 QuickLookSheet(url: item.url)
             }
@@ -68,10 +76,11 @@ struct CollectorBar: View {
         GlassEffectContainer {
             footerContent
                 .frame(maxWidth: .infinity)
-                .padding(12)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .glassEffect(isTargeted ? .regular.tint(.accentColor) : .regular, in: shape)
                 .overlay {
-                    shape.strokeBorder(isTargeted ? Color.accentColor : .clear, lineWidth: 2)
+                    shape.strokeBorder(isTargeted ? Color.accentColor : .clear, lineWidth: 1.5)
                 }
         }
     }
@@ -89,21 +98,20 @@ struct CollectorBar: View {
 
     private var footerRow: some View {
         HStack(spacing: 12) {
-            totalBadge
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(totalParts.unit).fontWeight(.semibold)
-                Text(" collected").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(collector.formattedTotal)
+                    .font(.headline)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text("\(collector.count) item\(collector.count == 1 ? "" : "s") collected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(role: .destructive) {
-                arm()
-            } label: {
-                Text("Delete").frame(minWidth: 64)
-            }
-            .buttonStyle(.glassProminent)
-            .tint(.red)
-            .controlSize(.large)
-            .disabled(collector.isEmpty)
+            Button("Delete") { arm() }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(collector.isEmpty)
         }
     }
 
@@ -118,38 +126,35 @@ struct CollectorBar: View {
         .fontWeight(isTargeted ? .semibold : .regular)
         .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, 2)
     }
 
     private var countdownView: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             countdownRing
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text("\(secondsLeft) ").fontWeight(.semibold).monospacedDigit()
                 Text("seconds to start. The files will be ").foregroundStyle(.secondary)
                 Text("deleted forever!").foregroundStyle(.red).fontWeight(.semibold)
             }
+            .font(.callout)
             Spacer()
             Button("Stop") { cancelCountdown() }
-                .buttonStyle(.glass)
-                .controlSize(.large)
+                .buttonStyle(.bordered)
         }
-        .padding(.vertical, 4)
     }
 
     private var deletingView: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             ProgressView().controlSize(.small)
             Text("Deleting…").foregroundStyle(.secondary)
             Spacer()
         }
-        .padding(.vertical, 12)
     }
 
     private var doneView: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
                 .foregroundStyle(.green)
             if let result = lastResult {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -157,17 +162,17 @@ struct CollectorBar: View {
                     Text(ByteFormatter.formatFileSize(result.freedBytes)).fontWeight(.semibold)
                 }
                 if !result.failures.isEmpty {
-                    Text("· \(result.failures.count) couldn't be removed")
+                    Text(" · \(result.failures.count) couldn't be removed")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
             }
             Spacer()
         }
-        .padding(.vertical, 12)
+        .font(.callout)
     }
 
-    // MARK: - Floating list (overlay, over the chart)
+    // MARK: - Floating layers (overlay, over the chart)
 
     private var listPanel: some View {
         GlassEffectContainer {
@@ -187,42 +192,32 @@ struct CollectorBar: View {
             .scrollBounceBehavior(.basedOnSize)
             .glassEffect(.regular, in: shape)
         }
-        .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Pieces
-
-    private var totalBadge: some View {
-        ZStack {
-            Circle().strokeBorder(.tint, lineWidth: 3)
-            Text(totalParts.value)
-                .font(.headline)
-                .monospacedDigit()
-                .minimumScaleFactor(0.4)
-                .lineLimit(1)
-                .padding(8)
+    private func noticeBanner(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lock.fill")
+            Text(text).lineLimit(2)
         }
-        .frame(width: 60, height: 60)
+        .font(.callout)
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular.tint(.orange), in: shape)
     }
 
     private var countdownRing: some View {
         ZStack {
-            Circle().stroke(.quaternary, lineWidth: 3)
+            Circle().stroke(.quaternary, lineWidth: 2.5)
             Circle()
                 .trim(from: 0, to: CGFloat(secondsLeft) / CGFloat(Self.countdownSeconds))
-                .stroke(.red, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(.red, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 1), value: secondsLeft)
-            Text("\(secondsLeft)").font(.headline).monospacedDigit()
+            Text("\(secondsLeft)").font(.subheadline.weight(.semibold)).monospacedDigit()
         }
-        .frame(width: 52, height: 52)
-    }
-
-    /// Splits "384.7 MB" into ("384.7", "MB") for the badge + label.
-    private var totalParts: (value: String, unit: String) {
-        let parts = collector.formattedTotal.split(separator: " ", maxSplits: 1)
-        guard parts.count == 2 else { return (collector.formattedTotal, "") }
-        return (String(parts[0]), String(parts[1]))
+        .frame(width: 34, height: 34)
     }
 
     // MARK: - Actions

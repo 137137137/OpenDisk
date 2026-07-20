@@ -8,6 +8,10 @@ import Observation
 @Observable
 final class Collector {
     private(set) var items: [CollectedFile] = []
+    /// A transient message shown when a macOS-protected path was refused;
+    /// the Collector bar surfaces it briefly, then it clears itself.
+    private(set) var blockedNotice: String?
+    private var noticeTask: Task<Void, Never>?
 
     var isEmpty: Bool { items.isEmpty }
     var count: Int { items.count }
@@ -27,11 +31,28 @@ final class Collector {
         guard !file.path.hasPrefix("::"),
               FileManager.default.fileExists(atPath: file.path),
               !items.contains(where: { $0.path == file.path }) else { return }
+        // Never let a macOS-critical location (system folder, home, volume
+        // root, …) be collected for deletion.
+        if let reason = ProtectedPaths.reason(for: file.path) {
+            flagBlocked("“\(file.name)” \(reason)")
+            return
+        }
         if items.contains(where: { $0.isDirectory && file.path.hasPrefix($0.path + "/") }) { return }
         if file.isDirectory {
             items.removeAll { $0.path.hasPrefix(file.path + "/") }
         }
         items.append(file)
+    }
+
+    /// Surfaces a "can't delete this" message for a few seconds.
+    private func flagBlocked(_ message: String) {
+        blockedNotice = message
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3.5))
+            guard !Task.isCancelled else { return }
+            self?.blockedNotice = nil
+        }
     }
 
     func remove(_ file: CollectedFile) { items.removeAll { $0.path == file.path } }

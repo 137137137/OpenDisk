@@ -109,6 +109,8 @@ struct FolderRowView: View {
             } label: {
                 Label("Collect for Deletion", systemImage: "trash")
             }
+            // macOS-critical locations can't be deleted.
+            .disabled(ProtectedPaths.isProtected(item.path))
 
             Divider()
 
