@@ -65,7 +65,9 @@ struct FolderRowView: View {
         .padding(.horizontal, 8)
         .hoverHighlight()
         .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
+        // simultaneousGesture (not onTapGesture) so the tap doesn't
+        // exclusively capture the gesture and starve `.draggable`.
+        .simultaneousGesture(TapGesture().onEnded { onTap() })
         .contextMenu { menuContent }
     }
 

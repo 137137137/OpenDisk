@@ -17,6 +17,7 @@ struct CollectorBar: View {
     private static let countdownSeconds = 5
 
     @State private var phase: Phase = .idle
+    @State private var isExpanded = false
     @State private var secondsLeft = CollectorBar.countdownSeconds
     @State private var countdownTask: Task<Void, Never>?
     @State private var previewItem: PreviewItem?
@@ -43,8 +44,10 @@ struct CollectorBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
+        .onHover { hovering in isExpanded = hovering }
         .animation(.spring(duration: 0.3), value: collector.count)
         .animation(.spring(duration: 0.3), value: phase)
+        .animation(.spring(duration: 0.3), value: isExpanded)
         .animation(.easeInOut(duration: 0.15), value: isTargeted)
         .sheet(item: $previewItem) { item in
             QuickLookSheet(url: item.url)
@@ -80,21 +83,25 @@ struct CollectorBar: View {
 
     private var collectingView: some View {
         VStack(spacing: 8) {
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(collector.items) { file in
-                        CollectedRow(
-                            file: file,
-                            onRemove: { collector.remove(file) },
-                            onPreview: { previewItem = PreviewItem(url: file.url) }
-                        )
+            // Collapsed by default (just the total + Delete); the file list
+            // reveals on hover, or while a drag is hovering the target.
+            if isExpanded || isTargeted {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(collector.items) { file in
+                            CollectedRow(
+                                file: file,
+                                onRemove: { collector.remove(file) },
+                                onPreview: { previewItem = PreviewItem(url: file.url) }
+                            )
+                        }
                     }
                 }
-            }
-            .frame(maxHeight: 220)
-            .scrollBounceBehavior(.basedOnSize)
+                .frame(maxHeight: 220)
+                .scrollBounceBehavior(.basedOnSize)
 
-            Divider().opacity(0.4)
+                Divider().opacity(0.4)
+            }
 
             HStack(spacing: 12) {
                 totalBadge

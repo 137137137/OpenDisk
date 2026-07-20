@@ -11,12 +11,19 @@ struct ScanResultsView: View {
     let onFolderTap: (FolderItem) -> Void
 
     var body: some View {
-        List(items) { item in
-            FolderRowView(item: item) {
-                onFolderTap(item)
+        // A ScrollView + LazyVStack rather than a List: SwiftUI's List
+        // intercepts row drag gestures on macOS, which prevents dragging a
+        // row into the Collector. This keeps rows fully draggable.
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(items) { item in
+                    FolderRowView(item: item) {
+                        onFolderTap(item)
+                    }
+                }
             }
+            .padding(.vertical, 4)
         }
-        .listStyle(.plain)
         .animation(.default, value: displayVersion)
     }
 }

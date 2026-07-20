@@ -37,6 +37,9 @@ final class Collector {
     func remove(_ file: CollectedFile) { items.removeAll { $0.path == file.path } }
     func clear() { items.removeAll() }
 
+    /// Whether a path is collected (so the results list can hide it).
+    func contains(path: String) -> Bool { items.contains { $0.path == path } }
+
     // MARK: - Deletion
 
     struct Failure: Sendable { let path: String; let error: String }

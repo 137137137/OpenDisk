@@ -49,7 +49,9 @@ struct DiskAnalysisView: View {
                 GeometryReader { geometry in
                     HSplitView {
                         ScanResultsView(
-                            items: analyzer.rootItems,
+                            // Collected files drop out of the list until they
+                            // are deleted or removed from the Collector.
+                            items: analyzer.rootItems.filter { !collector.contains(path: $0.path) },
                             displayVersion: analyzer.displayVersion,
                             onFolderTap: navigateToFolder
                         )
@@ -95,7 +97,9 @@ struct DiskAnalysisView: View {
             minWidth: 900, idealWidth: 1100, maxWidth: .infinity,
             minHeight: 600, idealHeight: 720, maxHeight: .infinity
         )
-        .navigationTitle(rootName)
+        // No window title: the breadcrumb trail below is the single
+        // location indicator (removes the duplicate "Computer").
+        .navigationTitle("")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise") {
@@ -127,26 +131,25 @@ struct DiskAnalysisView: View {
 
     @ViewBuilder
     private var chartPane: some View {
-        VStack(spacing: 0) {
-            Group {
-                if let chartRoot = analyzer.chartRoot {
-                    RingsChartView(
-                        root: chartRoot,
-                        onSelectDirectory: navigateToPath,
-                        onSelectCenter: goBack
-                    )
-                } else {
-                    // The chart needs hierarchy; during the skeleton phase
-                    // (before the first scan snapshot) there is none yet.
-                    ProgressView("Building chart…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+        Group {
+            if let chartRoot = analyzer.chartRoot {
+                RingsChartView(
+                    root: chartRoot,
+                    onSelectDirectory: navigateToPath,
+                    onSelectCenter: goBack
+                )
+            } else {
+                // The chart needs hierarchy; during the skeleton phase
+                // (before the first scan snapshot) there is none yet.
+                ProgressView("Building chart…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(8)
-
-            // Centered under the graph: a drop target that invites files from
-            // the list and expands into the deletion tray once it holds any.
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(8)
+        // The Collector floats over the bottom of the chart, so expanding it
+        // (on hover) overlaps the graph instead of shrinking it.
+        .overlay(alignment: .bottom) {
             CollectorBar(collector: collector, isTargeted: isCollectorTargeted) { _ in
                 // Files were removed — rescan the root and return to the top
                 // so the freed space is reflected immediately.
@@ -156,7 +159,7 @@ struct DiskAnalysisView: View {
             }
         }
         // Dropping anywhere on the chart side collects the file; the collector
-        // bar below the graph lights up while a drag hovers.
+        // bar lights up while a drag hovers.
         .dropDestination(for: CollectedFile.self) { files, _ in
             collector.add(files)
             return true
