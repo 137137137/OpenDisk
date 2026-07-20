@@ -24,6 +24,8 @@ struct ScanResultsView: View {
             }
             .padding(.vertical, 4)
         }
-        .animation(.default, value: displayVersion)
+        // Snappy, not the heavy 0.35s ease — folder navigation should feel
+        // immediate, like Finder, while still animating live-scan re-sorts.
+        .animation(.snappy(duration: 0.18), value: displayVersion)
     }
 }
