@@ -3,9 +3,9 @@ import AppKit
 import Quartz
 
 /// DaisyDisk-style deletion tray, rendered in the functional layer with
-/// Liquid Glass. Lists the collected files, shows a running total, arms a
-/// countdown before permanently deleting them, and reports the space freed.
-/// Collapses to nothing while idle and empty.
+/// Liquid Glass. A compact footer (total + Delete) always sits in the layout
+/// below the chart; hovering reveals the collected-file list, which floats
+/// *upward* over the chart as an overlay so it never resizes the graph.
 struct CollectorBar: View {
     let collector: Collector
     /// True while a drag is hovering the drop target — drives the highlight.
@@ -17,7 +17,8 @@ struct CollectorBar: View {
     private static let countdownSeconds = 5
 
     @State private var phase: Phase = .idle
-    @State private var isExpanded = false
+    @State private var footerHovered = false
+    @State private var listHovered = false
     @State private var secondsLeft = CollectorBar.countdownSeconds
     @State private var countdownTask: Task<Void, Never>?
     @State private var previewItem: PreviewItem?
@@ -29,41 +30,80 @@ struct CollectorBar: View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
     }
 
+    /// The file list is revealed only while idle, non-empty, and hovered (or
+    /// while a drag is over the target).
+    private var showsList: Bool {
+        phase == .idle && !collector.isEmpty && (footerHovered || listHovered || isTargeted)
+    }
+
     var body: some View {
+        footerBar
+            .onHover { footerHovered = $0 }
+            // The list floats directly above the footer (over the chart), so
+            // revealing it overlaps the graph instead of pushing anything
+            // down. Kept adjacent (no gap) so moving from footer to list never
+            // crosses a dead zone that would collapse it.
+            .overlay(alignment: .top) {
+                if showsList {
+                    listPanel
+                        .onHover { listHovered = $0 }
+                        .alignmentGuide(.top) { $0[.bottom] }
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+            .animation(.spring(duration: 0.3), value: showsList)
+            .animation(.easeInOut(duration: 0.15), value: isTargeted)
+            .animation(.spring(duration: 0.3), value: collector.count)
+            .animation(.spring(duration: 0.3), value: phase)
+            .sheet(item: $previewItem) { item in
+                QuickLookSheet(url: item.url)
+            }
+    }
+
+    // MARK: - Footer (always in layout)
+
+    private var footerBar: some View {
         GlassEffectContainer {
-            content
+            footerContent
                 .frame(maxWidth: .infinity)
                 .padding(12)
                 .glassEffect(isTargeted ? .regular.tint(.accentColor) : .regular, in: shape)
                 .overlay {
-                    shape.strokeBorder(
-                        isTargeted ? Color.accentColor : .clear,
-                        lineWidth: 2
-                    )
+                    shape.strokeBorder(isTargeted ? Color.accentColor : .clear, lineWidth: 2)
                 }
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
-        .onHover { hovering in isExpanded = hovering }
-        .animation(.spring(duration: 0.3), value: collector.count)
-        .animation(.spring(duration: 0.3), value: phase)
-        .animation(.spring(duration: 0.3), value: isExpanded)
-        .animation(.easeInOut(duration: 0.15), value: isTargeted)
-        .sheet(item: $previewItem) { item in
-            QuickLookSheet(url: item.url)
         }
     }
 
-    // MARK: - Phase content
-
     @ViewBuilder
-    private var content: some View {
+    private var footerContent: some View {
         switch phase {
         case .idle:
-            if collector.isEmpty { hintView } else { collectingView }
+            if collector.isEmpty { hintView } else { footerRow }
         case .countdown: countdownView
         case .deleting:  deletingView
         case .done:      doneView
+        }
+    }
+
+    private var footerRow: some View {
+        HStack(spacing: 12) {
+            totalBadge
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(totalParts.unit).fontWeight(.semibold)
+                Text(" collected").foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(role: .destructive) {
+                arm()
+            } label: {
+                Text("Delete").frame(minWidth: 64)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(.red)
+            .controlSize(.large)
+            .disabled(collector.isEmpty)
         }
     }
 
@@ -79,48 +119,6 @@ struct CollectorBar: View {
         .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-    }
-
-    private var collectingView: some View {
-        VStack(spacing: 8) {
-            // Collapsed by default (just the total + Delete); the file list
-            // reveals on hover, or while a drag is hovering the target.
-            if isExpanded || isTargeted {
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(collector.items) { file in
-                            CollectedRow(
-                                file: file,
-                                onRemove: { collector.remove(file) },
-                                onPreview: { previewItem = PreviewItem(url: file.url) }
-                            )
-                        }
-                    }
-                }
-                .frame(maxHeight: 220)
-                .scrollBounceBehavior(.basedOnSize)
-
-                Divider().opacity(0.4)
-            }
-
-            HStack(spacing: 12) {
-                totalBadge
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(totalParts.unit).fontWeight(.semibold)
-                    Text(" collected").foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(role: .destructive) {
-                    arm()
-                } label: {
-                    Text("Delete").frame(minWidth: 64)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(.red)
-                .controlSize(.large)
-                .disabled(collector.isEmpty)
-            }
-        }
     }
 
     private var countdownView: some View {
@@ -167,6 +165,29 @@ struct CollectorBar: View {
             Spacer()
         }
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Floating list (overlay, over the chart)
+
+    private var listPanel: some View {
+        GlassEffectContainer {
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(collector.items) { file in
+                        CollectedRow(
+                            file: file,
+                            onRemove: { collector.remove(file) },
+                            onPreview: { previewItem = PreviewItem(url: file.url) }
+                        )
+                    }
+                }
+                .padding(6)
+            }
+            .frame(maxHeight: 240)
+            .scrollBounceBehavior(.basedOnSize)
+            .glassEffect(.regular, in: shape)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Pieces

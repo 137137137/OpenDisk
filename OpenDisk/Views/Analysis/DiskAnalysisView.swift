@@ -131,25 +131,26 @@ struct DiskAnalysisView: View {
 
     @ViewBuilder
     private var chartPane: some View {
-        Group {
-            if let chartRoot = analyzer.chartRoot {
-                RingsChartView(
-                    root: chartRoot,
-                    onSelectDirectory: navigateToPath,
-                    onSelectCenter: goBack
-                )
-            } else {
-                // The chart needs hierarchy; during the skeleton phase
-                // (before the first scan snapshot) there is none yet.
-                ProgressView("Building chart…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            Group {
+                if let chartRoot = analyzer.chartRoot {
+                    RingsChartView(
+                        root: chartRoot,
+                        onSelectDirectory: navigateToPath,
+                        onSelectCenter: goBack
+                    )
+                } else {
+                    // The chart needs hierarchy; during the skeleton phase
+                    // (before the first scan snapshot) there is none yet.
+                    ProgressView("Building chart…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(8)
-        // The Collector floats over the bottom of the chart, so expanding it
-        // (on hover) overlaps the graph instead of shrinking it.
-        .overlay(alignment: .bottom) {
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(8)
+
+            // Collapsed collector sits distinctly under the graph (in layout);
+            // its expanded file list floats up over the graph (see CollectorBar).
             CollectorBar(collector: collector, isTargeted: isCollectorTargeted) { _ in
                 // Files were removed — rescan the root and return to the top
                 // so the freed space is reflected immediately.
