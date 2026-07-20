@@ -4,7 +4,8 @@ import AppKit
 /// IconServices (`NSWorkspace.icon(forFile:)`) for every row. Keyed by path;
 /// `NSCache` evicts under memory pressure.
 enum FileIcon {
-    private static let cache: NSCache<NSString, NSImage> = {
+    // NSCache is internally thread-safe, so cross-actor access is fine.
+    nonisolated(unsafe) private static let cache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.countLimit = 4000
         return cache
