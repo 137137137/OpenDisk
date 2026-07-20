@@ -8,6 +8,8 @@ import Quartz
 /// Collapses to nothing while idle and empty.
 struct CollectorBar: View {
     let collector: Collector
+    /// True while a drag is hovering the drop target — drives the highlight.
+    var isTargeted: Bool = false
     /// Called after a deletion with the freed byte count, so the host can
     /// rescan and bring the updated usage back to the top.
     var onDeleted: (Int64) -> Void
@@ -22,17 +24,28 @@ struct CollectorBar: View {
 
     private enum Phase: Equatable { case idle, countdown, deleting, done }
 
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+    }
+
     var body: some View {
         GlassEffectContainer {
             content
                 .frame(maxWidth: .infinity)
                 .padding(12)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .glassEffect(isTargeted ? .regular.tint(.accentColor) : .regular, in: shape)
+                .overlay {
+                    shape.strokeBorder(
+                        isTargeted ? Color.accentColor : .clear,
+                        lineWidth: 2
+                    )
+                }
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .animation(.spring(duration: 0.3), value: collector.count)
         .animation(.spring(duration: 0.3), value: phase)
+        .animation(.easeInOut(duration: 0.15), value: isTargeted)
         .sheet(item: $previewItem) { item in
             QuickLookSheet(url: item.url)
         }
@@ -51,14 +64,16 @@ struct CollectorBar: View {
         }
     }
 
-    /// Shown when nothing is collected yet: the persistent drop-target hint.
+    /// Shown when nothing is collected yet: the persistent drop-target hint,
+    /// which lights up while a drag is hovering.
     private var hintView: some View {
         HStack(spacing: 8) {
-            Image(systemName: "arrow.down.circle.dotted")
-            Text("Drag files here to collect them for deletion")
+            Image(systemName: isTargeted ? "arrow.down.circle.fill" : "arrow.down.circle.dotted")
+            Text(isTargeted ? "Release to collect" : "Drag files here to collect them for deletion")
         }
         .font(.callout)
-        .foregroundStyle(.secondary)
+        .fontWeight(isTargeted ? .semibold : .regular)
+        .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
     }

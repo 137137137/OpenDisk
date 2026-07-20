@@ -17,56 +17,55 @@ struct FolderRowView: View {
 
     var body: some View {
         if isSynthetic {
-            rowButton
+            row
         } else {
-            rowButton
-                .draggable(CollectedFile(item)) { dragPreview }
+            // Not a Button: a Button's press gesture swallows the drag on
+            // macOS, so the row would never become draggable.
+            row.draggable(CollectedFile(item)) { dragPreview }
         }
     }
 
-    private var rowButton: some View {
-        Button(action: onTap) {
-            HStack(spacing: 10) {
-                icon
+    private var row: some View {
+        HStack(spacing: 10) {
+            icon
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .fontWeight(item.isDirectory ? .medium : .regular)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .fontWeight(item.isDirectory ? .medium : .regular)
+                    .lineLimit(1)
 
-                    if item.isDirectory && item.itemCount > 0 {
-                        Text("\(item.itemCount) items")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-
-                Spacer()
-
-                if item.sizeIsKnown {
-                    Text(item.formattedSize)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                } else {
-                    // Skeleton row: the scan has not sized this entry yet.
-                    Text("0.00 MB")
-                        .monospacedDigit()
-                        .redacted(reason: .placeholder)
-                        .foregroundStyle(.tertiary)
-                }
-
-                if item.isDirectory {
-                    Image(systemName: "chevron.right")
+                if item.isDirectory && item.itemCount > 0 {
+                    Text("\(item.itemCount) items")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 8)
-            .hoverHighlight()
-            .contentShape(Rectangle())
+
+            Spacer()
+
+            if item.sizeIsKnown {
+                Text(item.formattedSize)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            } else {
+                // Skeleton row: the scan has not sized this entry yet.
+                Text("0.00 MB")
+                    .monospacedDigit()
+                    .redacted(reason: .placeholder)
+                    .foregroundStyle(.tertiary)
+            }
+
+            if item.isDirectory {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .hoverHighlight()
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
         .contextMenu { menuContent }
     }
 
