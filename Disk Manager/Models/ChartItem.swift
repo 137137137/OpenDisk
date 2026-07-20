@@ -85,17 +85,14 @@ struct ChartItem: Equatable, Identifiable, Sendable {
         let hasChildren = isDirectory && tree.childCount(of: node) > 0
         var children: [ChartItem] = []
         var cursor = 0.0
-        // The synthetic slice takes its size-ordered place among the real
-        // children, so it reads as just another folder.
-        var pendingExtra = extraBytes > 0 ? extraSlice : nil
 
-        func placeExtra() {
-            guard let slice = pendingExtra else { return }
-            pendingExtra = nil
-            let share = Double(slice.bytes) / Double(parentSize) * 100
+        // The synthetic slice leads: it starts the circle just as the
+        // matching list row is pinned to the top.
+        if let extraSlice, extraBytes > 0 {
+            let share = Double(extraBytes) / Double(parentSize) * 100
             children.append(ChartItem(
-                name: slice.name, path: "::" + slice.name,
-                size: slice.bytes,
+                name: extraSlice.name, path: "::" + extraSlice.name,
+                size: extraBytes,
                 depth: depth + 1, relStart: cursor, relSize: share,
                 fractionOfRoot: fractionOfRoot * share / 100,
                 kind: .synthetic, hasHiddenChildren: false, children: []
@@ -108,9 +105,6 @@ struct ChartItem: Equatable, Identifiable, Sendable {
             for child in tree.childrenSortedForDisplay(of: node) {
                 let childSize = tree.size(of: child)
                 guard childSize > 0 else { break }
-                if let slice = pendingExtra, slice.bytes >= childSize {
-                    placeExtra()
-                }
                 let share = Double(childSize) / Double(parentSize) * 100
                 let childFraction = fractionOfRoot * share / 100
                 // Ordered by size, so everything after the first
@@ -126,7 +120,6 @@ struct ChartItem: Equatable, Identifiable, Sendable {
                 cursor += share
             }
         }
-        placeExtra()
 
         return ChartItem(
             name: name, path: path, size: totalSize,
