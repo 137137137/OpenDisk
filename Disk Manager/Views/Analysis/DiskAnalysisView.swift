@@ -49,7 +49,6 @@ struct DiskAnalysisView: View {
                         ScanResultsView(
                             items: analyzer.rootItems,
                             displayVersion: analyzer.displayVersion,
-                            hiddenSpace: analyzer.hiddenSpaceForCurrentDirectory,
                             onFolderTap: navigateToFolder
                         )
                             .frame(
@@ -169,7 +168,10 @@ struct DiskAnalysisView: View {
     // MARK: - Navigation
 
     private func navigateToFolder(_ item: FolderItem) {
-        guard item.isDirectory else { return }
+        // Synthetic rows ("::"-prefixed paths, e.g. purgeable space) have
+        // no contents to navigate into — and must never reach showContents,
+        // which would start a scan of a nonexistent path.
+        guard item.isDirectory, !item.path.hasPrefix("::") else { return }
         guard showContents(of: item.path) else { return }
         breadcrumbs.append(currentPath)
         currentPath = item.path

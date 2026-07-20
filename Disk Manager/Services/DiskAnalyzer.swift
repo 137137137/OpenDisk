@@ -229,6 +229,19 @@ final class DiskAnalyzer {
     private func display(node: FileTree.NodeID) {
         rootItems = folderItems(for: node, limit: displayLimit(for: currentPath))
         let hiddenBytes = hiddenSpaceForCurrentDirectory?.totalBytes ?? 0
+        if hiddenBytes > 0 {
+            // Purgeable/hidden space rides along as an ordinary folder row
+            // in its size-ordered place (rows are sorted largest-first).
+            let row = FolderItem(
+                name: HiddenSpaceInfo.folderName,
+                path: HiddenSpaceInfo.sentinelPath,
+                size: hiddenBytes,
+                isDirectory: true,
+                itemCount: 0
+            )
+            let index = rootItems.firstIndex { $0.size < hiddenBytes } ?? rootItems.endIndex
+            rootItems.insert(row, at: index)
+        }
         displayedTotalBytes = (scanResult?.tree.size(of: node) ?? 0) + hiddenBytes
         displayVersion += 1
         rebuildChartRoot(for: node)
@@ -245,7 +258,7 @@ final class DiskAnalyzer {
         let hiddenBytes = hiddenSpaceForCurrentDirectory?.totalBytes ?? 0
         chartRoot = ChartItem.build(
             from: tree, at: node, name: name, path: currentPath,
-            extraSlice: hiddenBytes > 0 ? ("hidden space", hiddenBytes) : nil
+            extraSlice: hiddenBytes > 0 ? (HiddenSpaceInfo.folderName, hiddenBytes) : nil
         )
     }
 

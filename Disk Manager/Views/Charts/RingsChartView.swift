@@ -109,13 +109,11 @@ private enum ChartDrawing {
         in context: inout GraphicsContext
     ) {
         let border = GraphicsContext.Shading.color(.black.opacity(0.35))
-        let fill = segment.kind == .synthetic
-            ? ChartPalette.hiddenSpaceFill(highlighted: highlighted).color
-            : ChartPalette.fill(
-                position: segment.colorPosition,
-                depth: segment.depth,
-                highlighted: highlighted
-            ).color
+        let fill = ChartPalette.fill(
+            position: segment.colorPosition,
+            depth: segment.depth,
+            highlighted: highlighted
+        ).color
 
         if segment.depth == 0 {
             let disk = Path(ellipseIn: CGRect(

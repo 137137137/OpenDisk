@@ -92,20 +92,31 @@ struct ChartModelTests {
         }
     }
 
-    @Test("extra slice enlarges the total and appends a synthetic child")
+    @Test("extra slice enlarges the total and sits in size order like a folder")
     func hiddenSpaceSlice() {
         let tree = makeTree()
-        // Hidden space equal to the scanned total: every share halves.
+        // Hidden space equal to the scanned total: every share halves, and
+        // the synthetic slice (1000) outranks big (600), so it sorts first.
         let withHidden = ChartItem.build(
             from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T",
-            extraSlice: ("hidden space", 1_000)
+            extraSlice: ("Purgeable Space", 1_000)
         )
 
         #expect(withHidden.size == 2_000)
+        #expect(withHidden.children.map(\.name) == ["Purgeable Space", "big", "small", "file.dat"])
+
+        let hidden = withHidden.children.first
+        #expect(hidden?.kind == .synthetic)
+        #expect(hidden?.size == 1_000)
+        #expect(abs((hidden?.relSize ?? 0) - 50) < 0.001)
+        #expect(abs((hidden?.relStart ?? 0) - 0) < 0.001)
+
         let big = withHidden.children.first { $0.name == "big" }
         #expect(big != nil)
         if let big {
             #expect(abs(big.relSize - 30) < 0.001)
+            // The slice precedes it, so big starts after the slice's 50%.
+            #expect(abs(big.relStart - 50) < 0.001)
             #expect(abs(big.fractionOfRoot - 0.3) < 0.001)
             // Deeper levels keep their share of the parent; only their
             // share of the whole chart halves.
@@ -113,11 +124,12 @@ struct ChartModelTests {
             #expect(abs(big.children[0].fractionOfRoot - 0.2) < 0.001)
         }
 
-        let hidden = withHidden.children.last
-        #expect(hidden?.kind == .synthetic)
-        #expect(hidden?.size == 1_000)
-        #expect(abs((hidden?.relSize ?? 0) - 50) < 0.001)
-        #expect(abs((hidden?.relStart ?? 0) - 50) < 0.001)
+        // A slice smaller than a sibling sorts after it.
+        let smallSlice = ChartItem.build(
+            from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T",
+            extraSlice: ("Purgeable Space", 400)
+        )
+        #expect(smallSlice.children.map(\.name) == ["big", "Purgeable Space", "small", "file.dat"])
 
         // Without the slice the build is unchanged.
         let plain = ChartItem.build(

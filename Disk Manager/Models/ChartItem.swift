@@ -81,16 +81,36 @@ struct ChartItem: Equatable, Identifiable, Sendable {
         let isDirectory = tree.isDirectory(node)
         let extraBytes = extraSlice?.bytes ?? 0
         let totalSize = tree.size(of: node) + extraBytes
+        let parentSize = max(totalSize, 1)
         let hasChildren = isDirectory && tree.childCount(of: node) > 0
         var children: [ChartItem] = []
+        var cursor = 0.0
+        // The synthetic slice takes its size-ordered place among the real
+        // children, so it reads as just another folder.
+        var pendingExtra = extraBytes > 0 ? extraSlice : nil
+
+        func placeExtra() {
+            guard let slice = pendingExtra else { return }
+            pendingExtra = nil
+            let share = Double(slice.bytes) / Double(parentSize) * 100
+            children.append(ChartItem(
+                name: slice.name, path: "::" + slice.name,
+                size: slice.bytes,
+                depth: depth + 1, relStart: cursor, relSize: share,
+                fractionOfRoot: fractionOfRoot * share / 100,
+                kind: .synthetic, hasHiddenChildren: false, children: []
+            ))
+            cursor += share
+        }
 
         if hasChildren && depth < maxDepth {
-            let parentSize = max(totalSize, 1)
             let prefix = path.directoryPrefix
-            var cursor = 0.0
             for child in tree.childrenSortedForDisplay(of: node) {
                 let childSize = tree.size(of: child)
                 guard childSize > 0 else { break }
+                if let slice = pendingExtra, slice.bytes >= childSize {
+                    placeExtra()
+                }
                 let share = Double(childSize) / Double(parentSize) * 100
                 let childFraction = fractionOfRoot * share / 100
                 // Ordered by size, so everything after the first
@@ -106,18 +126,7 @@ struct ChartItem: Equatable, Identifiable, Sendable {
                 cursor += share
             }
         }
-
-        if let extraSlice, extraBytes > 0 {
-            // End-anchored so the synthetic wedge always closes the circle.
-            let share = Double(extraBytes) / Double(max(totalSize, 1)) * 100
-            children.append(ChartItem(
-                name: extraSlice.name, path: "::" + extraSlice.name,
-                size: extraBytes,
-                depth: depth + 1, relStart: 100 - share, relSize: share,
-                fractionOfRoot: fractionOfRoot * share / 100,
-                kind: .synthetic, hasHiddenChildren: false, children: []
-            ))
-        }
+        placeExtra()
 
         return ChartItem(
             name: name, path: path, size: totalSize,

@@ -52,18 +52,21 @@ struct FolderRowView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
-            } label: {
-                Label("Show in Finder", systemImage: "folder")
-            }
+            // Synthetic rows ("::"-prefixed paths) have no on-disk location.
+            if !item.path.hasPrefix("::") {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
 
-            Button {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(item.path, forType: .string)
-            } label: {
-                Label("Copy Path", systemImage: "doc.on.doc")
+                Button {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(item.path, forType: .string)
+                } label: {
+                    Label("Copy Path", systemImage: "doc.on.doc")
+                }
             }
         }
     }

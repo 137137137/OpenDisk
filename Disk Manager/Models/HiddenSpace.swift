@@ -17,6 +17,13 @@ struct HiddenSpaceInfo: Equatable, Sendable {
     /// Hidden space not explained by the purgeable pool: unreadable
     /// directories, filesystem overhead, other volumes' bookkeeping.
     var unexplainedBytes: Int64 { max(0, totalBytes - purgeableBytes) }
+
+    /// Display name of the synthetic top-level folder that carries this
+    /// space in the list and chart.
+    static let folderName = "Purgeable Space"
+    /// Row identity for the synthetic folder. The "::" prefix marks paths
+    /// that do not exist on disk; navigation and Finder actions skip them.
+    static var sentinelPath: String { "::" + folderName }
 }
 
 /// Measures hidden space for a volume. Blocking (runs `tmutil` and stats
