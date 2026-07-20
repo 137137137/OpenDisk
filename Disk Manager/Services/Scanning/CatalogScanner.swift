@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 
 /// Whole-volume scanner built on `searchfs(2)`.
 ///
@@ -26,9 +27,11 @@ enum CatalogScanner {
     /// Scans the entire volume mounted at `mountPoint`.
     ///
     /// Blocking: call from a background queue. The returned tree has not
-    /// had directory sizes rolled up. Throws `CatalogSearchError` when the
-    /// volume cannot be catalog-scanned; the caller should fall back to
-    /// traversal.
+    /// had directory sizes rolled up.
+    ///
+    /// - Throws: ``CatalogSearchError`` — the failure domain is closed
+    ///   (typed throws), so callers can switch exhaustively; on any error
+    ///   the caller should fall back to traversal.
     ///
     /// `onPartialTreeAvailable` is called once, before scanning begins,
     /// with a thread-safe provider that snapshots the tree built so far
@@ -41,11 +44,11 @@ enum CatalogScanner {
         metrics: ScanMetrics,
         isCancelled: () -> Bool,
         onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
-    ) throws -> FileTree {
+    ) throws(CatalogSearchError) -> FileTree {
         // The builder is mutated only by this thread; the lock exists so
         // snapshot providers can copy it (value semantics, O(1) thanks to
         // copy-on-write) while entries keep streaming.
-        let builder = Locked(CatalogTreeBuilder(rootName: rootName))
+        let builder = Mutex(CatalogTreeBuilder(rootName: rootName))
         onPartialTreeAvailable { builder.withLock { $0 }.buildPartialTree() }
 
         var batchBytes: Int64 = 0

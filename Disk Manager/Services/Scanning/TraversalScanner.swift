@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 
 /// Recursive-descent scanner built on `getattrlistbulk(2)`.
 ///
@@ -47,7 +48,7 @@ enum TraversalScanner {
     /// Shared scan state. A blocked `pop` parks on the semaphore; the
     /// mutex only guards short push/pop critical sections, so contention
     /// stays negligible next to the ~10-100 us directory syscalls.
-    private final class WorkState: @unchecked Sendable {
+    private final class WorkState: Sendable {
         private struct Guarded {
             var stack: [WorkItem] = []
             /// Directories discovered but not yet fully processed. The scan
@@ -56,7 +57,7 @@ enum TraversalScanner {
             var isDrained = false
         }
 
-        private let guarded = Locked(Guarded())
+        private let guarded = Mutex(Guarded())
         private let itemsAvailable = DispatchSemaphore(value: 0)
 
         func start(with item: WorkItem) {
@@ -134,9 +135,9 @@ enum TraversalScanner {
         let devices = (allowedDevices ?? []).union([rootDevice])
         let workerCount = workerCount ?? subtreeWorkerCount
 
-        let tree = Locked(FileTree(rootName: rootName))
+        let tree = Mutex(FileTree(rootName: rootName))
         onPartialTreeAvailable { tree.withLock { $0 } }
-        let seenMultiLinkFiles = Locked(Set<HardLinkKey>())
+        let seenMultiLinkFiles = Mutex(Set<HardLinkKey>())
         let state = WorkState()
         state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))
 
@@ -166,8 +167,8 @@ enum TraversalScanner {
 
     private static func runWorker(
         state: WorkState,
-        tree: Locked<FileTree>,
-        seenMultiLinkFiles: Locked<Set<HardLinkKey>>,
+        tree: borrowing Mutex<FileTree>,
+        seenMultiLinkFiles: borrowing Mutex<Set<HardLinkKey>>,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool

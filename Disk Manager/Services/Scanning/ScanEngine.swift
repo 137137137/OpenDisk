@@ -1,13 +1,16 @@
 import Darwin
 import Foundation
+import Synchronization
 
 /// Thread-safe cancellation signal shared between the async world and the
-/// blocking scan workers.
+/// blocking scan workers. An atomic, not a lock: workers poll it once per
+/// directory, and relaxed ordering suffices for a monotonic latch whose
+/// only effect is an early return.
 final class CancellationFlag: Sendable {
-    private let state = Locked(false)
+    private let state = Atomic(false)
 
-    var isCancelled: Bool { state.withLock { $0 } }
-    func cancel() { state.withLock { $0 = true } }
+    var isCancelled: Bool { state.load(ordering: .relaxed) }
+    func cancel() { state.store(true, ordering: .relaxed) }
 }
 
 /// Assembles displayable snapshots of a scan in flight.
@@ -17,14 +20,14 @@ final class CancellationFlag: Sendable {
 /// combines those snapshots exactly the way the final result is composed —
 /// so a partial snapshot is always a smaller version of the eventual
 /// result, never a differently shaped one.
-private final class PartialResultAssembler: @unchecked Sendable {
+private final class PartialResultAssembler: Sendable {
 
     private struct State {
         var providers: [String: PartialTreeProvider] = [:]
         var compose: (@Sendable ([String: FileTree]) -> FileTree)?
     }
 
-    private let state = Locked(State())
+    private let state = Mutex(State())
 
     func register(_ key: String, provider: @escaping PartialTreeProvider) {
         state.withLock { $0.providers[key] = provider }
@@ -253,7 +256,7 @@ final class ScanEngine: DiskScanning {
            let cached = ScanCache.load(forRoot: path),
            cached.tree.name(of: FileTree.rootID) == rootName,
            let changes = FSEventsChangeJournal.changes(since: cached.eventID, under: path) {
-            let live = Locked(cached.tree)
+            let live = Mutex(cached.tree)
             registerPartial { live.withLock { $0 } }
             if IncrementalUpdater.apply(
                 changes, to: live, rootPath: path,
@@ -369,7 +372,7 @@ final class ScanEngine: DiskScanning {
             composeBootVolumeGroup(trees, siblingNames: siblingNames)
         }
 
-        let results = Locked<[String: FileTree]>([:])
+        let results = Mutex<[String: FileTree]>([:])
 
         // One traversal of "/" covers the whole volume group: firmlinks
         // compose the System and Data volumes into the live namespace

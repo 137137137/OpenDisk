@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 
 /// Splices FSEvents-reported changes into a cached scan tree: changed
 /// directories are re-listed shallowly (files replaced, surviving
@@ -15,7 +16,7 @@ enum IncrementalUpdater {
     /// be applied cleanly (callers fall back to a full scan).
     static func apply(
         _ changes: FSEventsChangeJournal.Changes,
-        to tree: Locked<FileTree>,
+        to tree: borrowing Mutex<FileTree>,
         rootPath: String,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
@@ -57,7 +58,7 @@ enum IncrementalUpdater {
     /// nearest cached ancestor also got an event and adopts it there
     /// (changed paths are processed parents-first).
     private static func resolveTarget(
-        at path: String, rootPath: String, in tree: Locked<FileTree>
+        at path: String, rootPath: String, in tree: borrowing Mutex<FileTree>
     ) -> FileTree.NodeID? {
         guard path == rootPath || !VolumeAttributes.isVolumeRoot(path) else { return nil }
         return tree.withLock { current in
@@ -73,7 +74,7 @@ enum IncrementalUpdater {
     private static func updateDirectory(
         at path: String,
         rootPath: String,
-        tree: Locked<FileTree>,
+        tree: borrowing Mutex<FileTree>,
         reader: BulkDirectoryReader,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
@@ -142,7 +143,7 @@ enum IncrementalUpdater {
     private static func rescanSubtree(
         at path: String,
         rootPath: String,
-        tree: Locked<FileTree>,
+        tree: borrowing Mutex<FileTree>,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
@@ -158,7 +159,7 @@ enum IncrementalUpdater {
     private static func adoptScannedSubtree(
         ofPath path: String,
         under node: FileTree.NodeID,
-        tree: Locked<FileTree>,
+        tree: borrowing Mutex<FileTree>,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool

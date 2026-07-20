@@ -141,7 +141,7 @@ enum CatalogSearch {
         isCancelled: () -> Bool,
         onRestart: () -> Void,
         body: (CatalogEntry) -> Void
-    ) throws {
+    ) throws(CatalogSearchError) {
         let resultBuffer = UnsafeMutableRawPointer.allocate(
             byteCount: resultBufferSize, alignment: 16
         )
@@ -180,7 +180,7 @@ enum CatalogSearch {
         stateBuffer: UnsafeMutableRawPointer,
         isCancelled: () -> Bool,
         body: (CatalogEntry) -> Void
-    ) throws {
+    ) throws(CatalogSearchError) {
         var returnAttrs = attrlist()
         returnAttrs.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
         returnAttrs.commonattr = attrCmnName | attrCmnObjType | attrCmnFileID | attrCmnParentID
@@ -198,9 +198,12 @@ enum CatalogSearch {
 
         var options = srchfsStart | srchfsMatchFiles | srchfsMatchDirs
 
-        try withUnsafeMutablePointer(to: &returnAttrs) { returnAttrsPtr in
-            try withUnsafeMutablePointer(to: &lowerBound) { lowerPtr in
-                try withUnsafeMutablePointer(to: &upperBound) { upperPtr in
+        // The pointer-scoping closures are `rethrows`, which erases typed
+        // errors to `any Error`; the loop returns its failure instead so
+        // the typed throw happens outside the closures.
+        let failure = withUnsafeMutablePointer(to: &returnAttrs) { returnAttrsPtr in
+            withUnsafeMutablePointer(to: &lowerBound) { lowerPtr in
+                withUnsafeMutablePointer(to: &upperBound) { upperPtr -> CatalogSearchError? in
                     var block = FSSearchBlock(
                         returnattrs: returnAttrsPtr,
                         returnbuffer: resultBuffer,
@@ -215,7 +218,7 @@ enum CatalogSearch {
                     )
 
                     while true {
-                        if isCancelled() { throw CatalogSearchError.cancelled }
+                        if isCancelled() { return .cancelled }
 
                         var matchCount: UInt = 0
                         let result = withUnsafeMutableBytes(of: &block) { blockBytes in
@@ -232,28 +235,33 @@ enum CatalogSearch {
                         options &= ~srchfsStart
 
                         if err == 0 || err == EAGAIN {
-                            try parseBatch(
-                                in: resultBuffer,
-                                bufferSize: resultBufferSize,
-                                matchCount: Int(matchCount),
-                                body: body
-                            )
-                            if err == 0 { return }
+                            do throws(CatalogSearchError) {
+                                try parseBatch(
+                                    in: resultBuffer,
+                                    bufferSize: resultBufferSize,
+                                    matchCount: Int(matchCount),
+                                    body: body
+                                )
+                            } catch {
+                                return error
+                            }
+                            if err == 0 { return nil }
                             continue
                         }
 
                         switch err {
                         case EBUSY:
-                            throw CatalogSearchError.volumeKeptChanging
+                            return .volumeKeptChanging
                         case ENOTSUP:
-                            throw CatalogSearchError.unsupported
+                            return .unsupported
                         default:
-                            throw CatalogSearchError.systemError(err)
+                            return .systemError(err)
                         }
                     }
                 }
             }
         }
+        if let failure { throw failure }
     }
 
     private static func parseBatch(
@@ -261,7 +269,7 @@ enum CatalogSearch {
         bufferSize: Int,
         matchCount: Int,
         body: (CatalogEntry) -> Void
-    ) throws {
+    ) throws(CatalogSearchError) {
         var offset = 0
         for _ in 0..<matchCount {
             guard offset + 4 <= bufferSize else {

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Shared scan counters, updated once per directory (never per file), so a
 /// single fast lock stays effectively uncontended even with dozens of
@@ -10,7 +11,7 @@ final class ScanMetrics: Sendable {
         var itemsScanned: Int64 = 0
     }
 
-    private let state = Locked(Counters())
+    private let state = Mutex(Counters())
 
     /// Records one directory's worth of results.
     func add(bytes: Int64, items: Int) {
