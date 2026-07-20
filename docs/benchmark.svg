@@ -1,0 +1,43 @@
+<svg width="520" height="340" viewBox="0 0 520 340" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="520" height="340" fill="#ffffff"/>
+
+  <!-- y-axis gridlines and labels: 0,30,60,90,120,150 s -->
+  <g>
+    <line x1="60" y1="40"  x2="500" y2="40"  stroke="#eaeaea"/>
+    <line x1="60" y1="88"  x2="500" y2="88"  stroke="#eaeaea"/>
+    <line x1="60" y1="136" x2="500" y2="136" stroke="#eaeaea"/>
+    <line x1="60" y1="184" x2="500" y2="184" stroke="#eaeaea"/>
+    <line x1="60" y1="232" x2="500" y2="232" stroke="#eaeaea"/>
+    <line x1="60" y1="280" x2="500" y2="280" stroke="#cfcfcf"/>
+  </g>
+  <g fill="#888888" font-size="12" text-anchor="end">
+    <text x="50" y="44">150</text>
+    <text x="50" y="92">120</text>
+    <text x="50" y="140">90</text>
+    <text x="50" y="188">60</text>
+    <text x="50" y="236">30</text>
+    <text x="50" y="284">0</text>
+  </g>
+  <text x="18" y="165" fill="#888888" font-size="12" text-anchor="middle" transform="rotate(-90 18 165)">seconds</text>
+
+  <!-- bars -->
+  <g fill="#4c8bf5">
+    <rect x="100" y="253" width="80" height="27"/>
+    <rect x="240" y="221" width="80" height="59"/>
+    <rect x="380" y="64"  width="80" height="216"/>
+  </g>
+
+  <!-- value labels -->
+  <g fill="#333333" font-size="13" font-weight="700" text-anchor="middle">
+    <text x="140" y="245">17s</text>
+    <text x="280" y="213">37s</text>
+    <text x="420" y="56">2m 15s</text>
+  </g>
+
+  <!-- category labels -->
+  <g fill="#333333" font-size="13" text-anchor="middle">
+    <text x="140" y="300">Disk Manager</text>
+    <text x="280" y="300">DaisyDisk</text>
+    <text x="420" y="300">Baobab</text>
+  </g>
+</svg>
