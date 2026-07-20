@@ -27,7 +27,7 @@ A fast, free, and **open-source** disk space analyzer for macOS — an open alte
 
 ## Why OpenDisk?
 
-The DaisyDisk-style sunburst you know — but **free**, **open source**, and just as fast.
+The DaisyDisk-style sunburst you know — but **free**, **open source**, and **faster**.
 
 | | OpenDisk | DaisyDisk |
 | :-- | :-: | :-: |
