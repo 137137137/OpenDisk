@@ -36,20 +36,31 @@ final class DeviceMonitor {
         }
 
         let bootDevice = VolumeAttributes.deviceID(ofPath: "/")
-        let volumeNames = (try? FileManager.default.contentsOfDirectory(atPath: "/Volumes")) ?? []
-        for name in volumeNames.sorted() {
-            guard !shouldSkipVolume(named: name) else { continue }
-            let path = "/Volumes/" + name
-            // The boot volume mounts an alias of itself under /Volumes
-            // (whatever its display name); a device-ID match identifies
-            // it without hardcoding names.
-            guard VolumeAttributes.deviceID(ofPath: path) != bootDevice,
+        // `mountedVolumeURLs` with `.skipHiddenVolumes` already excludes the
+        // system-managed APFS volumes in the boot container (Recovery,
+        // Preboot, VM, Update), which report the whole container's capacity
+        // and are not separately scannable devices.
+        let keys: [URLResourceKey] = [
+            .volumeIsBrowsableKey, .volumeNameKey,
+            .volumeTotalCapacityKey, .volumeAvailableCapacityKey,
+        ]
+        let volumeURLs = (FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: keys,
+            options: [.skipHiddenVolumes]
+        ) ?? []).sorted { $0.path < $1.path }
+        for url in volumeURLs {
+            let path = url.path
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            // Belt-and-suspenders: only user-browsable volumes, never the
+            // boot volume (matched by device ID rather than by name).
+            guard values?.volumeIsBrowsable == true,
+                  VolumeAttributes.deviceID(ofPath: path) != bootDevice,
                   FileManager.default.isReadableFile(atPath: path),
                   let capacity = volumeCapacity(ofPath: path) else {
                 continue
             }
             devices.append(DeviceInfo(
-                name: name,
+                name: values?.volumeName ?? url.lastPathComponent,
                 icon: "externaldrive",
                 path: path,
                 totalBytes: capacity.total,
@@ -58,12 +69,6 @@ final class DeviceMonitor {
         }
 
         return devices
-    }
-
-    private nonisolated static func shouldSkipVolume(named name: String) -> Bool {
-        // Hidden volumes and Time Machine snapshots are not separately
-        // scannable devices.
-        name.hasPrefix(".") || name.contains("com.apple.TimeMachine")
     }
 
     private nonisolated static func volumeCapacity(
