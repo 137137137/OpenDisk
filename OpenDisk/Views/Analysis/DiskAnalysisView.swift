@@ -27,6 +27,10 @@ struct DiskAnalysisView: View {
     @State private var selectedPaths = Set<String>()
     /// The last plainly clicked row — the fixed end of a shift-click range.
     @State private var selectionAnchor: String?
+    /// Column sort for the directory list (search keeps its own relevance
+    /// order). Defaults to largest-first, matching the scan's own ordering.
+    @State private var sort: SortField = .size
+    @State private var sortAscending = false
     private let totalUsedDiskSpace: Int64
 
     init(
@@ -149,6 +153,15 @@ struct DiskAnalysisView: View {
         }
         // Make the Collector reachable from the row context menus in the list.
         .environment(collector)
+        // ⌘Z pulls the last collected item back out of the Collector. Gated
+        // off while the search field is up so it doesn't shadow text undo.
+        .background {
+            Button("Undo Collect") { collector.undo() }
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!collector.canUndo || searchPresented)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
     }
 
     // MARK: - List pane
@@ -169,13 +182,34 @@ struct DiskAnalysisView: View {
         if isSearchActive {
             return analyzer.searchResults.filter { !collector.contains(path: $0.path) }
         }
-        return analyzer.rootItems.filter { item in
+        let filtered = analyzer.rootItems.filter { item in
             if item.path == HiddenSpaceInfo.sentinelPath {
                 return !analyzer.collectablePurgeableFiles()
                     .allSatisfy { collector.contains(path: $0.path) }
             }
             return !collector.contains(path: item.path)
         }
+        return sortedForDisplay(filtered)
+    }
+
+    private enum SortField { case name, size }
+
+    /// Applies the current column sort, keeping the synthetic "Purgeable
+    /// Space" row pinned to the top regardless of order.
+    private func sortedForDisplay(_ items: [FolderItem]) -> [FolderItem] {
+        let sentinel = items.filter { $0.path == HiddenSpaceInfo.sentinelPath }
+        let rest = items.filter { $0.path != HiddenSpaceInfo.sentinelPath }
+        let ordered: [FolderItem]
+        switch sort {
+        case .name:
+            ordered = rest.sorted {
+                let result = $0.name.localizedCaseInsensitiveCompare($1.name)
+                return sortAscending ? result == .orderedAscending : result == .orderedDescending
+            }
+        case .size:
+            ordered = rest.sorted { sortAscending ? $0.size < $1.size : $0.size > $1.size }
+        }
+        return sentinel + ordered
     }
 
     /// The selection as collector payloads, in display order. Stale paths
@@ -198,14 +232,58 @@ struct DiskAnalysisView: View {
                 onOpen: handleRowTap
             )
         } else {
-            ScanResultsView(
-                items: visibleItems,
-                displayVersion: analyzer.displayVersion,
-                selectedPaths: selectedPaths,
-                selectionFiles: selectionFiles,
-                onFolderTap: handleRowTap
-            )
+            VStack(spacing: 0) {
+                columnHeader
+                ScanResultsView(
+                    items: visibleItems,
+                    displayVersion: analyzer.displayVersion,
+                    selectedPaths: selectedPaths,
+                    selectionFiles: selectionFiles,
+                    onFolderTap: handleRowTap
+                )
+            }
         }
+    }
+
+    // MARK: - Sortable column header
+
+    @ViewBuilder
+    private var columnHeader: some View {
+        HStack(spacing: 0) {
+            sortHeaderButton(.name, "Name")
+            Spacer(minLength: 8)
+            sortHeaderButton(.size, "Size")
+        }
+        .font(.caption)
+        .fontWeight(.semibold)
+        .foregroundStyle(.secondary)
+        // Align the labels with the row columns: past the icon on the left,
+        // before the disclosure chevron on the right.
+        .padding(.leading, 40)
+        .padding(.trailing, 20)
+        .padding(.vertical, 5)
+        .background(.bar)
+        Divider()
+    }
+
+    private func sortHeaderButton(_ field: SortField, _ label: String) -> some View {
+        Button {
+            if sort == field {
+                sortAscending.toggle()
+            } else {
+                sort = field
+                sortAscending = (field == .name)   // A→Z for name, largest-first for size
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(label)
+                Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .opacity(sort == field ? 1 : 0)   // reserve space so labels don't shift
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Selection

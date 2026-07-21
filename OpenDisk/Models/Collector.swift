@@ -33,6 +33,14 @@ final class Collector {
         var freedBytes: Int64
     }
 
+    /// Snapshots of `items` before each change, so ⌘Z can pull the last
+    /// collected item(s) back out. Capped, and cleared once files are actually
+    /// deleted (a real deletion can't be undone).
+    private var undoStack: [[CollectedFile]] = []
+    private static let maxUndo = 50
+
+    var canUndo: Bool { !undoStack.isEmpty }
+
     var isEmpty: Bool { items.isEmpty }
     var count: Int { items.count }
     var totalBytes: Int64 { items.reduce(0) { $0 + $1.size } }
@@ -40,14 +48,16 @@ final class Collector {
 
     // MARK: - Building the collection
 
-    func add(_ files: [CollectedFile]) { files.forEach(add) }
+    func add(_ files: [CollectedFile]) { recordingUndo { files.forEach(appendOne) } }
+
+    func add(_ file: CollectedFile) { recordingUndo { appendOne(file) } }
 
     /// Adds one real on-disk entry. Rejects synthetic ("::") rows and
     /// missing paths, de-duplicates, and keeps the set disjoint: an entry
     /// already inside a collected folder is skipped, and collecting a folder
     /// drops any of its now-redundant descendants (so the total never
     /// double-counts, and deletion can't fail on an already-removed child).
-    func add(_ file: CollectedFile) {
+    private func appendOne(_ file: CollectedFile) {
         guard !file.path.hasPrefix("::"),
               FileManager.default.fileExists(atPath: file.path),
               !items.contains(where: { $0.path == file.path }) else { return }
@@ -91,8 +101,26 @@ final class Collector {
         }
     }
 
-    func remove(_ file: CollectedFile) { items.removeAll { $0.path == file.path } }
-    func clear() { items.removeAll() }
+    func remove(_ file: CollectedFile) { recordingUndo { items.removeAll { $0.path == file.path } } }
+    func clear() { recordingUndo { items.removeAll() } }
+
+    /// Runs a change, recording the prior collection for undo — but only if
+    /// the change actually altered it, so a no-op add (a duplicate or a
+    /// protected item) doesn't leave a phantom ⌘Z step.
+    private func recordingUndo(_ change: () -> Void) {
+        let before = items
+        change()
+        guard items != before else { return }
+        undoStack.append(before)
+        if undoStack.count > Self.maxUndo { undoStack.removeFirst() }
+    }
+
+    /// ⌘Z: restores the collection to just before the last change — pulls the
+    /// last collected item(s) back out.
+    func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        items = previous
+    }
 
     /// Whether a path is collected (so the results list can hide it).
     func contains(path: String) -> Bool { items.contains { $0.path == path } }
@@ -143,6 +171,8 @@ final class Collector {
         let failed = Set(failures.map(\.path))
         items.removeAll { !failed.contains($0.path) }
         deletionProgress = nil
+        // Deleted files are gone — there's nothing left to undo back into.
+        undoStack.removeAll()
         return Result(freedBytes: freed, deletedCount: deleted, failures: failures)
     }
 }
