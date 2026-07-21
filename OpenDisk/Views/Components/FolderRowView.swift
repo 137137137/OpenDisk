@@ -33,13 +33,11 @@ struct FolderRowView: View {
             row.draggable(CollectedFile(item)) {
                 dragPreview
                     .onAppear {
-                        if let reason = ProtectedPaths.reason(for: item.path) {
-                            collector.draggedProtectedReason = "“\(item.name)” \(reason)"
-                        } else {
-                            collector.draggedProtectedReason = nil
-                        }
+                        collector.flagDraggedProtected(
+                            ProtectedPaths.reason(for: item.path).map { "“\(item.name)” \($0)" }
+                        )
                     }
-                    .onDisappear { collector.draggedProtectedReason = nil }
+                    .onDisappear { collector.flagDraggedProtected(nil) }
             }
         }
     }

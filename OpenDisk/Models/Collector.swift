@@ -14,9 +14,24 @@ final class Collector {
     private var noticeTask: Task<Void, Never>?
     /// While a macOS-protected item is being dragged, the reason it can't be
     /// collected. The drop zone reads this to refuse the drop and say "no"
-    /// *before* the release, rather than explaining afterwards. Set by the
-    /// drag source when the drag starts; cleared when it ends.
-    var draggedProtectedReason: String?
+    /// *before* the release, rather than explaining afterwards. Set via
+    /// `flagDraggedProtected(_:)` when the drag starts.
+    private(set) var draggedProtectedReason: String?
+    private var dragNoticeTask: Task<Void, Never>?
+
+    /// Live progress while `deleteAll()` runs, so the tray can show what's
+    /// being removed and how much has been freed so far (nil when idle).
+    private(set) var deletionProgress: DeletionProgress?
+
+    struct DeletionProgress: Equatable {
+        /// Name of the item currently being removed.
+        var currentName: String
+        /// Items finished so far, out of the total being deleted.
+        var completed: Int
+        var total: Int
+        /// Bytes reclaimed so far.
+        var freedBytes: Int64
+    }
 
     var isEmpty: Bool { items.isEmpty }
     var count: Int { items.count }
@@ -60,6 +75,22 @@ final class Collector {
         }
     }
 
+    /// Records why the item now being dragged can't be collected, so the tray
+    /// can refuse it *before* the drop. Self-clears after a few seconds as a
+    /// safety net: SwiftUI doesn't reliably report when a drag preview
+    /// disappears, so without this the red "can't delete" banner could get
+    /// stuck after the drag ended. Pass `nil` to clear it immediately.
+    func flagDraggedProtected(_ reason: String?) {
+        dragNoticeTask?.cancel()
+        draggedProtectedReason = reason
+        guard reason != nil else { return }
+        dragNoticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.draggedProtectedReason = nil
+        }
+    }
+
     func remove(_ file: CollectedFile) { items.removeAll { $0.path == file.path } }
     func clear() { items.removeAll() }
 
@@ -85,25 +116,39 @@ final class Collector {
     /// aspirational rather than real.
     func deleteAll() async -> Result {
         let targets = items
-        let result = await Task.detached(priority: .userInitiated) { () -> Result in
-            let fm = FileManager.default
-            var freed: Int64 = 0
-            var deleted = 0
-            var failures: [Failure] = []
-            for file in targets {
-                do {
-                    try fm.removeItem(atPath: file.path)
-                    freed += file.size
-                    deleted += 1
-                } catch {
-                    failures.append(Failure(path: file.path, error: error.localizedDescription))
-                }
-            }
-            return Result(freedBytes: freed, deletedCount: deleted, failures: failures)
-        }.value
+        let total = targets.count
+        var freed: Int64 = 0
+        var deleted = 0
+        var failures: [Failure] = []
 
-        let failed = Set(result.failures.map(\.path))
+        for (index, file) in targets.enumerated() {
+            // Announce what's about to be removed, then do the removal off the
+            // main actor. The collection is small (a handful of folders), so
+            // hopping back per item to publish progress is negligible.
+            deletionProgress = DeletionProgress(
+                currentName: file.name, completed: index, total: total, freedBytes: freed
+            )
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do { try FileManager.default.removeItem(atPath: file.path); return nil }
+                catch { return error.localizedDescription }
+            }.value
+            if let failure {
+                failures.append(Failure(path: file.path, error: failure))
+            } else {
+                freed += file.size
+                deleted += 1
+            }
+        }
+
+        // Final frame at 100% so the bar visibly completes before the "done"
+        // summary replaces it.
+        deletionProgress = DeletionProgress(
+            currentName: "", completed: total, total: total, freedBytes: freed
+        )
+
+        let failed = Set(failures.map(\.path))
         items.removeAll { !failed.contains($0.path) }
-        return result
+        deletionProgress = nil
+        return Result(freedBytes: freed, deletedCount: deleted, failures: failures)
     }
 }

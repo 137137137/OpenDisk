@@ -22,6 +22,8 @@ struct CollectorBar: View {
     @State private var showConfirm = false
     @State private var previewItem: PreviewItem?
     @State private var lastResult: Collector.Result?
+    @State private var listVisible = false
+    @State private var collapseTask: Task<Void, Never>?
 
     private enum Phase: Equatable { case idle, deleting, done }
 
@@ -29,7 +31,10 @@ struct CollectorBar: View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
     }
 
-    private var showsList: Bool {
+    /// Whether the pointer (or an active drag) currently wants the list open.
+    /// Drives `listVisible` through a short close delay so crossing the small
+    /// gap between the footer and the floating list doesn't collapse it.
+    private var wantsList: Bool {
         phase == .idle && !collector.isEmpty && (footerHovered || listHovered || isTargeted)
     }
 
@@ -55,7 +60,7 @@ struct CollectorBar: View {
             // up by the footer's own height so they sit fully above it (over
             // the graph) without covering the Delete button.
             .overlay(alignment: .bottom) {
-                if showsList {
+                if listVisible {
                     listPanel
                         .onHover { listHovered = $0 }
                         .offset(y: -(footerHeight + 8))
