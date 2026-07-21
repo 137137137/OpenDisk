@@ -373,7 +373,29 @@ final class DiskAnalyzer {
         }
         displayedTotalBytes = scanResult?.tree.size(of: node) ?? 0
         displayVersion += 1
-        rebuildChartRoot(for: node)
+        // Defer the sunburst rebuild off the navigation's critical path so the
+        // list (what you're clicking through) transitions instantly. The
+        // chart's recursive depth-5 build can be heavy for large folders;
+        // running it a tick later keeps clicks responsive. Rapid navigations
+        // coalesce to the latest node.
+        scheduleChartRebuild(for: node)
+    }
+
+    /// Deferred, coalesced chart rebuild — see `display(node:)`.
+    private var pendingChartNode: FileTree.NodeID?
+    private var chartRebuildScheduled = false
+
+    private func scheduleChartRebuild(for node: FileTree.NodeID) {
+        pendingChartNode = node
+        guard !chartRebuildScheduled else { return }
+        chartRebuildScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.chartRebuildScheduled = false
+            guard let node = self.pendingChartNode else { return }
+            self.pendingChartNode = nil
+            self.rebuildChartRoot(for: node)
+        }
     }
 
     private func rebuildChartRoot(for node: FileTree.NodeID) {

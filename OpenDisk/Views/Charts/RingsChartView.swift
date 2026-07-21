@@ -16,6 +16,8 @@ struct RingsChartView: View {
     /// Called when the center (the viewed directory itself) is clicked.
     let onSelectCenter: () -> Void
 
+    @Environment(Collector.self) private var collector
+
     @State private var layout: RingsChartLayout.Layout?
     @State private var hoveredPath: String?
     @State private var hoverLocation: CGPoint = .zero
@@ -41,13 +43,25 @@ struct RingsChartView: View {
                     hoveredPath = nil
                 }
             }
-            .onTapGesture { location in
-                guard let segment = layout?.segment(at: location) else { return }
-                if segment.depth == 0 {
-                    onSelectCenter()
-                } else if segment.kind == .directory {
-                    onSelectDirectory(segment.path)
+            // simultaneousGesture (not onTapGesture) so a click doesn't
+            // exclusively capture the gesture and starve `.draggable` — the
+            // same fix the folder rows use.
+            .simultaneousGesture(
+                SpatialTapGesture().onEnded { value in
+                    guard let segment = layout?.segment(at: value.location) else { return }
+                    if segment.depth == 0 {
+                        onSelectCenter()
+                    } else if segment.kind == .directory {
+                        onSelectDirectory(segment.path)
+                    }
                 }
+            )
+            // Drag a ring into the Collector — reuses the folder rows' exact
+            // payload type, drop pipeline and protected-path blockers.
+            .draggable(draggableGroup) {
+                segmentDragPreview
+                    .onAppear { collector.flagDraggedProtected(draggedProtectedReason) }
+                    .onDisappear { collector.flagDraggedProtected(nil) }
             }
             .onChange(of: root, initial: true) {
                 layout = RingsChartLayout.layout(root: root, in: geometry.size)
@@ -55,6 +69,59 @@ struct RingsChartView: View {
             .onChange(of: geometry.size) {
                 layout = RingsChartLayout.layout(root: root, in: geometry.size)
             }
+        }
+    }
+
+    // MARK: - Ring drag (into the Collector)
+
+    /// The ring under the pointer that can be collected: a real file/folder
+    /// (not the center disk, not a synthetic slice).
+    private var draggableSegment: RingsChartLayout.Segment? {
+        guard let hoveredPath,
+              let segment = layout?.segments.first(where: { $0.path == hoveredPath }),
+              segment.depth >= 1,
+              segment.kind == .directory || segment.kind == .file
+        else { return nil }
+        return segment
+    }
+
+    /// The drag payload — the exact type folder rows use, so the Collector's
+    /// drop handler, size accounting and protection all work unchanged. Empty
+    /// when nothing collectable is under the pointer, so a stray drag from the
+    /// center disk or a gap is a harmless no-op.
+    private var draggableGroup: CollectedFileGroup {
+        guard let segment = draggableSegment else { return CollectedFileGroup(files: []) }
+        return CollectedFileGroup(files: [
+            CollectedFile(
+                path: segment.path, name: segment.name,
+                size: segment.size, isDirectory: segment.kind == .directory
+            )
+        ])
+    }
+
+    /// Why the hovered ring can't be collected (macOS-protected), phrased to
+    /// follow its name — drives the Collector's pre-drop "can't delete" state,
+    /// identical to a protected folder row.
+    private var draggedProtectedReason: String? {
+        guard let segment = draggableSegment,
+              let reason = ProtectedPaths.reason(for: segment.path) else { return nil }
+        return "“\(segment.name)” \(reason)"
+    }
+
+    @ViewBuilder
+    private var segmentDragPreview: some View {
+        if let segment = draggableSegment {
+            HStack(spacing: 6) {
+                Image(nsImage: FileIcon.icon(for: segment.path))
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                Text(segment.name).lineLimit(1)
+                Text(ByteFormatter.formatFileSize(segment.size))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
         }
     }
 
