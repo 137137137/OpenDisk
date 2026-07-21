@@ -19,6 +19,9 @@ struct FolderRowView: View {
 
     @Environment(Collector.self) private var collector
     @State private var isHovered = false
+    /// The row's real Finder icon once resolved off-main; until then the
+    /// row draws a type icon so scrolling never blocks on IconServices.
+    @State private var resolvedIcon: NSImage?
 
     /// Synthetic rows ("::"-prefixed, e.g. Purgeable Space) have no on-disk
     /// location, so they can't be dragged, collected, or revealed.
@@ -121,6 +124,17 @@ struct FolderRowView: View {
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+        // Resolve the real Finder icon off the main thread; the row shows
+        // a type icon meanwhile. A synchronous per-row IconServices call
+        // here was what made fast scrolling through fresh (search) results
+        // stutter.
+        .task(id: item.path) {
+            guard !isSynthetic else { return }
+            if FileIcon.cached(for: item.path) == nil {
+                await FileIcon.warm(item.path)
+            }
+            resolvedIcon = FileIcon.cached(for: item.path)
+        }
         // simultaneousGesture (not onTapGesture) so the tap doesn't
         // exclusively capture the gesture and starve `.draggable`.
         .simultaneousGesture(TapGesture().onEnded { onTap() })
@@ -144,7 +158,14 @@ struct FolderRowView: View {
                     .frame(width: 24, height: 22)
             }
         } else {
-            Image(nsImage: FileIcon.icon(for: item.path))
+            // Cache, then the freshly resolved icon, then a no-I/O type
+            // icon — never a blocking per-path lookup during scrolling.
+            Image(nsImage: resolvedIcon
+                ?? FileIcon.cached(for: item.path)
+                ?? FileIcon.typeIcon(
+                    forPathExtension: (item.name as NSString).pathExtension,
+                    isDirectory: item.isDirectory
+                ))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 22, height: 22)
