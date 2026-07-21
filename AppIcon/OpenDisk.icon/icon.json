@@ -7,7 +7,14 @@
       "layers" : [
         {
           "image-name" : "OpenDisk-O-Ring-Single.svg",
-          "name" : "OpenDisk-O-Ring-Single"
+          "name" : "OpenDisk-O-Ring-Single",
+          "position" : {
+            "scale" : 1.2,
+            "translation-in-points" : [
+              -0.04675988404562759,
+              -7.698494821343672
+            ]
+          }
         }
       ],
       "shadow" : {

@@ -14,6 +14,10 @@ struct ScanResultsView: View {
     var selectionFiles: [CollectedFile] = []
     let onFolderTap: (FolderItem) -> Void
 
+    /// Largest visible item, so each row's proportional bar reads relative
+    /// to it (recomputed as sizes stream in and re-sort).
+    private var maxSize: Int64 { items.map(\.size).max() ?? 0 }
+
     var body: some View {
         // A ScrollView + LazyVStack rather than a List: SwiftUI's List
         // intercepts row drag gestures on macOS, which prevents dragging a
@@ -24,7 +28,8 @@ struct ScanResultsView: View {
                     FolderRowView(
                         item: item,
                         isSelected: selectedPaths.contains(item.path),
-                        selectionFiles: selectionFiles
+                        selectionFiles: selectionFiles,
+                        sizeFraction: maxSize > 0 ? Double(item.size) / Double(maxSize) : nil
                     ) {
                         onFolderTap(item)
                     }

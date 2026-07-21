@@ -10,18 +10,18 @@ struct PathComponent: Identifiable {
     var id: String { path }
 }
 
-/// DaisyDisk-style breadcrumb trail in the Liquid Glass functional layer:
-/// chevron-separated glass segments from the scan root to the current folder,
-/// with the current location shown prominently. This is the app's single
-/// navigation-location indicator (the redundant window title is removed).
+/// Finder-style path bar: a chevron-separated location trail from the scan
+/// root to the current folder. Ancestors are subtle, clickable text that
+/// brighten with a soft highlight on hover; the current folder is plain,
+/// prominent text. No accent-filled pills — this reads like a native macOS
+/// path bar, not a row of buttons. Returning to the disk list is the
+/// toolbar's system back button; the trail only jumps to an ancestor.
 struct BreadcrumbBar: View {
     let currentPath: String
     let rootPath: String
     /// Display name of the root segment (device name).
     let rootName: String
     let onNavigate: (String) -> Void
-    /// Tapping the root segment while already at the root.
-    let onRootTap: () -> Void
 
     /// Segments relative to the scanned root, so external volumes don't
     /// grow phantom "/Volumes" crumbs pointing outside the scan.
@@ -61,21 +61,20 @@ struct BreadcrumbBar: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            GlassEffectContainer(spacing: 4) {
-                HStack(spacing: 4) {
-                    ForEach(pathComponents) { component in
-                        segment(component)
+            HStack(spacing: 3) {
+                ForEach(pathComponents) { component in
+                    segment(component)
 
-                        if !component.isLast {
-                            Image(systemName: "chevron.right")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
+                    if !component.isLast {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 1)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
         }
         // Keep the whole trail on one line; it scrolls horizontally if deep.
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -83,29 +82,45 @@ struct BreadcrumbBar: View {
 
     @ViewBuilder
     private func segment(_ component: PathComponent) -> some View {
-        let button = Button {
-            if component.isRoot && component.isLast {
-                onRootTap()
-            } else {
-                onNavigate(component.path)
-            }
-        } label: {
-            HStack(spacing: 4) {
-                if component.isRoot {
-                    Image(systemName: "desktopcomputer")
-                }
-                Text(component.name).lineLimit(1)
-            }
-            .font(.callout)
-        }
-
-        // Current location is prominent (accent-filled glass, DaisyDisk-style);
-        // ancestors are subtle glass chips.
         if component.isLast {
-            button.buttonStyle(.glassProminent).tint(.accentColor)
+            // Current location: a label, not a control.
+            Text(component.name)
+                .font(.callout)
+                .fontWeight(.semibold)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
         } else {
-            button.buttonStyle(.glass)
+            BreadcrumbLink(name: component.name) { onNavigate(component.path) }
         }
+    }
+}
+
+/// A clickable ancestor crumb: secondary text that brightens under a soft
+/// rounded highlight on hover, like a Finder path-bar segment.
+private struct BreadcrumbLink: View {
+    let name: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(name)
+                .font(.callout)
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background {
+                    if hovering {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(.quaternary)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -114,8 +129,7 @@ struct BreadcrumbBar: View {
         currentPath: "/Volumes/External/Documents/Projects",
         rootPath: "/Volumes/External",
         rootName: "External",
-        onNavigate: { _ in },
-        onRootTap: {}
+        onNavigate: { _ in }
     )
     .frame(width: 600)
     .padding()

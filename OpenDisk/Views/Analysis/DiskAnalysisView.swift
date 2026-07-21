@@ -13,7 +13,6 @@ struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
 
-    @Environment(\.dismiss) private var dismiss
     @State private var analyzer = DiskAnalyzer()
     @State private var collector = Collector()
     @State private var isCollectorTargeted = false
@@ -47,8 +46,7 @@ struct DiskAnalysisView: View {
                 currentPath: currentPath,
                 rootPath: rootPath,
                 rootName: rootName,
-                onNavigate: navigateToPath,
-                onRootTap: { dismiss() }
+                onNavigate: navigateToPath
             )
 
             if !analyzer.rootItems.isEmpty {
@@ -100,9 +98,12 @@ struct DiskAnalysisView: View {
             minWidth: 900, idealWidth: 1100, maxWidth: .infinity,
             minHeight: 600, idealHeight: 720, maxHeight: .infinity
         )
-        // No window title: the breadcrumb trail below is the single
-        // location indicator (removes the duplicate "Computer").
-        .navigationTitle("")
+        // Native window title + subtitle: the folder currently shown and its
+        // size, updating as you navigate (like Finder). The path bar below is
+        // the interactive trail; the toolbar's system back button returns to
+        // the disk list.
+        .navigationTitle(windowTitle)
+        .navigationSubtitle(windowSubtitle)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise") {
@@ -324,6 +325,24 @@ struct DiskAnalysisView: View {
     private var progressFraction: Double? {
         guard totalUsedDiskSpace > 0 else { return nil }
         return min(1.0, Double(analyzer.totalDiskScannedBytes) / Double(totalUsedDiskSpace))
+    }
+
+    // MARK: - Window title
+
+    /// The folder currently shown — the device name at the scan root, the
+    /// last path component when browsing deeper, or the synthetic name for
+    /// "::" locations. Updates as you navigate, like Finder's window title.
+    private var windowTitle: String {
+        if currentPath == rootPath { return rootName }
+        if currentPath.hasPrefix("::") { return String(currentPath.dropFirst(2)) }
+        return (currentPath as NSString).lastPathComponent
+    }
+
+    /// The size of what's on screen, shown beside the title once known.
+    private var windowSubtitle: String {
+        analyzer.displayedTotalBytes > 0
+            ? ByteFormatter.formatFileSize(analyzer.displayedTotalBytes)
+            : ""
     }
 
     // MARK: - Empty state

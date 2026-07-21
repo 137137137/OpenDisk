@@ -15,6 +15,9 @@ struct FolderRowView: View {
     /// Every currently selected item as a collector payload. A drag (or a
     /// context-menu collect) from a selected row carries all of them.
     var selectionFiles: [CollectedFile] = []
+    /// This item's size as a fraction of the largest sibling, driving the
+    /// faint proportional bar. Nil (e.g. in search results) hides the bar.
+    var sizeFraction: Double? = nil
     let onTap: () -> Void
 
     @Environment(Collector.self) private var collector
@@ -89,19 +92,34 @@ struct FolderRowView: View {
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            if item.sizeIsKnown {
-                Text(item.formattedSize)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            } else {
-                // Skeleton row: the scan has not sized this entry yet.
-                Text("0.00 MB")
-                    .monospacedDigit()
-                    .redacted(reason: .placeholder)
-                    .foregroundStyle(.tertiary)
+            // Faint proportional bar (relative to the largest sibling): a
+            // subtle read of how big each item is, only for sized entries.
+            if let sizeFraction, sizeFraction > 0, item.sizeIsKnown {
+                Capsule(style: .continuous)
+                    .fill(.quaternary)
+                    .frame(width: 46, height: 4)
+                    .overlay(alignment: .leading) {
+                        Capsule(style: .continuous)
+                            .fill(.secondary)
+                            .frame(width: max(3, 46 * min(1, sizeFraction)), height: 4)
+                    }
             }
+
+            // Right-aligned size, Finder-style; "--" while a folder is still
+            // being tallied (instead of a loading-bar skeleton).
+            Group {
+                if item.sizeIsKnown {
+                    Text(item.formattedSize)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("--")
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(minWidth: 66, alignment: .trailing)
 
             if item.isDirectory {
                 Image(systemName: "chevron.right")
