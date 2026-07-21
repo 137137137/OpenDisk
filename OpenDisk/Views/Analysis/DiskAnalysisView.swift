@@ -49,9 +49,18 @@ struct DiskAnalysisView: View {
                 GeometryReader { geometry in
                     HSplitView {
                         ScanResultsView(
-                            // Collected files drop out of the list until they
-                            // are deleted or removed from the Collector.
-                            items: analyzer.rootItems.filter { !collector.contains(path: $0.path) },
+                            // Collected items drop out of the list until they
+                            // are deleted or removed from the Collector. The
+                            // synthetic "Purgeable Space" row has no real path
+                            // of its own — it's collected via its cache
+                            // folders — so hide it once those are all in.
+                            items: analyzer.rootItems.filter { item in
+                                if item.path == HiddenSpaceInfo.sentinelPath {
+                                    return !analyzer.collectablePurgeableFiles()
+                                        .allSatisfy { collector.contains(path: $0.path) }
+                                }
+                                return !collector.contains(path: item.path)
+                            },
                             displayVersion: analyzer.displayVersion,
                             onFolderTap: navigateToFolder
                         )
@@ -160,9 +169,16 @@ struct DiskAnalysisView: View {
             }
         }
         // Dropping anywhere on the chart side collects the file; the collector
-        // bar lights up while a drag hovers.
+        // bar lights up while a drag hovers. Dragging the "Purgeable Space"
+        // row expands to its real, deletable cache folders (its size is the
+        // sum of those, so the collected total matches).
         .dropDestination(for: CollectedFile.self) { files, _ in
-            collector.add(files)
+            let expanded = files.flatMap { file in
+                file.path == HiddenSpaceInfo.sentinelPath
+                    ? analyzer.collectablePurgeableFiles()
+                    : [file]
+            }
+            collector.add(expanded)
             return true
         } isTargeted: { isCollectorTargeted = $0 }
     }

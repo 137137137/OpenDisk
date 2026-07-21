@@ -29,6 +29,8 @@ struct ScanStatusBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Divider()
+
             if isScanning {
                 ProgressView(value: progressFraction)
                     .progressViewStyle(.linear)
@@ -37,53 +39,34 @@ struct ScanStatusBar: View {
                     .padding(.top, 6)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 6) {
                 if isScanning {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.mini)
-                        Text(itemsScanned > 0 ? scanStatus : "Scanning…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        if !filesPerSecond.isEmpty {
-                            Text("· \(filesPerSecond)")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                } else {
-                    Text("Total")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(itemsScanned > 0 ? scanStatus : "Scanning…")
                         .foregroundStyle(.secondary)
-
-                    if scanDuration > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock.badge.checkmark")
-                                .font(.caption)
-                                .foregroundStyle(.green)
-                            Text(DurationFormatter.scanDuration(scanDuration))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        .lineLimit(1)
+                    if !filesPerSecond.isEmpty {
+                        Text("· \(filesPerSecond)")
+                            .foregroundStyle(.tertiary)
                     }
+                } else if scanDuration > 0 {
+                    Text(DurationFormatter.scanDuration(scanDuration))
+                        .foregroundStyle(.secondary)
                 }
 
-                Spacer()
+                Spacer(minLength: 12)
 
                 Text(ByteFormatter.formatFileSize(totalBytes))
-                    .font(.subheadline)
                     .fontWeight(.semibold)
                     .monospacedDigit()
                     .contentTransition(.numericText())
-
-                Text("(\(itemCount) items)")
-                    .font(.caption)
+                Text("· \(itemCount) item\(itemCount == 1 ? "" : "s")")
                     .foregroundStyle(.secondary)
             }
+            .font(.footnote)
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
         }
         .background(.bar)
     }

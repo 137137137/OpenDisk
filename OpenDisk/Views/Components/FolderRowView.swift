@@ -17,11 +17,10 @@ struct FolderRowView: View {
     private var fileURL: URL { URL(fileURLWithPath: item.path) }
 
     var body: some View {
-        // Synthetic rows (Purgeable Space aggregate, the auto-managed leaf)
-        // aren't draggable — they're display lenses over the un-scannable gap,
-        // not deletable files. The real cache folders shown inside Purgeable
-        // Space are ordinary rows and stay draggable.
-        if isSynthetic {
+        // The "Purgeable Space" row is draggable — dropping it collects its
+        // real, deletable cache folders (expanded on drop, sizes match).
+        // Any other synthetic row (there are none now) stays non-draggable.
+        if isSynthetic && item.path != HiddenSpaceInfo.sentinelPath {
             row
         } else {
             // Not a Button: a Button's press gesture swallows the drag on

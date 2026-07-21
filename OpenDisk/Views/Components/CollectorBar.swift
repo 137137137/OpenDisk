@@ -33,6 +33,13 @@ struct CollectorBar: View {
         phase == .idle && !collector.isEmpty && (footerHovered || listHovered || isTargeted)
     }
 
+    /// Content height for the floating list: ~one row per item (plus the
+    /// panel's own padding), capped so it never overruns the window — only
+    /// as tall as it needs to be, then scrolls.
+    private var listHeight: CGFloat {
+        min(600, CGFloat(collector.count) * 30 + 16)
+    }
+
     var body: some View {
         footerBar
             .onHover { footerHovered = $0 }
@@ -190,7 +197,11 @@ struct CollectorBar: View {
                 }
                 .padding(6)
             }
-            .frame(maxHeight: 480)
+            // Explicit content-based height: the list is an overlay on the
+            // short footer, so a plain maxHeight gets squeezed to the footer's
+            // height. Force a height that grows with the item count (only as
+            // tall as needed) up to a generous cap, then scroll.
+            .frame(height: listHeight)
             .scrollBounceBehavior(.basedOnSize)
             .glassEffect(.regular, in: shape)
         }
