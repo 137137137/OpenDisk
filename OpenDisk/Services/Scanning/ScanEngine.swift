@@ -161,15 +161,10 @@ final class ScanEngine: DiskScanning {
         }
 
         let tree = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let tree = Self.performScan(
-                        path: path, metrics: metrics,
-                        cancellation: cancellation, assembler: assembler
-                    )
-                    continuation.resume(returning: tree)
-                }
-            }
+            await Self.performScan(
+                path: path, metrics: metrics,
+                cancellation: cancellation, assembler: assembler
+            )
         } onCancel: {
             cancellation.cancel()
         }
@@ -179,16 +174,29 @@ final class ScanEngine: DiskScanning {
 
     // MARK: - Blocking scan pipeline
 
+    /// Runs one heavy, synchronous/blocking scan step on a dedicated
+    /// background thread — never the Swift concurrency cooperative pool
+    /// (mirrors the dispatch the old top-level scan entry used).
+    private static func offload<T: Sendable>(
+        _ work: @escaping @Sendable () -> T
+    ) async -> T {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: work())
+            }
+        }
+    }
+
     private static func performScan(
         path: String,
         metrics: ScanMetrics,
         cancellation: CancellationFlag,
         assembler: PartialResultAssembler
-    ) -> FileTree {
+    ) async -> FileTree {
         let isCancelled: @Sendable () -> Bool = { cancellation.isCancelled }
 
         if path == "/" {
-            return scanBootVolumeGroup(
+            return await scanBootVolumeGroup(
                 metrics: metrics, isCancelled: isCancelled, assembler: assembler
             )
         }
@@ -201,14 +209,18 @@ final class ScanEngine: DiskScanning {
             return tree
         }
 
-        var tree = scanRootTreeUsingCache(
+        let scanned = await scanRootTreeUsingCache(
             path: scanPath, rootName: path,
             allowedDevices: subtreeAllowedDevices(forScanRoot: scanPath),
             metrics: metrics, isCancelled: isCancelled,
             registerPartial: { assembler.register(subtreeKey, provider: $0) }
         )
-        tree.rollUpDirectorySizes()
-        return tree
+        // Rolling up a multi-million-node tree is heavy: keep it off the pool.
+        return await offload {
+            var tree = scanned
+            tree.rollUpDirectorySizes()
+            return tree
+        }
     }
 
     /// Some entries shown at "/" exist only in the Data volume's
@@ -243,8 +255,8 @@ final class ScanEngine: DiskScanning {
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
-        registerPartial: (@escaping PartialTreeProvider) -> Void
-    ) -> FileTree {
+        registerPartial: @escaping @Sendable (@escaping PartialTreeProvider) -> Void
+    ) async -> FileTree {
         // Captured before any reading so changes made during this scan
         // replay into the next one.
         let startEventID = FSEventsChangeJournal.currentEventID
@@ -252,27 +264,43 @@ final class ScanEngine: DiskScanning {
         // HFS+ volumes go through the catalog scanner; no cache there.
         let usesCatalog = usesCatalogScan(forRoot: path)
 
-        if !usesCatalog,
-           let cached = ScanCache.load(forRoot: path),
-           cached.tree.name(of: FileTree.rootID) == rootName,
-           let changes = FSEventsChangeJournal.changes(since: cached.eventID, under: path) {
-            let live = Mutex(cached.tree)
-            registerPartial { live.withLock { $0 } }
-            if IncrementalUpdater.apply(
-                changes, to: live, rootPath: path,
-                allowedDevices: allowedDevices, metrics: metrics, isCancelled: isCancelled
-            ) {
-                let tree = live.withLock { $0 }
-                saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
-                return tree
+        if !usesCatalog {
+            // Deserializing a saved tree is heavy: off the cooperative pool.
+            let cached = await offload { ScanCache.load(forRoot: path) }
+            if let cached, cached.tree.name(of: FileTree.rootID) == rootName {
+                // Pure async suspension — no thread is blocked while the
+                // journal streams HistoryDone or times out.
+                let changes = await FSEventsChangeJournal.changes(
+                    since: cached.eventID, under: path
+                )
+                if let changes {
+                    let live = Mutex(cached.tree)
+                    registerPartial { live.withLock { $0 } }
+                    // Splicing up to 40k changed directories is heavy work.
+                    let applied = await offload {
+                        IncrementalUpdater.apply(
+                            changes, to: live, rootPath: path,
+                            allowedDevices: allowedDevices,
+                            metrics: metrics, isCancelled: isCancelled
+                        )
+                    }
+                    if applied {
+                        let tree = live.withLock { $0 }
+                        saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
+                        return tree
+                    }
+                }
             }
         }
 
-        let tree = scanVolumeOrTraverse(
-            path: path, rootName: rootName, allowedDevices: allowedDevices,
-            metrics: metrics, isCancelled: isCancelled,
-            registerPartial: registerPartial
-        )
+        // Full scan/traversal is the multi-second bulk: off the cooperative pool.
+        let tree = await offload {
+            scanVolumeOrTraverse(
+                path: path, rootName: rootName, allowedDevices: allowedDevices,
+                metrics: metrics, isCancelled: isCancelled,
+                registerPartial: registerPartial
+            )
+        }
         if !usesCatalog && !isCancelled() {
             saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
         }
@@ -330,7 +358,7 @@ final class ScanEngine: DiskScanning {
         allowedDevices: Set<dev_t>? = nil,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
-        registerPartial: (@escaping PartialTreeProvider) -> Void = { _ in }
+        registerPartial: @escaping @Sendable (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
         let isVolumeRoot = VolumeAttributes.isVolumeRoot(path)
         if usesCatalogScan(forRoot: path) {
@@ -366,7 +394,7 @@ final class ScanEngine: DiskScanning {
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         assembler: PartialResultAssembler
-    ) -> FileTree {
+    ) async -> FileTree {
         let siblingNames = siblingVolumeNames()
         assembler.setComposer { trees in
             composeBootVolumeGroup(trees, siblingNames: siblingNames)
@@ -388,7 +416,7 @@ final class ScanEngine: DiskScanning {
         // own root (.Spotlight-V100, .fseventsd, ...) are not firmlinked
         // into "/" and are skipped, matching what the live namespace
         // shows.
-        let rootTree = scanRootTreeUsingCache(
+        let rootTree = await scanRootTreeUsingCache(
             path: "/", rootName: "/",
             allowedDevices: subtreeAllowedDevices(forScanRoot: "/"),
             metrics: metrics, isCancelled: isCancelled,
@@ -405,17 +433,24 @@ final class ScanEngine: DiskScanning {
         for name in siblingNames {
             if isCancelled() { break }
             let mountPoint = systemVolumesDirectory + "/" + name
-            let tree = scanVolumeOrTraverse(
-                path: mountPoint, rootName: mountPoint,
-                metrics: metrics, isCancelled: isCancelled,
-                registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
-            )
+            // Off the cooperative pool; the `await` still runs siblings
+            // strictly one after another (the APFS single-worker-pool rule).
+            let tree = await offload {
+                scanVolumeOrTraverse(
+                    path: mountPoint, rootName: mountPoint,
+                    metrics: metrics, isCancelled: isCancelled,
+                    registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
+                )
+            }
             results.withLock { $0[siblingTreeKey(name)] = tree }
         }
 
-        return composeBootVolumeGroup(
-            results.withLock { $0 }, siblingNames: siblingNames
-        )
+        // Final roll-up of the whole tree is heavy: off the cooperative pool.
+        return await offload {
+            composeBootVolumeGroup(
+                results.withLock { $0 }, siblingNames: siblingNames
+            )
+        }
     }
 
     /// Merges per-volume trees into one rolled-up tree rooted at "/".
