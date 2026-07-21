@@ -13,6 +13,7 @@ struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
 
+    @Environment(ScanAccess.self) private var scanAccess
     @State private var analyzer = DiskAnalyzer()
     @State private var collector = Collector()
     @State private var isCollectorTargeted = false
@@ -126,10 +127,15 @@ struct DiskAnalysisView: View {
         .onAppear {
             guard !hasInitiallyScanned else { return }
             hasInitiallyScanned = true
+            // Sandboxed (App Store) build: hold security-scoped access to the
+            // granted root for as long as this screen — and its scans — is up.
+            // A no-op in the non-sandboxed website build.
+            scanAccess.beginAccess(toPath: rootPath)
             Task { await analyzer.scanDirectory(rootPath) }
         }
         .onDisappear {
             analyzer.cancelCurrentScan()
+            scanAccess.endAccess(toPath: rootPath)
         }
         // HIG (macOS): search lives at the trailing side of the toolbar.
         // Search starts immediately on typing — the index answers in

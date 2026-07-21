@@ -11,6 +11,11 @@ xcuserdata/
 *.xcscmblueprint
 *.xccheckout
 
+# Release artifacts + tooling (kept out of the repo)
+distribution/
+scripts/release-website.sh
+DISTRIBUTION.md
+
 # Xcode — build output
 build/
 DerivedData/

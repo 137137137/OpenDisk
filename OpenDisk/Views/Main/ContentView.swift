@@ -5,6 +5,7 @@ import SwiftUI
 /// the system back button, title handling and toolbar treatment.
 struct ContentView: View {
     @State private var deviceMonitor = DeviceMonitor()
+    @State private var scanAccess = ScanAccess()
     @State private var path: [DeviceInfo] = []
 
     var body: some View {
@@ -21,6 +22,9 @@ struct ContentView: View {
                 )
             }
         }
+        // Reachable by both the picker (to grant/list locations) and the
+        // analysis screen (to hold security-scoped access during a scan).
+        .environment(scanAccess)
     }
 }
 
