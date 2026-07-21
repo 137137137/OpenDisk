@@ -74,14 +74,30 @@ struct CollectorBar: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
+            // Open immediately, close after a short delay: moving the pointer
+            // from the footer up to the list (or back) crosses an 8pt gap that
+            // belongs to neither hover region. Without the delay the list would
+            // flash shut mid-transit; a re-entry cancels the pending close.
+            .onChange(of: wantsList) { _, want in
+                collapseTask?.cancel()
+                if want {
+                    listVisible = true
+                } else {
+                    collapseTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(160))
+                        if !Task.isCancelled { listVisible = false }
+                    }
+                }
+            }
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
-            .animation(.spring(duration: 0.3), value: showsList)
+            .animation(.spring(duration: 0.3), value: listVisible)
             .animation(.easeInOut(duration: 0.15), value: isTargeted)
             .animation(.spring(duration: 0.3), value: collector.count)
             .animation(.spring(duration: 0.3), value: phase)
             .animation(.spring(duration: 0.3), value: collector.blockedNotice)
             .animation(.easeInOut(duration: 0.15), value: rejecting)
+            .animation(.snappy(duration: 0.25), value: collector.deletionProgress)
             .sheet(item: $previewItem) { item in
                 QuickLookSheet(url: item.url)
             }
@@ -193,11 +209,45 @@ struct CollectorBar: View {
     }
 
     private var deletingView: some View {
-        HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
-            Text("Deleting…").foregroundStyle(.secondary)
-            Spacer()
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(deletingTitle)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    if let progress = collector.deletionProgress {
+                        HStack(spacing: 0) {
+                            Text("Freed ").foregroundStyle(.secondary)
+                            Text(ByteFormatter.formatFileSize(progress.freedBytes))
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                                .contentTransition(.numericText())
+                            Text(" · \(progress.completed) of \(progress.total)")
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.caption)
+                    }
+                }
+                Spacer()
+            }
+            if let progress = collector.deletionProgress, progress.total > 0 {
+                ProgressView(
+                    value: Double(min(progress.completed, progress.total)),
+                    total: Double(progress.total)
+                )
+                .progressViewStyle(.linear)
+                .controlSize(.small)
+            }
         }
+    }
+
+    /// Names the item currently being removed, e.g. "Deleting npm Cache…".
+    private var deletingTitle: String {
+        if let name = collector.deletionProgress?.currentName, !name.isEmpty {
+            return "Deleting \(name)…"
+        }
+        return "Deleting…"
     }
 
     private var doneView: some View {

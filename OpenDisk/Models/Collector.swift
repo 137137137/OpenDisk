@@ -140,12 +140,6 @@ final class Collector {
             }
         }
 
-        // Final frame at 100% so the bar visibly completes before the "done"
-        // summary replaces it.
-        deletionProgress = DeletionProgress(
-            currentName: "", completed: total, total: total, freedBytes: freed
-        )
-
         let failed = Set(failures.map(\.path))
         items.removeAll { !failed.contains($0.path) }
         deletionProgress = nil
