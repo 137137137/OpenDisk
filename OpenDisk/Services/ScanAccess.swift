@@ -52,9 +52,13 @@ final class ScanAccess {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Grant Access"
-        panel.message = "Choose a folder or volume for OpenDisk to scan. It will remember your choice."
-        panel.directoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        panel.prompt = "Scan"
+        panel.message = "Choose what to scan. To analyze your whole Mac, pick your startup disk "
+            + "(e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume — "
+            + "OpenDisk remembers your choice."
+        // Open at the disk root so the whole drive is one selection away, rather
+        // than deep inside the home folder.
+        panel.directoryURL = URL(fileURLWithPath: "/")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return store(url)
     }

@@ -63,9 +63,9 @@ struct DevicePickerView: View {
         GroupBox {
             if scanAccess.grants.isEmpty {
                 ContentUnavailableView {
-                    Label("No Locations Yet", systemImage: "folder.badge.questionmark")
+                    Label("Choose What to Scan", systemImage: "externaldrive.badge.plus")
                 } description: {
-                    Text("Grant OpenDisk access to a folder or volume, then scan it. Your choice is remembered.")
+                    Text("Grant OpenDisk access to your startup disk to analyze your whole Mac — or to any folder or volume. Your choice is remembered.")
                 }
                 .padding(.vertical, 8)
             } else {
@@ -82,7 +82,7 @@ struct DevicePickerView: View {
             }
         }
 
-        Button("Grant a Folder or Volume…", systemImage: "folder.badge.plus") {
+        Button("Choose a Disk or Folder to Scan…", systemImage: "externaldrive.badge.plus") {
             if let grant = scanAccess.requestGrant() { open(grant) }
         }
     }
