@@ -391,7 +391,10 @@ final class DiskAnalyzer {
     /// Directories come first, alphabetically, with pending sizes; files
     /// follow with their real allocated sizes.
     private nonisolated static func readSkeleton(_ path: String) -> [FolderItem] {
-        let keys: Set<URLResourceKey> = [.isDirectoryKey, .totalFileAllocatedSizeKey]
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey, .totalFileAllocatedSizeKey,
+            .isSymbolicLinkKey, .isHiddenKey,
+        ]
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: URL(fileURLWithPath: path, isDirectory: true),
             includingPropertiesForKeys: Array(keys)
@@ -404,6 +407,16 @@ final class DiskAnalyzer {
         var files: [FolderItem] = []
         for url in urls {
             let values = try? url.resourceValues(forKeys: keys)
+            // Skeleton rows that can't survive the scan cause a jarring flash:
+            // they show for a moment, then vanish once real results land.
+            //   • Symlinks (/home, /etc, /var, /.file, …) are never followed by
+            //     the scanner, so they never appear in the tree. (Firmlinked
+            //     dirs like /Users are NOT symlinks — the OS reports them as
+            //     real directories — so they're correctly kept.)
+            //   • Hidden entries (/.vol, /.nofollow, …) are volume-root noise
+            //     that the finished list drops as sub-1KB anyway.
+            // Filtering both here makes the skeleton a faithful preview.
+            if values?.isSymbolicLink == true || values?.isHidden == true { continue }
             let isDirectory = values?.isDirectory ?? false
             let name = url.lastPathComponent
             let item = FolderItem(
