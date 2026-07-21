@@ -63,6 +63,12 @@ struct RingsChartView: View {
                     .onAppear { collector.flagDraggedProtected(draggedProtectedReason) }
                     .onDisappear { collector.flagDraggedProtected(nil) }
             }
+            // Right-click a ring for the same actions as a list row.
+            .contextMenu {
+                if let segment = draggableSegment {
+                    FileActionsMenu(file: collectedFile(for: segment), collector: collector)
+                }
+            }
             .onChange(of: root, initial: true) {
                 layout = RingsChartLayout.layout(root: root, in: geometry.size)
             }
@@ -91,12 +97,14 @@ struct RingsChartView: View {
     /// center disk or a gap is a harmless no-op.
     private var draggableGroup: CollectedFileGroup {
         guard let segment = draggableSegment else { return CollectedFileGroup(files: []) }
-        return CollectedFileGroup(files: [
-            CollectedFile(
-                path: segment.path, name: segment.name,
-                size: segment.size, isDirectory: segment.kind == .directory
-            )
-        ])
+        return CollectedFileGroup(files: [collectedFile(for: segment)])
+    }
+
+    private func collectedFile(for segment: RingsChartLayout.Segment) -> CollectedFile {
+        CollectedFile(
+            path: segment.path, name: segment.name,
+            size: segment.size, isDirectory: segment.kind == .directory
+        )
     }
 
     /// Why the hovered ring can't be collected (macOS-protected), phrased to
