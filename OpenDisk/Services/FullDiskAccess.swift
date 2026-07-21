@@ -16,20 +16,39 @@ enum FullDiskAccess {
 
     /// Whether Full Disk Access is currently granted.
     ///
-    /// Probes a TCC-protected app container; reading it also registers the
-    /// app in the Full Disk Access list of System Settings. (Probing a
-    /// world-readable path like `/Library/Application Support` does NOT
-    /// work — it succeeds without FDA.)
+    /// Probes several TCC-protected locations that require FDA to read (and
+    /// reading them also registers the app in the FDA list of System Settings).
+    /// The first probe that *exists* settles it — readable means granted,
+    /// unreadable means denied — and a path that isn't present on this Mac is
+    /// skipped rather than counted as a denial. (A world-readable path like
+    /// `/Library/Application Support` must NOT be used — it succeeds without FDA.)
     static var isGranted: Bool {
-        let probePath = NSString(
-            string: "~/Library/Containers/com.apple.stocks"
-        ).expandingTildeInPath
-        do {
-            _ = try FileManager.default.contentsOfDirectory(atPath: probePath)
-            return true
-        } catch {
-            log.debug("Full Disk Access is not granted (cannot read probe path)")
+        let home = NSHomeDirectory()
+        let probes = [
+            "/Library/Containers/com.apple.stocks",
+            "/Library/Safari",
+            "/Library/Mail",
+            "/Library/Messages",
+        ].map { home + $0 }
+
+        for path in probes where FileManager.default.fileExists(atPath: path) {
+            if (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil {
+                return true
+            }
+            log.debug("Full Disk Access is not granted (cannot read \(path))")
             return false
+        }
+        return false
+    }
+
+    /// Relaunches the app — Full Disk Access only reaches a *freshly launched*
+    /// process, so after the user turns it on we offer to quit and reopen.
+    @MainActor
+    static func relaunch() {
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config) { _, _ in
+            Task { @MainActor in NSApp.terminate(nil) }
         }
     }
 

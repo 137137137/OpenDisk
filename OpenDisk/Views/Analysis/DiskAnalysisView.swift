@@ -137,6 +137,14 @@ struct DiskAnalysisView: View {
             analyzer.cancelCurrentScan()
             scanAccess.endAccess(toPath: rootPath)
         }
+        // Returning from System Settings after enabling Full Disk Access:
+        // re-check and retry the scan (works once the app has FDA; if it still
+        // fails, a relaunch is needed — the empty state says so).
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if analyzer.needsFullDiskAccess {
+                Task { await analyzer.scanDirectory(rootPath) }
+            }
+        }
         // HIG (macOS): search lives at the trailing side of the toolbar.
         // Search starts immediately on typing — the index answers in
         // milliseconds, so there is no debounce.
@@ -433,12 +441,15 @@ struct DiskAnalysisView: View {
             ContentUnavailableView {
                 Label("Full Disk Access Required", systemImage: "exclamationmark.shield")
             } description: {
-                Text("OpenDisk needs Full Disk Access to analyze your entire system.")
+                Text("OpenDisk needs Full Disk Access to analyze your entire system. Turn it on in System Settings, then **quit and reopen OpenDisk** — macOS only applies the change to a freshly launched app.")
             } actions: {
                 Button("Open System Settings") {
                     FullDiskAccess.openSystemSettings()
                 }
                 .buttonStyle(.borderedProminent)
+                Button("Quit & Reopen") {
+                    FullDiskAccess.relaunch()
+                }
             }
         } else {
             ContentUnavailableView(

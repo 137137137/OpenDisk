@@ -61,7 +61,7 @@ struct DevicePickerView: View {
     @ViewBuilder
     private var grantedLocations: some View {
         GroupBox {
-            if scanAccess.grants.isEmpty {
+            if devices.isEmpty && folderGrants.isEmpty {
                 ContentUnavailableView {
                     Label("Choose What to Scan", systemImage: "externaldrive.badge.plus")
                 } description: {
@@ -70,21 +70,65 @@ struct DevicePickerView: View {
                 .padding(.vertical, 8)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(scanAccess.grants) { grant in
+                    // Mounted disks as shortcuts: one click to (re)scan once
+                    // granted, a guided grant panel the first time.
+                    ForEach(devices) { device in
+                        VolumeShortcutRow(
+                            device: device,
+                            granted: scanAccess.isGranted(device.path),
+                            onOpen: { openVolume(device) }
+                        )
+                        if device.id != devices.last?.id || !folderGrants.isEmpty { Divider() }
+                    }
+                    // Other folders the user has granted (not one of the disks).
+                    ForEach(folderGrants) { grant in
                         GrantRow(
                             grant: grant,
                             onOpen: { open(grant) },
                             onRemove: { scanAccess.removeGrant(grant) }
                         )
-                        if grant.id != scanAccess.grants.last?.id { Divider() }
+                        if grant.id != folderGrants.last?.id { Divider() }
                     }
                 }
             }
         }
 
-        Button("Choose a Disk or Folder to Scan…", systemImage: "externaldrive.badge.plus") {
+        Button("Choose a Folder…", systemImage: "folder.badge.plus") {
             if let grant = scanAccess.requestGrant() { open(grant) }
         }
+    }
+
+    /// Granted locations that aren't one of the listed disks (arbitrary folders).
+    private var folderGrants: [ScanAccess.Grant] {
+        scanAccess.grants.filter { grant in !devices.contains { $0.path == grant.path } }
+    }
+
+    /// A disk shortcut: re-scan instantly if already granted, otherwise prompt
+    /// (the panel opens next to it and names it). Whatever the user actually
+    /// grants is what gets scanned.
+    private func openVolume(_ device: DeviceInfo) {
+        if scanAccess.isGranted(device.path) {
+            onScanFolder(device)
+            return
+        }
+        // The boot volume ("/") isn't a selectable item at its own level and the
+        // sidebar shows its real name (not "Computer"), so fall back to the
+        // generic "pick your startup disk from the sidebar" guidance. External
+        // volumes ARE selectable from their parent (/Volumes), named as tapped.
+        let isBootVolume = device.path == "/"
+        let start = isBootVolume
+            ? URL(fileURLWithPath: "/")
+            : URL(fileURLWithPath: device.path).deletingLastPathComponent()
+        guard let grant = scanAccess.requestGrant(
+            startingAt: start,
+            suggestedName: isBootVolume ? nil : device.name
+        ) else { return }
+        let matched = grant.path == device.path
+        onScanFolder(DeviceInfo(
+            name: grant.name, icon: device.icon, path: grant.path,
+            totalBytes: matched ? device.totalBytes : 0,
+            availableBytes: matched ? device.availableBytes : 0
+        ))
     }
 
     private func open(_ grant: ScanAccess.Grant) {
@@ -178,5 +222,37 @@ private struct GrantRow: View {
                 Label("Remove from List", systemImage: "xmark.circle")
             }
         }
+    }
+}
+
+/// A mounted-disk shortcut in the sandboxed picker. Tapping a granted disk
+/// re-scans it immediately; an ungranted disk opens the grant panel. A green
+/// check marks the disks that are already one click away.
+private struct VolumeShortcutRow: View {
+    let device: DeviceInfo
+    let granted: Bool
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack {
+                DeviceRow(device: device)
+                Spacer()
+                if granted {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.callout)
+                        .help("Access granted — scans in one click")
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .hoverHighlight()
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -47,18 +47,32 @@ final class ScanAccess {
 
     /// Asks the user to choose a folder or volume, stores a security-scoped
     /// bookmark for it, and returns the grant. Nil if the user cancels.
-    func requestGrant() -> Grant? {
+    /// True when we already hold a bookmark for exactly this path, so it can be
+    /// re-scanned with no panel — the one-click case for a disk shortcut.
+    func isGranted(_ path: String) -> Bool { bookmarks[path] != nil }
+
+    /// Asks the user to choose a folder or volume, stores a security-scoped
+    /// bookmark, and returns the grant. Nil if the user cancels.
+    ///
+    /// `startURL` pre-navigates the panel (used when the user taps a disk
+    /// shortcut, so the disk is right there); `suggestedName` tailors the
+    /// instruction to it.
+    func requestGrant(startingAt startURL: URL? = nil, suggestedName: String? = nil) -> Grant? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Scan"
-        panel.message = "Choose what to scan. To analyze your whole Mac, pick your startup disk "
-            + "(e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume — "
-            + "OpenDisk remembers your choice."
-        // Open at the disk root so the whole drive is one selection away, rather
-        // than deep inside the home folder.
-        panel.directoryURL = URL(fileURLWithPath: "/")
+        if let suggestedName {
+            panel.message = "Select “\(suggestedName)” to let OpenDisk scan it, then click Scan. "
+                + "OpenDisk remembers your choice, so next time it's one click."
+        } else {
+            panel.message = "Choose what to scan. To analyze your whole Mac, pick your startup disk "
+                + "(e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume — "
+                + "OpenDisk remembers your choice."
+        }
+        // Open next to the target (or at the disk root) rather than deep in home.
+        panel.directoryURL = startURL ?? URL(fileURLWithPath: "/")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return store(url)
     }
