@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sOG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#63E4A2"/>
+      <stop offset="1" stop-color="#20AF69"/>
+    </linearGradient>
+    <linearGradient id="sOY" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE168"/>
+      <stop offset="1" stop-color="#F3B024"/>
+    </linearGradient>
+    <linearGradient id="sOO" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFB759"/>
+      <stop offset="1" stop-color="#F8851C"/>
+    </linearGradient>
+    <linearGradient id="sOR" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF8168"/>
+      <stop offset="1" stop-color="#EE4234"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="none" stroke-linecap="round" stroke-width="146">
+    <path d="M599.81 217.84 A307 307 0 0 1 784.60 653.18" stroke="url(#sOG)"/>
+    <path d="M662.61 779.51 A307 307 0 0 1 352.15 774.09" stroke="url(#sOY)"/>
+    <path d="M234.64 643.58 A307 307 0 0 1 219.03 420.30" stroke="url(#sOO)"/>
+    <path d="M317.23 274.71 A307 307 0 0 1 424.20 217.84" stroke="url(#sOR)"/>
+  </g>
+</svg>

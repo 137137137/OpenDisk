@@ -1,0 +1,29 @@
+{
+  "fill" : {
+    "solid" : "display-p3:0.17333,0.18338,0.19988,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "OpenDisk-O-Ring-Single.svg",
+          "name" : "OpenDisk-O-Ring-Single"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

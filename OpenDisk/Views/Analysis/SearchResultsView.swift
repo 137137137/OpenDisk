@@ -47,6 +47,12 @@ struct SearchResultsView: View {
                     }
                     .padding(.vertical, 4)
                 }
+                // Icons resolve in display order before their rows scroll
+                // into view; scrolling then blits cached bitmaps instead
+                // of racing per-row loads.
+                .task(id: items.map(\.path)) {
+                    await FileIcon.prewarm(items.map(\.path))
+                }
             }
         }
     }

@@ -129,10 +129,11 @@ struct FolderRowView: View {
         // here was what made fast scrolling through fresh (search) results
         // stutter.
         .task(id: item.path) {
-            guard !isSynthetic else { return }
-            if FileIcon.cached(for: item.path) == nil {
-                await FileIcon.warm(item.path)
-            }
+            // Usually a no-op: the list prewarms icons in display order,
+            // so by the time a row scrolls in its icon is already cached
+            // and the body drew it directly — no state churn mid-scroll.
+            guard !isSynthetic, FileIcon.cached(for: item.path) == nil else { return }
+            await FileIcon.warm(item.path)
             resolvedIcon = FileIcon.cached(for: item.path)
         }
         // simultaneousGesture (not onTapGesture) so the tap doesn't

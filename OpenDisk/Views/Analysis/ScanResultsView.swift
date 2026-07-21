@@ -35,5 +35,12 @@ struct ScanResultsView: View {
         // Snappy, not the heavy 0.35s ease — folder navigation should feel
         // immediate, like Finder, while still animating live-scan re-sorts.
         .animation(.snappy(duration: 0.18), value: displayVersion)
+        // Icons resolve in display order before their rows scroll into
+        // view, so scrolling blits cached bitmaps instead of racing
+        // per-row loads. Re-fires (and cancels the old pass) when the
+        // displayed rows change.
+        .task(id: items.map(\.path)) {
+            await FileIcon.prewarm(items.map(\.path))
+        }
     }
 }
