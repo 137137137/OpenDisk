@@ -160,9 +160,15 @@ struct DiskAnalysisView: View {
             }
         }
         // Dropping anywhere on the chart side collects the file; the collector
-        // bar lights up while a drag hovers.
+        // bar lights up while a drag hovers. Dragging the synthetic Purgeable
+        // Space row expands to its real, deletable cache folders.
         .dropDestination(for: CollectedFile.self) { files, _ in
-            collector.add(files)
+            let expanded = files.flatMap { file in
+                file.path == HiddenSpaceInfo.sentinelPath
+                    ? analyzer.collectablePurgeableFiles()
+                    : [file]
+            }
+            collector.add(expanded)
             return true
         } isTargeted: { isCollectorTargeted = $0 }
     }
