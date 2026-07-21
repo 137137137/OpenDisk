@@ -256,16 +256,6 @@ final class DiskAnalyzer {
         }
     }
 
-    /// The real, deletable cache directories behind the synthetic Purgeable
-    /// Space row. Dragging that row into the Collector expands to these, so
-    /// trashing "Purgeable Space" actually reclaims space (the OS-managed
-    /// remainder can't be deleted by an app).
-    func collectablePurgeableFiles() -> [CollectedFile] {
-        cleanableCacheEntries().map {
-            CollectedFile(path: $0.path, name: $0.name, size: $0.size, isDirectory: true)
-        }
-    }
-
     // MARK: - Event handling
 
     private func handle(_ event: ScanEvent, generation: Int, startedAt: Date) {

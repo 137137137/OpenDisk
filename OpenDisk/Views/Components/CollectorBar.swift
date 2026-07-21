@@ -190,7 +190,7 @@ struct CollectorBar: View {
                 }
                 .padding(6)
             }
-            .frame(maxHeight: 240)
+            .frame(maxHeight: 480)
             .scrollBounceBehavior(.basedOnSize)
             .glassEffect(.regular, in: shape)
         }
