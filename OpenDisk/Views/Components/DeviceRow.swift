@@ -1,13 +1,20 @@
 import SwiftUI
 
-/// Sidebar row for one scannable device. Selection is handled by the
-/// enclosing `List`.
+/// One scannable-device row in the disk picker. Uses the real macOS volume
+/// icon (the actual startup-disk, external-drive, or Time Machine artwork the
+/// Finder shows) rather than a generic SF Symbol, so the picker reads as
+/// native — the way DaisyDisk presents disks.
 struct DeviceRow: View {
     let device: DeviceInfo
 
     var body: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 12) {
+            Image(nsImage: FileIcon.icon(for: device.path))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 36, height: 36)
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(device.name)
                     .fontWeight(.medium)
 
@@ -22,9 +29,6 @@ struct DeviceRow: View {
                     )
                 }
             }
-        } icon: {
-            Image(systemName: device.icon)
-                .foregroundStyle(.tint)
         }
     }
 }

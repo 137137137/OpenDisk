@@ -33,6 +33,13 @@ struct CollectorBar: View {
         phase == .idle && !collector.isEmpty && (footerHovered || listHovered || isTargeted)
     }
 
+    /// A macOS-protected item is being dragged: the tray refuses it and says so
+    /// immediately (the moment it's picked up — not only once it's over the
+    /// tray), so the user never even gets to drop it.
+    private var rejecting: Bool {
+        phase == .idle && collector.draggedProtectedReason != nil
+    }
+
     /// Content height for the floating list: ~one row per item (plus the
     /// panel's own padding), capped so it never overruns the window — only
     /// as tall as it needs to be, then scrolls.
@@ -69,6 +76,7 @@ struct CollectorBar: View {
             .animation(.spring(duration: 0.3), value: collector.count)
             .animation(.spring(duration: 0.3), value: phase)
             .animation(.spring(duration: 0.3), value: collector.blockedNotice)
+            .animation(.easeInOut(duration: 0.15), value: rejecting)
             .sheet(item: $previewItem) { item in
                 QuickLookSheet(url: item.url)
             }
@@ -95,21 +103,47 @@ struct CollectorBar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .glassEffect(isTargeted ? .regular.tint(.accentColor) : .regular, in: shape)
+                .glassEffect(
+                    rejecting ? .regular.tint(.red)
+                        : (isTargeted ? .regular.tint(.accentColor) : .regular),
+                    in: shape
+                )
                 .overlay {
-                    shape.strokeBorder(isTargeted ? Color.accentColor : .clear, lineWidth: 1.5)
+                    shape.strokeBorder(
+                        rejecting ? Color.red : (isTargeted ? Color.accentColor : .clear),
+                        lineWidth: 1.5
+                    )
                 }
         }
     }
 
     @ViewBuilder
     private var footerContent: some View {
-        switch phase {
-        case .idle:
-            if collector.isEmpty { hintView } else { footerRow }
-        case .deleting:  deletingView
-        case .done:      doneView
+        if rejecting {
+            rejectionView
+        } else {
+            switch phase {
+            case .idle:
+                if collector.isEmpty { hintView } else { footerRow }
+            case .deleting:  deletingView
+            case .done:      doneView
+            }
         }
+    }
+
+    /// Replaces the footer while a protected item is being dragged: a clear,
+    /// immediate "you can't collect this" with the specific reason.
+    private var rejectionView: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "nosign")
+            Text(collector.draggedProtectedReason ?? "This item can’t be deleted")
+                .lineLimit(2)
+        }
+        .font(.callout)
+        .fontWeight(.semibold)
+        .foregroundStyle(.red)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
     }
 
     private var footerRow: some View {

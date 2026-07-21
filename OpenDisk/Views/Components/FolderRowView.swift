@@ -25,7 +25,22 @@ struct FolderRowView: View {
         } else {
             // Not a Button: a Button's press gesture swallows the drag on
             // macOS, so the row would never become draggable.
-            row.draggable(CollectedFile(item)) { dragPreview }
+            //
+            // Protected items (Users, system folders, …) can still be *picked
+            // up*, but the moment the drag begins we tell the Collector why it
+            // can't be collected — so it says "no" immediately, before the
+            // user even reaches the drop zone — and clear it when the drag ends.
+            row.draggable(CollectedFile(item)) {
+                dragPreview
+                    .onAppear {
+                        if let reason = ProtectedPaths.reason(for: item.path) {
+                            collector.draggedProtectedReason = "“\(item.name)” \(reason)"
+                        } else {
+                            collector.draggedProtectedReason = nil
+                        }
+                    }
+                    .onDisappear { collector.draggedProtectedReason = nil }
+            }
         }
     }
 

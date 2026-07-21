@@ -12,6 +12,11 @@ final class Collector {
     /// the Collector bar surfaces it briefly, then it clears itself.
     private(set) var blockedNotice: String?
     private var noticeTask: Task<Void, Never>?
+    /// While a macOS-protected item is being dragged, the reason it can't be
+    /// collected. The drop zone reads this to refuse the drop and say "no"
+    /// *before* the release, rather than explaining afterwards. Set by the
+    /// drag source when the drag starts; cleared when it ends.
+    var draggedProtectedReason: String?
 
     var isEmpty: Bool { items.isEmpty }
     var count: Int { items.count }

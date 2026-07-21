@@ -178,7 +178,11 @@ struct DiskAnalysisView: View {
                     ? analyzer.collectablePurgeableFiles()
                     : [file]
             }
-            collector.add(expanded)
+            // Refuse macOS-protected items outright: the drop bounces back
+            // (the Collector already showed why while it was hovering).
+            let allowed = expanded.filter { ProtectedPaths.reason(for: $0.path) == nil }
+            guard !allowed.isEmpty else { return false }
+            collector.add(allowed)
             return true
         } isTargeted: { isCollectorTargeted = $0 }
     }
