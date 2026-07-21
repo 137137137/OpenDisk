@@ -268,14 +268,19 @@ final class ScanEngine: DiskScanning {
             // Deserializing a saved tree is heavy: off the cooperative pool.
             let cached = await offload { ScanCache.load(forRoot: path) }
             if let cached, cached.tree.name(of: FileTree.rootID) == rootName {
+                // Show the previous scan instantly as the first partial
+                // snapshot, *before* the journal replay — so a re-scan isn't a
+                // blank 0% for a beat while the journal streams. The full-scan
+                // fallback below re-registers under the same key if the replay
+                // turns out unreliable, replacing this.
+                let live = Mutex(cached.tree)
+                registerPartial { live.withLock { $0 } }
                 // Pure async suspension — no thread is blocked while the
                 // journal streams HistoryDone or times out.
                 let changes = await FSEventsChangeJournal.changes(
                     since: cached.eventID, under: path
                 )
                 if let changes {
-                    let live = Mutex(cached.tree)
-                    registerPartial { live.withLock { $0 } }
                     // Splicing up to 40k changed directories is heavy work.
                     let applied = await offload {
                         IncrementalUpdater.apply(

@@ -17,7 +17,10 @@ struct FolderRowView: View {
     private var fileURL: URL { URL(fileURLWithPath: item.path) }
 
     var body: some View {
-        if isSynthetic {
+        // The synthetic Purgeable Space row is draggable too — dropping it
+        // collects its real, deletable cache folders (expanded on drop). The
+        // auto-managed leaf inside it stays non-draggable.
+        if isSynthetic && item.path != HiddenSpaceInfo.sentinelPath {
             row
         } else {
             // Not a Button: a Button's press gesture swallows the drag on
@@ -84,10 +87,18 @@ struct FolderRowView: View {
     @ViewBuilder
     private var icon: some View {
         if isSynthetic {
-            Image(systemName: "sparkles")
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 24, height: 22)
+            if item.isDirectory {
+                // Synthetic folders (Purgeable Space) read as a normal folder.
+                Image(nsImage: FileIcon.folder)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 22, height: 22)
+            } else {
+                Image(systemName: "sparkles")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                    .frame(width: 24, height: 22)
+            }
         } else {
             Image(nsImage: FileIcon.icon(for: item.path))
                 .resizable()
@@ -98,7 +109,7 @@ struct FolderRowView: View {
 
     private var dragPreview: some View {
         HStack(spacing: 6) {
-            Image(nsImage: FileIcon.icon(for: item.path))
+            Image(nsImage: isSynthetic ? FileIcon.folder : FileIcon.icon(for: item.path))
                 .resizable()
                 .frame(width: 16, height: 16)
             Text(item.name).lineLimit(1)
