@@ -194,22 +194,18 @@ struct DiskAnalysisView: View {
 
     private enum SortField { case name, size }
 
-    /// Applies the current column sort, keeping the synthetic "Purgeable
-    /// Space" row pinned to the top regardless of order.
+    /// Applies the current column sort. "Purgeable Space" sorts by size like
+    /// any other row (no longer pinned to the top).
     private func sortedForDisplay(_ items: [FolderItem]) -> [FolderItem] {
-        let sentinel = items.filter { $0.path == HiddenSpaceInfo.sentinelPath }
-        let rest = items.filter { $0.path != HiddenSpaceInfo.sentinelPath }
-        let ordered: [FolderItem]
         switch sort {
         case .name:
-            ordered = rest.sorted {
+            return items.sorted {
                 let result = $0.name.localizedCaseInsensitiveCompare($1.name)
                 return sortAscending ? result == .orderedAscending : result == .orderedDescending
             }
         case .size:
-            ordered = rest.sorted { sortAscending ? $0.size < $1.size : $0.size > $1.size }
+            return items.sorted { sortAscending ? $0.size < $1.size : $0.size > $1.size }
         }
-        return sentinel + ordered
     }
 
     /// The selection as collector payloads, in display order. Stale paths

@@ -121,11 +121,13 @@ struct FolderRowView: View {
             }
             .frame(minWidth: 66, alignment: .trailing)
 
-            if item.isDirectory {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            // Disclosure chevron for navigable folders; files reserve the same
+            // width (invisible) so the bar and size column stay aligned across
+            // every row.
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .opacity(item.isDirectory ? 1 : 0)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
