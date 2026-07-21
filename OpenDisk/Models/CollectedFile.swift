@@ -37,3 +37,14 @@ struct CollectedFile: Codable, Transferable, Identifiable, Hashable, Sendable {
         ProxyRepresentation(exporting: \.url)
     }
 }
+
+/// One drag's worth of files: a multi-selection dragged together rides as
+/// a single payload (SwiftUI's `.draggable` carries one Transferable per
+/// row, so a group type is how several files travel in one gesture).
+struct CollectedFileGroup: Codable, Transferable, Sendable {
+    let files: [CollectedFile]
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .json)
+    }
+}

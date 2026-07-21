@@ -6,6 +6,15 @@ import AppKit
 /// Collector for deletion.
 struct FolderRowView: View {
     let item: FolderItem
+    /// Containing-folder string shown under the name (search results,
+    /// where hits come from anywhere in the tree). Nil in directory
+    /// listings, where location is implied by the breadcrumb.
+    var locationDetail: String? = nil
+    /// Whether this row is part of the current multi-selection.
+    var isSelected: Bool = false
+    /// Every currently selected item as a collector payload. A drag (or a
+    /// context-menu collect) from a selected row carries all of them.
+    var selectionFiles: [CollectedFile] = []
     let onTap: () -> Void
 
     @Environment(Collector.self) private var collector
@@ -30,16 +39,29 @@ struct FolderRowView: View {
             // up*, but the moment the drag begins we tell the Collector why it
             // can't be collected — so it says "no" immediately, before the
             // user even reaches the drop zone — and clear it when the drag ends.
-            row.draggable(CollectedFile(item)) {
+            row.draggable(CollectedFileGroup(files: dragFiles)) {
                 dragPreview
                     .onAppear {
-                        collector.flagDraggedProtected(
-                            ProtectedPaths.reason(for: item.path).map { "“\(item.name)” \($0)" }
-                        )
+                        collector.flagDraggedProtected(draggedProtectedReason)
                     }
                     .onDisappear { collector.flagDraggedProtected(nil) }
             }
         }
+    }
+
+    /// What a drag from this row carries: the whole selection when the row
+    /// is part of it, otherwise just the row itself (Finder's rule).
+    private var dragFiles: [CollectedFile] {
+        isSelected && selectionFiles.count > 1 ? selectionFiles : [CollectedFile(item)]
+    }
+
+    private var draggedProtectedReason: String? {
+        for file in dragFiles {
+            if let reason = ProtectedPaths.reason(for: file.path) {
+                return "“\(file.name)” \(reason)"
+            }
+        }
+        return nil
     }
 
     private var row: some View {
@@ -51,7 +73,13 @@ struct FolderRowView: View {
                     .fontWeight(item.isDirectory ? .medium : .regular)
                     .lineLimit(1)
 
-                if item.isDirectory && item.itemCount > 0 {
+                if let locationDetail {
+                    Text(locationDetail)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else if item.isDirectory && item.itemCount > 0 {
                     Text("\(item.itemCount) items")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -84,7 +112,10 @@ struct FolderRowView: View {
         // slides under the cursor while scrolling, which makes fast scrolling
         // of a big list stutter. Row highlight is handled cheaply below.
         .background {
-            if isHovered {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.22))
+            } else if isHovered {
                 RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary)
             }
         }
@@ -125,10 +156,17 @@ struct FolderRowView: View {
             Image(nsImage: isSynthetic ? FileIcon.folder : FileIcon.icon(for: item.path))
                 .resizable()
                 .frame(width: 16, height: 16)
-            Text(item.name).lineLimit(1)
-            Text(item.formattedSize)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+            if dragFiles.count > 1 {
+                Text("\(dragFiles.count) items").lineLimit(1)
+                Text(ByteFormatter.formatFileSize(dragFiles.reduce(0) { $0 + $1.size }))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            } else {
+                Text(item.name).lineLimit(1)
+                Text(item.formattedSize)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
@@ -140,10 +178,23 @@ struct FolderRowView: View {
             Button {
                 collector.add(CollectedFile(item))
             } label: {
-                Label("Collect for Deletion", systemImage: "trash")
+                Label("Add to Collector", systemImage: "trash")
             }
             // macOS-critical locations can't be deleted.
             .disabled(ProtectedPaths.isProtected(item.path))
+
+            if isSelected && selectionFiles.count > 1 {
+                Button {
+                    collector.add(selectionFiles.filter {
+                        ProtectedPaths.reason(for: $0.path) == nil
+                    })
+                } label: {
+                    Label(
+                        "Add \(selectionFiles.count) Selected to Collector",
+                        systemImage: "trash"
+                    )
+                }
+            }
 
             Divider()
 

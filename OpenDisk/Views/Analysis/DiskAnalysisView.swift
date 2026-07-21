@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Analysis screen for one disk (pushed from the disk picker): scans it,
@@ -19,6 +20,14 @@ struct DiskAnalysisView: View {
     @State private var currentPath: String
     @State private var breadcrumbs: [String] = []
     @State private var hasInitiallyScanned = false
+    @State private var searchText = ""
+    @State private var searchPresented = false
+    /// Multi-selection (shift-click ranges, ⌘-click toggles) across the
+    /// visible list, keyed by path like everything else. A drag from any
+    /// selected row carries the whole selection to the Collector.
+    @State private var selectedPaths = Set<String>()
+    /// The last plainly clicked row — the fixed end of a shift-click range.
+    @State private var selectionAnchor: String?
     private let totalUsedDiskSpace: Int64
 
     init(
@@ -48,22 +57,7 @@ struct DiskAnalysisView: View {
                 // stays user-draggable.
                 GeometryReader { geometry in
                     HSplitView {
-                        ScanResultsView(
-                            // Collected items drop out of the list until they
-                            // are deleted or removed from the Collector. The
-                            // synthetic "Purgeable Space" row has no real path
-                            // of its own — it's collected via its cache
-                            // folders — so hide it once those are all in.
-                            items: analyzer.rootItems.filter { item in
-                                if item.path == HiddenSpaceInfo.sentinelPath {
-                                    return !analyzer.collectablePurgeableFiles()
-                                        .allSatisfy { collector.contains(path: $0.path) }
-                                }
-                                return !collector.contains(path: item.path)
-                            },
-                            displayVersion: analyzer.displayVersion,
-                            onFolderTap: navigateToFolder
-                        )
+                        listPane
                             .frame(
                                 minWidth: 320,
                                 idealWidth: geometry.size.width * 0.6,
@@ -132,8 +126,142 @@ struct DiskAnalysisView: View {
         .onDisappear {
             analyzer.cancelCurrentScan()
         }
+        // HIG (macOS): search lives at the trailing side of the toolbar.
+        // Search starts immediately on typing — the index answers in
+        // milliseconds, so there is no debounce.
+        .searchable(
+            text: $searchText,
+            isPresented: $searchPresented,
+            placement: .toolbar,
+            prompt: "Search scanned files and folders"
+        )
+        .onChange(of: searchText) {
+            analyzer.updateSearch(query: searchText, scope: .all)
+            // The visible list is about to change wholesale; a selection
+            // spanning the old rows would silently ride into group drags.
+            selectedPaths.removeAll()
+            selectionAnchor = nil
+        }
+        .onChange(of: currentPath) {
+            selectedPaths.removeAll()
+            selectionAnchor = nil
+        }
         // Make the Collector reachable from the row context menus in the list.
         .environment(collector)
+    }
+
+    // MARK: - List pane
+
+    /// True once the typed query is non-blank; the results list then
+    /// replaces the directory list (the chart keeps showing the current
+    /// folder for orientation).
+    private var isSearchActive: Bool {
+        !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// The rows currently on screen (browsing or search results), with
+    /// collected items dropped — the one array selection ranges, group
+    /// drags and the lists all agree on. The synthetic "Purgeable Space"
+    /// row has no real path of its own — it's collected via its cache
+    /// folders — so it hides once those are all in.
+    private var visibleItems: [FolderItem] {
+        if isSearchActive {
+            return analyzer.searchResults.filter { !collector.contains(path: $0.path) }
+        }
+        return analyzer.rootItems.filter { item in
+            if item.path == HiddenSpaceInfo.sentinelPath {
+                return !analyzer.collectablePurgeableFiles()
+                    .allSatisfy { collector.contains(path: $0.path) }
+            }
+            return !collector.contains(path: item.path)
+        }
+    }
+
+    /// The selection as collector payloads, in display order. Stale paths
+    /// (rows no longer visible) drop out naturally.
+    private var selectionFiles: [CollectedFile] {
+        visibleItems.filter { selectedPaths.contains($0.path) }.map(CollectedFile.init)
+    }
+
+    @ViewBuilder
+    private var listPane: some View {
+        if isSearchActive {
+            SearchResultsView(
+                items: visibleItems,
+                totalMatches: analyzer.searchTotalMatches,
+                isRunning: analyzer.isSearchRunning,
+                resultsArePartial: analyzer.searchResultsArePartial,
+                query: searchText,
+                selectedPaths: selectedPaths,
+                selectionFiles: selectionFiles,
+                onOpen: handleRowTap
+            )
+        } else {
+            ScanResultsView(
+                items: visibleItems,
+                displayVersion: analyzer.displayVersion,
+                selectedPaths: selectedPaths,
+                selectionFiles: selectionFiles,
+                onFolderTap: handleRowTap
+            )
+        }
+    }
+
+    // MARK: - Selection
+
+    /// Routes a row click by its keyboard modifiers: shift extends a range
+    /// from the anchor, ⌘ toggles membership, and a plain click clears the
+    /// selection and behaves as before (navigate / open). The synthetic
+    /// "Purgeable Space" row never joins a multi-selection — it has no
+    /// real path, and drops already expand it separately.
+    private func handleRowTap(_ item: FolderItem) {
+        let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+        let selectable = !item.path.hasPrefix("::")
+
+        if selectable && modifiers.contains(.shift) {
+            let items = visibleItems
+            if let anchor = selectionAnchor,
+               let anchorIndex = items.firstIndex(where: { $0.path == anchor }),
+               let clickedIndex = items.firstIndex(where: { $0.path == item.path }) {
+                let range = min(anchorIndex, clickedIndex)...max(anchorIndex, clickedIndex)
+                selectedPaths = Set(
+                    items[range].map(\.path).filter { !$0.hasPrefix("::") }
+                )
+            } else {
+                selectedPaths = [item.path]
+                selectionAnchor = item.path
+            }
+            return
+        }
+        if selectable && modifiers.contains(.command) {
+            if selectedPaths.contains(item.path) {
+                selectedPaths.remove(item.path)
+            } else {
+                selectedPaths.insert(item.path)
+            }
+            selectionAnchor = item.path
+            return
+        }
+
+        selectedPaths.removeAll()
+        selectionAnchor = item.path
+        if isSearchActive {
+            openSearchResult(item)
+        } else {
+            navigateToFolder(item)
+        }
+    }
+
+    /// Opening a result jumps to it in the normal browsing UI: a folder
+    /// opens itself, a file reveals its containing folder. Search
+    /// dismisses so the destination is immediately browsable.
+    private func openSearchResult(_ item: FolderItem) {
+        let destination = item.isDirectory
+            ? item.path
+            : (item.path as NSString).deletingLastPathComponent
+        searchPresented = false
+        searchText = ""
+        navigateToPath(destination)
     }
 
     // MARK: - Chart pane
@@ -172,8 +300,8 @@ struct DiskAnalysisView: View {
         // bar lights up while a drag hovers. Dragging the "Purgeable Space"
         // row expands to its real, deletable cache folders (its size is the
         // sum of those, so the collected total matches).
-        .dropDestination(for: CollectedFile.self) { files, _ in
-            let expanded = files.flatMap { file in
+        .dropDestination(for: CollectedFileGroup.self) { groups, _ in
+            let expanded = groups.flatMap(\.files).flatMap { file in
                 file.path == HiddenSpaceInfo.sentinelPath
                     ? analyzer.collectablePurgeableFiles()
                     : [file]
@@ -185,6 +313,8 @@ struct DiskAnalysisView: View {
             let allowed = expanded.filter { ProtectedPaths.reason(for: $0.path) == nil }
             guard !allowed.isEmpty else { return false }
             collector.add(allowed)
+            // Collected rows leave the list; don't leave ghost selections.
+            selectedPaths.subtract(allowed.map(\.path))
             return true
         } isTargeted: { isCollectorTargeted = $0 }
     }

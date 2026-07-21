@@ -174,4 +174,64 @@ struct DiskAnalyzerTests {
         await scanCompleted
         #expect(analyzer.isScanning == false)
     }
+
+    @Test("search finds entries anywhere in the finished tree")
+    func searchFindsNestedEntries() async {
+        let analyzer = DiskAnalyzer(
+            scanner: FakeScanner(result: Self.makeResult(rootPath: "/Volumes/Test"))
+        )
+        await analyzer.scanDirectory("/Volumes/Test")
+
+        analyzer.updateSearch(query: "REPORT", scope: .all)
+        await waitUntil { !analyzer.searchResults.isEmpty }
+
+        #expect(analyzer.searchResults.map(\.name) == ["report.pdf"])
+        #expect(analyzer.searchResults.first?.path == "/Volumes/Test/Documents/report.pdf")
+        #expect(analyzer.searchResultsArePartial == false)
+        #expect(analyzer.isSearchRunning == false)
+
+        // Unlike the browsing list, search has no sub-1KB noise floor —
+        // a by-name lookup must find small files too.
+        analyzer.updateSearch(query: "tiny", scope: .all)
+        await waitUntil { analyzer.searchResults.first?.name == "tiny.txt" }
+        #expect(analyzer.searchTotalMatches == 1)
+
+        // Clearing the query clears results synchronously.
+        analyzer.updateSearch(query: "", scope: .all)
+        #expect(analyzer.searchResults.isEmpty)
+        #expect(analyzer.searchTotalMatches == 0)
+    }
+
+    @Test("mid-scan search answers from the partial tree, then refines")
+    func searchDuringScanUsesPartialThenFinal() async {
+        var partial = FileTree(rootName: "/Volumes/Test")
+        partial.addNode(name: "movie.mov", parent: FileTree.rootID, size: 900_000, isDirectory: false)
+        partial.rollUpDirectorySizes()
+
+        let scanner = GatedScanner(
+            partial: partial, final: Self.makeResult(rootPath: "/Volumes/Test")
+        )
+        let analyzer = DiskAnalyzer(scanner: scanner)
+
+        async let scanCompleted: Void = analyzer.scanDirectory("/Volumes/Test")
+        await waitUntil { !analyzer.rootItems.isEmpty }
+
+        analyzer.updateSearch(query: "movie", scope: .all)
+        await waitUntil { !analyzer.searchResults.isEmpty }
+        #expect(analyzer.searchResultsArePartial)
+        #expect(analyzer.searchResults.first?.size == 900_000)
+
+        // report.pdf is not in the partial snapshot yet.
+        analyzer.updateSearch(query: "report", scope: .files)
+        await waitUntil { analyzer.isSearchRunning == false }
+        #expect(analyzer.searchResults.isEmpty)
+
+        scanner.release()
+        await scanCompleted
+
+        // The finished tree re-indexes and the active query re-resolves.
+        await waitUntil { !analyzer.searchResults.isEmpty }
+        #expect(analyzer.searchResults.map(\.name) == ["report.pdf"])
+        #expect(analyzer.searchResultsArePartial == false)
+    }
 }

@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="AppIcon/OpenDisk-O-Ring-Single.png" alt="OpenDisk icon" width="128" height="128"/>
+
 <h1>OpenDisk</h1>
 
 A fast, free, and **open-source** disk space analyzer for macOS — an open alternative to DaisyDisk. Maps your drive as an interactive sunburst chart, scanning a full disk in seconds and streaming results live as it runs.

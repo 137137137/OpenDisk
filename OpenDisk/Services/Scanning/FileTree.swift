@@ -204,6 +204,47 @@ struct FileTree: Sendable {
         return names[0].directoryPrefix + components.reversed().joined(separator: "/")
     }
 
+    /// Per-node (size, isDirectory) snapshot as flat arrays for consumers
+    /// that process millions of nodes with pointer access (the search
+    /// index): reading through these avoids a method call — and its ARC
+    /// traffic, ruinous in unoptimized builds — per node.
+    func sizeAndKindArrays() -> (sizes: [Int64], directoryFlags: [Bool]) {
+        let count = nodes.count
+        var sizes = [Int64](repeating: 0, count: count)
+        var flags = [Bool](repeating: false, count: count)
+        nodes.withUnsafeBufferPointer { source in
+            sizes.withUnsafeMutableBufferPointer { sizesOut in
+                flags.withUnsafeMutableBufferPointer { flagsOut in
+                    for index in 0..<count {
+                        sizesOut[index] = source[index].size
+                        flagsOut[index] = source[index].isDirectory
+                    }
+                }
+            }
+        }
+        return (sizes, flags)
+    }
+
+    /// Bitmap of nodes reachable from the root. Incremental updates and
+    /// merges leave unlinked garbage nodes in the arrays; consumers that
+    /// enumerate nodes by index (the search index) use this to skip them.
+    func reachabilityBitmap() -> [Bool] {
+        var visited = [Bool](repeating: false, count: nodes.count)
+        var stack: [NodeID] = [Self.rootID]
+        visited[Int(Self.rootID)] = true
+        while let current = stack.popLast() {
+            var child = nodes[Int(current)].firstChild
+            while child != Self.noNode {
+                if !visited[Int(child)] {
+                    visited[Int(child)] = true
+                    stack.append(child)
+                }
+                child = nodes[Int(child)].nextSibling
+            }
+        }
+        return visited
+    }
+
     // MARK: - Finalization
 
     /// Rolls file sizes up into every ancestor directory.

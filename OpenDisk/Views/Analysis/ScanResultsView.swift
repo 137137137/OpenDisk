@@ -8,6 +8,10 @@ struct ScanResultsView: View {
     /// Bumped by the analyzer whenever `items` is replaced — a cheap
     /// animation trigger that avoids diffing the whole row array.
     let displayVersion: Int
+    /// Paths of the multi-selected rows, and the same selection as
+    /// collector payloads for group drags.
+    var selectedPaths: Set<String> = []
+    var selectionFiles: [CollectedFile] = []
     let onFolderTap: (FolderItem) -> Void
 
     var body: some View {
@@ -17,7 +21,11 @@ struct ScanResultsView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(items) { item in
-                    FolderRowView(item: item) {
+                    FolderRowView(
+                        item: item,
+                        isSelected: selectedPaths.contains(item.path),
+                        selectionFiles: selectionFiles
+                    ) {
                         onFolderTap(item)
                     }
                 }

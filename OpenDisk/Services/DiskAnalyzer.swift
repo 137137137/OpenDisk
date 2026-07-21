@@ -51,6 +51,20 @@ final class DiskAnalyzer {
     /// for views to animate on instead of diffing whole row arrays.
     private(set) var displayVersion = 0
 
+    // MARK: - Search state
+
+    /// The largest matches for the active query, size-descending, capped
+    /// at `SearchIndex.resultLimit`.
+    private(set) var searchResults: [FolderItem] = []
+    /// Total matches before the display cap.
+    private(set) var searchTotalMatches = 0
+    /// True while an index build or query for the active search is in
+    /// flight (the UI shows a spinner instead of "no results").
+    private(set) var isSearchRunning = false
+    /// True when the shown results were computed from a mid-scan partial
+    /// snapshot rather than a finished tree.
+    private(set) var searchResultsArePartial = false
+
     // MARK: - Dependencies & state
 
     private let scanner: any DiskScanning
@@ -70,6 +84,22 @@ final class DiskAnalyzer {
     private var generation = 0
     /// Partial snapshots can arrive out of order; only ever apply forward.
     private var lastAppliedPartialSequence = 0
+    /// Search index over the current `scanResult` tree, or nil until one
+    /// is built. Built eagerly when a scan finishes and on demand when the
+    /// user searches mid-scan.
+    private var searchIndex: SearchIndex?
+    /// True when `searchIndex` was built from a partial snapshot.
+    private var searchIndexIsPartial = false
+    private var searchIndexBuildTask: Task<Void, Never>?
+    /// The active query/scope as last set by the UI; kept so results can
+    /// re-run when a fresh index lands.
+    private var searchQuery = ""
+    private var searchScope: SearchScope = .all
+    /// Bumped per search request; async completions drop stale results.
+    private var searchSequence = 0
+    /// The in-flight query task; cancelled the moment a newer keystroke
+    /// supersedes it so stacked searches never pile up on the cores.
+    private var searchTask: Task<Void, Never>?
 
     init(scanner: any DiskScanning = ScanEngine()) {
         self.scanner = scanner
@@ -105,6 +135,19 @@ final class DiskAnalyzer {
         hiddenSpace = nil
         displayedTotalBytes = 0
         displayVersion += 1
+        // The old tree's index is stale the moment a rescan starts. An
+        // active query stays active and resolves against the new tree
+        // (mid-scan on demand, and again when the scan finishes).
+        searchIndexBuildTask?.cancel()
+        searchIndexBuildTask = nil
+        searchTask?.cancel()
+        searchTask = nil
+        searchIndex = nil
+        searchIndexIsPartial = false
+        searchSequence += 1
+        searchResults = []
+        searchTotalMatches = 0
+        isSearchRunning = !searchQuery.isEmpty
         let startDate = Date()
         scanStartDate = startDate
 
@@ -141,6 +184,10 @@ final class DiskAnalyzer {
         scanDuration = Date().timeIntervalSince(startDate)
         isScanning = false
         probeHiddenSpace(for: result, generation: generation)
+        // Always index the finished tree (a few hundred ms, off-main) so
+        // the first keystroke of a later search is instant; if a search is
+        // already active it re-resolves against the final tree.
+        rebuildSearchIndex()
     }
 
     /// Whether the currently viewed directory should show the hidden-space
@@ -273,6 +320,13 @@ final class DiskAnalyzer {
             scanResult = ScanResult(rootPath: scanRootPath, tree: partial.tree)
             resultIsPartial = true
             refreshDisplayedItems()
+            // A search typed before the first snapshot arrived had no tree
+            // to index; index this one. Later snapshots don't re-index (a
+            // multi-million-node rebuild per 500 ms snapshot would starve
+            // cores) — mid-scan results refine when the scan finishes.
+            if !searchQuery.isEmpty && searchIndex == nil && searchIndexBuildTask == nil {
+                rebuildSearchIndex()
+            }
         }
     }
 
@@ -338,6 +392,75 @@ final class DiskAnalyzer {
             from: tree, at: node, name: name, path: currentPath,
             extraSlice: nil
         )
+    }
+
+    // MARK: - Search
+
+    /// Sets the active query/scope and (re)runs the search. Searches are
+    /// fast enough (~ms over millions of names) to run on every keystroke
+    /// with no debounce; a sequence counter drops out-of-order completions.
+    func updateSearch(query: String, scope: SearchScope) {
+        searchQuery = query.trimmingCharacters(in: .whitespaces)
+        searchScope = scope
+        runActiveSearch()
+    }
+
+    private func runActiveSearch() {
+        searchSequence += 1
+        let sequence = searchSequence
+        searchTask?.cancel()
+        searchTask = nil
+
+        guard !searchQuery.isEmpty else {
+            searchResults = []
+            searchTotalMatches = 0
+            isSearchRunning = false
+            return
+        }
+        guard let index = searchIndex else {
+            // No index yet: mid-scan before any snapshot, or a build is
+            // already in flight. Either way the pending build re-runs the
+            // active search when it lands.
+            isSearchRunning = true
+            if searchIndexBuildTask == nil { rebuildSearchIndex() }
+            return
+        }
+
+        isSearchRunning = true
+        let query = searchQuery
+        let scope = searchScope
+        let fromPartial = searchIndexIsPartial
+        searchTask = Task { [weak self] in
+            let results = await index.search(query: query, scope: scope)
+            guard let self, !Task.isCancelled, self.searchSequence == sequence else { return }
+            self.searchResults = results.items
+            self.searchTotalMatches = results.totalMatches
+            self.searchResultsArePartial = fromPartial
+            self.isSearchRunning = false
+        }
+    }
+
+    /// Builds a fresh index from the current tree off the main actor, then
+    /// re-runs the active search against it.
+    private func rebuildSearchIndex() {
+        searchIndexBuildTask?.cancel()
+        guard let result = scanResult else {
+            searchIndexBuildTask = nil
+            return
+        }
+        let tree = result.tree
+        let isPartial = resultIsPartial
+        let generation = generation
+        searchIndexBuildTask = Task { [weak self] in
+            let index = await Task.detached(priority: .userInitiated) {
+                SearchIndex(tree: tree)
+            }.value
+            guard let self, !Task.isCancelled, self.generation == generation else { return }
+            self.searchIndex = index
+            self.searchIndexIsPartial = isPartial
+            self.searchIndexBuildTask = nil
+            self.runActiveSearch()
+        }
     }
 
     // MARK: - Private helpers
