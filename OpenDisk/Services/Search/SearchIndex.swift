@@ -45,6 +45,13 @@ struct SearchIndex: Sendable {
     private let sizes: [Int64]
     private let directoryFlags: [Bool]
 
+    /// Carries an unsafe buffer pointer into a `@Sendable` closure. The
+    /// disjoint-write pattern (one slot per `concurrentPerform` iteration)
+    /// makes this race-free; the wrapper just states that to the compiler.
+    private struct UncheckedSendableBuffer<Element>: @unchecked Sendable {
+        let base: UnsafeMutableBufferPointer<Element>
+    }
+
     // MARK: - Construction
 
     /// Builds the index. Runs the name folding in parallel chunks with a
@@ -63,6 +70,10 @@ struct SearchIndex: Sendable {
         var chunkLengths = [[Int32]](repeating: [], count: chunkCount)
         chunkBlobs.withUnsafeMutableBufferPointer { blobsOut in
             chunkLengths.withUnsafeMutableBufferPointer { lengthsOut in
+                // Safe to share across the @Sendable closure: every
+                // iteration writes only its own `chunk` slot.
+                let blobs = UncheckedSendableBuffer<[UInt8]>(base: blobsOut)
+                let allLengths = UncheckedSendableBuffer<[Int32]>(base: lengthsOut)
                 DispatchQueue.concurrentPerform(iterations: chunkCount) { chunk in
                     let low = chunk * chunkSize
                     let high = min(count, low + chunkSize)
@@ -76,8 +87,8 @@ struct SearchIndex: Sendable {
                         local.append(0)
                         lengths.append(Int32(local.count - start))
                     }
-                    blobsOut[chunk] = local
-                    lengthsOut[chunk] = lengths
+                    blobs.base[chunk] = local
+                    allLengths.base[chunk] = lengths
                 }
             }
         }
