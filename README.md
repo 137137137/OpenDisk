@@ -6,12 +6,13 @@
 
 A fast, free, and **open-source** disk space analyzer for macOS — an open alternative to DaisyDisk. Maps your drive as an interactive sunburst chart, scanning a full disk in seconds and streaming results live as it runs.
 
-[![downloads](https://img.shields.io/github/downloads/137137137/OpenDisk/total.svg?style=flat)](https://github.com/137137137/OpenDisk/releases)
 [![release](https://img.shields.io/github/release/137137137/OpenDisk.svg?style=flat)](https://github.com/137137137/OpenDisk/releases/latest)
 [![license](https://img.shields.io/github/license/137137137/OpenDisk.svg?style=flat)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue.svg?style=flat)](https://www.apple.com/macos/)
 
-**[⬇&nbsp;&nbsp;Download for macOS](https://github.com/137137137/OpenDisk/releases/latest)**
+**[⬇&nbsp;&nbsp;Download for macOS](https://opendisk.app)** &nbsp;·&nbsp; [GitHub releases](https://github.com/137137137/OpenDisk/releases/latest)
+
+Unzip and launch — OpenDisk offers to move itself into Applications, and keeps itself up to date automatically.
 
 <img src="docs/screenshot.png" alt="OpenDisk showing an interactive sunburst chart beside a sortable folder list" width="900"/>
 
@@ -25,7 +26,11 @@ A fast, free, and **open-source** disk space analyzer for macOS — an open alte
 - Results stream in live during the scan, so the chart and list fill in as it runs.
 - Incremental rescans reuse the previous scan and replay filesystem events, so a repeat scan is 20–28x faster than a cold one.
 - Understands APFS volume groups, firmlinks, purgeable space, and system volumes, so the total matches what your Mac reports as used.
+- Instant search across the whole scanned tree — results appear as you type, even on drives with millions of files.
+- Collector: drag files and folders into it from anywhere in the app, review the reclaimed total, and delete them in one action.
+- Purgeable-space breakdown shows caches and other reclaimable storage.
 - External drives appear automatically when connected.
+- Keeps itself up to date automatically (via Sparkle).
 
 ## Why OpenDisk?
 
