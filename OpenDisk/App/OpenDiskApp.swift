@@ -58,11 +58,16 @@ struct OpenDiskApp: App {
         guard !ScanAccess.isSandboxed else { return }
         guard !hasCheckedFullDiskAccess else { return }
         hasCheckedFullDiskAccess = true
-        guard showPromptAtStartup else { return }
 
         // Slightly delayed so the window is on screen before the alert.
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(0.5))
+            #if canImport(Sparkle)
+            // Website build: offer to move out of ~/Downloads first — if the
+            // user accepts, the app relaunches and later prompts are moot.
+            if MoveToApplications.promptIfNeeded() { return }
+            #endif
+            guard showPromptAtStartup else { return }
             FullDiskAccess.promptIfNotGranted(
                 title: "Full Disk Access Required",
                 message: "OpenDisk needs Full Disk Access to analyze all files and folders on your system. You can grant this permission in System Settings > Privacy & Security > Full Disk Access."
