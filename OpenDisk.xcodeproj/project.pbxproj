@@ -474,6 +474,8 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_SUFeedURL = "https://opendisk.app/appcast.xml";
+				INFOPLIST_KEY_SUPublicEDKey = "269Oo3e4gnIe1gwQ8c9XZNoHZp1JAG4ofd3Kad6+V5A=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -508,6 +510,8 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_SUFeedURL = "https://opendisk.app/appcast.xml";
+				INFOPLIST_KEY_SUPublicEDKey = "269Oo3e4gnIe1gwQ8c9XZNoHZp1JAG4ofd3Kad6+V5A=";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
