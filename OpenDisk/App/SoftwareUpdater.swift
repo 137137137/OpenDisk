@@ -12,6 +12,7 @@ import Sparkle
 /// Publishes the updater's `canCheckForUpdates` so the menu item enables and
 /// disables itself correctly (e.g. it greys out while an update is already in
 /// flight), across macOS versions.
+@MainActor
 final class CheckForUpdatesViewModel: ObservableObject {
     @Published var canCheckForUpdates = false
 

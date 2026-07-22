@@ -13,7 +13,7 @@ xcuserdata/
 
 # Release artifacts + tooling (kept out of the repo)
 distribution/
-scripts/release-website.sh
+scripts/
 DISTRIBUTION.md
 
 # Xcode — build output
