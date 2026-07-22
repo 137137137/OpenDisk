@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1A5E86EE3011253B0056F96E /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 1A5E86ED3011253B0056F96E /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		1AE9EC032E67533D00E04C69 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -53,6 +57,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A5E86EE3011253B0056F96E /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -80,12 +85,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1A5E86EC3011253B0056F96E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		1AE9EBEB2E67533B00E04C69 = {
 			isa = PBXGroup;
 			children = (
 				1AE9EBF62E67533B00E04C69 /* OpenDisk */,
 				1AE9EC052E67533D00E04C69 /* OpenDiskTests */,
 				1AE9EC0F2E67533D00E04C69 /* OpenDiskUITests */,
+				1A5E86EC3011253B0056F96E /* Frameworks */,
 				1AE9EBF52E67533B00E04C69 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -121,6 +134,7 @@
 			);
 			name = OpenDisk;
 			packageProductDependencies = (
+				1A5E86ED3011253B0056F96E /* Sparkle */,
 			);
 			productName = OpenDisk;
 			productReference = 1AE9EBF42E67533B00E04C69 /* OpenDisk.app */;
@@ -709,6 +723,14 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A5E86ED3011253B0056F96E /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A7D13B1300FF6A90016D506 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1AE9EBEC2E67533B00E04C69 /* Project object */;
 }
