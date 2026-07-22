@@ -125,18 +125,34 @@ final class ScanAccess {
     }
 
     func endAccess(toPath path: String) {
-        guard let root = grantRoot(containing: path), let url = accessing[root] else { return }
+        // Resolve against the roots we actually began (not the grant set,
+        // which may have changed since), so begin/end always pair on the
+        // same root and `stopAccessing` never goes unbalanced.
+        guard let root = Self.longestRoot(containing: path, in: accessing.keys),
+              let url = accessing[root] else { return }
         url.stopAccessingSecurityScopedResource()
         accessing[root] = nil
     }
 
     // MARK: - Helpers
 
-    /// The granted root whose subtree contains `path` (or equals it).
+    /// The granted root whose subtree contains `path` (or equals it). With
+    /// nested grants (e.g. "/Volumes/X" and "/Volumes/X/Projects") the
+    /// longest match wins — deterministic, unlike first-match over the
+    /// unordered dictionary, which could pair begin and end on different
+    /// roots and leak the security-scoped resource.
     private func grantRoot(containing path: String) -> String? {
-        bookmarks.keys.first { root in
-            path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
-        }
+        Self.longestRoot(containing: path, in: bookmarks.keys)
+    }
+
+    private static func longestRoot(
+        containing path: String, in roots: some Sequence<String>
+    ) -> String? {
+        roots
+            .filter { root in
+                path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+            }
+            .max { $0.count < $1.count }
     }
 
     private static func displayName(for path: String) -> String {

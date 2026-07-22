@@ -69,11 +69,52 @@ struct RingsChartView: View {
                     FileActionsMenu(file: collectedFile(for: segment), collector: collector)
                 }
             }
+            // VoiceOver: the canvases are invisible to accessibility, so the
+            // chart describes itself and exposes the innermost ring's
+            // segments (depth 1 only — deeper rings would add hundreds of
+            // elements) as navigable children. Drawing/hover is untouched.
+            .accessibilityLabel(chartAccessibilityLabel)
+            .accessibilityChildren {
+                accessibilitySegmentList
+            }
             .onChange(of: root, initial: true) {
                 layout = RingsChartLayout.layout(root: root, in: geometry.size)
             }
             .onChange(of: geometry.size) {
                 layout = RingsChartLayout.layout(root: root, in: geometry.size)
+            }
+        }
+    }
+
+    // MARK: - Accessibility
+
+    /// Summarizes the chart for VoiceOver, e.g. "Disk usage chart for
+    /// Documents, 12 items, total size 4.2 GB".
+    private var chartAccessibilityLabel: String {
+        "Disk usage chart for \(root.name), \(root.children.count) "
+            + "item\(root.children.count == 1 ? "" : "s"), "
+            + "total size \(ByteFormatter.formatFileSize(root.size))"
+    }
+
+    /// The innermost ring's segments (the root's direct slices), exposed as
+    /// individual accessibility elements. Directories activate the same
+    /// navigation a click performs.
+    private var accessibilitySegmentList: some View {
+        let segments = (layout?.segments ?? []).filter { $0.depth == 1 }
+        return VStack {
+            ForEach(segments, id: \.path) { segment in
+                let percent = String(format: "%.1f", segment.fractionOfRoot * 100)
+                Color.clear
+                    .accessibilityElement()
+                    .accessibilityLabel(segment.name)
+                    .accessibilityValue(
+                        "\(ByteFormatter.formatFileSize(segment.size)), \(percent) percent"
+                    )
+                    .accessibilityAddTraits(segment.kind == .directory ? .isButton : [])
+                    .accessibilityAction {
+                        guard segment.kind == .directory else { return }
+                        onSelectDirectory(segment.path)
+                    }
             }
         }
     }

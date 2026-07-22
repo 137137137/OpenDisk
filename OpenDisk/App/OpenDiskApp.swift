@@ -11,9 +11,18 @@ struct OpenDiskApp: App {
     #if canImport(Sparkle)
     // Direct-download build only: drives auto-updates + the "Check for
     // Updates…" menu item. Absent from the Mac App Store build.
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
-    )
+    private let updaterController: SPUStandardUpdaterController
+    // Created once here (not per menu render) so the menu item's KVO
+    // subscription — and its enabled state — survive menu re-renders.
+    private let checkForUpdatesViewModel: CheckForUpdatesViewModel
+
+    init() {
+        let controller = SPUStandardUpdaterController(
+            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+        )
+        updaterController = controller
+        checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: controller.updater)
+    }
     #endif
 
     var body: some Scene {
@@ -30,7 +39,10 @@ struct OpenDiskApp: App {
             #if canImport(Sparkle)
             // Adds "Check for Updates…" under the app menu (direct build only).
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: updaterController.updater)
+                CheckForUpdatesView(
+                    viewModel: checkForUpdatesViewModel,
+                    updater: updaterController.updater
+                )
             }
             #endif
         }

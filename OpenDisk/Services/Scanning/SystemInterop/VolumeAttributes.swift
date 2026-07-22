@@ -65,17 +65,6 @@ enum VolumeAttributes {
         mountPoint(ofVolumeContaining: path) == path
     }
 
-    /// Bytes in use on the volume containing `path`.
-    ///
-    /// On APFS this reflects the whole container (space is shared between
-    /// volumes), which is the right denominator for scan progress against
-    /// a system that splits `/` across several volumes.
-    static func usedBytes(ofVolumeContaining path: String) -> Int64 {
-        var fs = statfs()
-        guard statfs(path, &fs) == 0 else { return 0 }
-        return (Int64(fs.f_blocks) - Int64(fs.f_bfree)) * Int64(fs.f_bsize)
-    }
-
     /// The device ID (`st_dev`) of `path`, or nil if it cannot be stat'ed.
     static func deviceID(ofPath path: String) -> dev_t? {
         var info = stat()

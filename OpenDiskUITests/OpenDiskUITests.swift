@@ -2,28 +2,37 @@
 //  OpenDiskUITests.swift
 //  OpenDiskUITests
 //
-//  Created by 137137137 on 9/2/25.
-//
 
 import XCTest
 
 final class OpenDiskUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
     }
 
-
+    /// Smoke test: the app launches, reaches the foreground, and shows its
+    /// main window. Deliberately avoids querying specific UI elements so the
+    /// test stays robust as the interface evolves.
     @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+    func testAppLaunchesAndShowsMainWindow() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 30),
+            "App should reach the foreground after launch"
+        )
+        XCTAssertTrue(
+            app.windows.firstMatch.waitForExistence(timeout: 30),
+            "Main window should appear after launch"
+        )
+
+        // Attach a screenshot so a failure elsewhere in the suite still
+        // leaves evidence of what launch looked like.
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Launch"
+        attachment.lifetime = .deleteOnSuccess
+        add(attachment)
     }
 }

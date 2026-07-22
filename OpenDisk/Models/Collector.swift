@@ -125,6 +125,11 @@ final class Collector {
     /// Whether a path is collected (so the results list can hide it).
     func contains(path: String) -> Bool { items.contains { $0.path == path } }
 
+    /// The collected paths as a set — build once per render pass, then
+    /// filter row arrays with O(1) membership instead of paying
+    /// `contains(path:)`'s linear scan per row.
+    var pathSet: Set<String> { Set(items.lazy.map(\.path)) }
+
     // MARK: - Deletion
 
     struct Failure: Sendable { let path: String; let error: String }

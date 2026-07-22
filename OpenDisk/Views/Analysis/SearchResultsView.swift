@@ -6,6 +6,9 @@ import SwiftUI
 /// from anywhere in the tree stay identifiable.
 struct SearchResultsView: View {
     let items: [FolderItem]
+    /// Bumped by the analyzer whenever the results are replaced — keys the
+    /// icon prewarm without comparing every path string per render.
+    let resultsVersion: Int
     /// Total matches before the display cap (`SearchIndex.resultLimit`).
     let totalMatches: Int
     let isRunning: Bool
@@ -50,7 +53,7 @@ struct SearchResultsView: View {
                 // Icons resolve in display order before their rows scroll
                 // into view; scrolling then blits cached bitmaps instead
                 // of racing per-row loads.
-                .task(id: items.map(\.path)) {
+                .task(id: resultsVersion) {
                     await FileIcon.prewarm(items.map(\.path))
                 }
             }

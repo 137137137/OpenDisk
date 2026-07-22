@@ -165,6 +165,19 @@ struct DiskAnalysisView: View {
             selectedPaths.removeAll()
             selectionAnchor = nil
         }
+        // The analyzer owns the viewed path and can reset it to the scan
+        // root when a fresh tree no longer contains the viewed folder
+        // (deleted, then ⌘R). Keep the breadcrumb trail in step so the
+        // title and path bar never show a folder the list has left.
+        .onChange(of: analyzer.currentPath) { _, newPath in
+            guard !newPath.isEmpty, newPath != currentPath else { return }
+            if let index = breadcrumbs.firstIndex(of: newPath) {
+                breadcrumbs.removeSubrange(index...)
+            } else {
+                breadcrumbs = []
+            }
+            currentPath = newPath
+        }
         // Make the Collector reachable from the row context menus in the list.
         .environment(collector)
         // ⌘Z pulls the last collected item back out of the Collector. Gated
@@ -192,16 +205,22 @@ struct DiskAnalysisView: View {
     /// drags and the lists all agree on. The synthetic "Purgeable Space"
     /// row has no real path of its own — it's collected via its cache
     /// folders — so it hides once those are all in.
+    ///
+    /// O(rows) per call: collected membership goes through one Set built
+    /// up front (not a linear scan per row), and the purgeable-files
+    /// catalog walk runs at most once, outside the filter closure. Callers
+    /// in `body` compute this once per evaluation and pass the array down.
     private var visibleItems: [FolderItem] {
+        let collected = collector.pathSet
         if isSearchActive {
-            return analyzer.searchResults.filter { !collector.contains(path: $0.path) }
+            return analyzer.searchResults.filter { !collected.contains($0.path) }
         }
         let filtered = analyzer.rootItems.filter { item in
             if item.path == HiddenSpaceInfo.sentinelPath {
-                return !analyzer.collectablePurgeableFiles()
-                    .allSatisfy { collector.contains(path: $0.path) }
+                let purgeable = analyzer.collectablePurgeableFiles()
+                return !purgeable.allSatisfy { collected.contains($0.path) }
             }
-            return !collector.contains(path: item.path)
+            return !collected.contains(item.path)
         }
         return sortedForDisplay(filtered)
     }
@@ -224,31 +243,36 @@ struct DiskAnalysisView: View {
 
     /// The selection as collector payloads, in display order. Stale paths
     /// (rows no longer visible) drop out naturally.
-    private var selectionFiles: [CollectedFile] {
-        visibleItems.filter { selectedPaths.contains($0.path) }.map(CollectedFile.init)
+    private func selectionFiles(in items: [FolderItem]) -> [CollectedFile] {
+        items.filter { selectedPaths.contains($0.path) }.map(CollectedFile.init)
     }
 
     @ViewBuilder
     private var listPane: some View {
+        // One materialization of the row array per evaluation — the lists
+        // and the selection payload share it instead of re-filtering and
+        // re-sorting per use.
+        let items = visibleItems
         if isSearchActive {
             SearchResultsView(
-                items: visibleItems,
+                items: items,
+                resultsVersion: analyzer.searchResultsVersion,
                 totalMatches: analyzer.searchTotalMatches,
                 isRunning: analyzer.isSearchRunning,
                 resultsArePartial: analyzer.searchResultsArePartial,
                 query: searchText,
                 selectedPaths: selectedPaths,
-                selectionFiles: selectionFiles,
+                selectionFiles: selectionFiles(in: items),
                 onOpen: handleRowTap
             )
         } else {
             VStack(spacing: 0) {
                 columnHeader
                 ScanResultsView(
-                    items: visibleItems,
+                    items: items,
                     displayVersion: analyzer.displayVersion,
                     selectedPaths: selectedPaths,
-                    selectionFiles: selectionFiles,
+                    selectionFiles: selectionFiles(in: items),
                     onFolderTap: handleRowTap
                 )
             }
@@ -451,11 +475,25 @@ struct DiskAnalysisView: View {
                     FullDiskAccess.relaunch()
                 }
             }
+        } else if analyzer.unreadableDirectories > 0 {
+            // The scan ran but couldn't open what it was pointed at — a
+            // revoked folder grant, permissions, or a volume that went
+            // away. Without this, a denied scan looks like an empty disk.
+            ContentUnavailableView {
+                Label("Couldn't Read This Location", systemImage: "lock.slash")
+            } description: {
+                Text("macOS denied access to this location. Check its permissions — or remove and re-grant it — then rescan.")
+            } actions: {
+                Button("Rescan") {
+                    Task { await analyzer.scanDirectory(rootPath) }
+                }
+                .buttonStyle(.borderedProminent)
+            }
         } else {
             ContentUnavailableView(
-                "Ready to analyze",
+                "Nothing to Show",
                 systemImage: "folder",
-                description: Text("Select a disk to begin scanning")
+                description: Text("This folder is empty, or nothing in it was large enough to scan.")
             )
         }
     }

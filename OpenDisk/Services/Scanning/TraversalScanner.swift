@@ -130,6 +130,9 @@ enum TraversalScanner {
         onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
         guard let rootDevice = VolumeAttributes.deviceID(ofPath: path) else {
+            // The root itself can't be statted (revoked grant, ejected
+            // volume): an empty tree, but flagged so the UI can say why.
+            metrics.addUnreadable()
             return FileTree(rootName: rootName)
         }
         let devices = (allowedDevices ?? []).union([rootDevice])
@@ -179,9 +182,14 @@ enum TraversalScanner {
             defer { state.completeDirectory() }
             if isCancelled() { continue }
 
-            guard case .contents(var contents, let device) = reader.read(
+            let outcome = reader.read(
                 directoryAt: item.path, allowedDevices: allowedDevices
-            ) else {
+            )
+            guard case .contents(var contents, let device) = outcome else {
+                // Unopenable directories are counted (not silently skipped)
+                // so an empty result can say "couldn't read" instead of
+                // looking like a genuinely empty folder.
+                if case .unreadable = outcome { metrics.addUnreadable() }
                 continue
             }
 

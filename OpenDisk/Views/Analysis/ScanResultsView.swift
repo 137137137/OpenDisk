@@ -14,11 +14,13 @@ struct ScanResultsView: View {
     var selectionFiles: [CollectedFile] = []
     let onFolderTap: (FolderItem) -> Void
 
-    /// Largest visible item, so each row's proportional bar reads relative
-    /// to it (recomputed as sizes stream in and re-sort).
-    private var maxSize: Int64 { items.map(\.size).max() ?? 0 }
-
     var body: some View {
+        // Largest visible item, so each row's proportional bar reads
+        // relative to it. Hoisted to one computation per body evaluation —
+        // as a property referenced inside the ForEach closure it would be
+        // recomputed O(items) for every materialized row, at streaming-
+        // snapshot rate during a live scan.
+        let maxSize = items.map(\.size).max() ?? 0
         // A ScrollView + LazyVStack rather than a List: SwiftUI's List
         // intercepts row drag gestures on macOS, which prevents dragging a
         // row into the Collector. This keeps rows fully draggable.
@@ -42,9 +44,11 @@ struct ScanResultsView: View {
         .animation(.snappy(duration: 0.18), value: displayVersion)
         // Icons resolve in display order before their rows scroll into
         // view, so scrolling blits cached bitmaps instead of racing
-        // per-row loads. Re-fires (and cancels the old pass) when the
-        // displayed rows change.
-        .task(id: items.map(\.path)) {
+        // per-row loads. Keyed on displayVersion — the analyzer bumps it
+        // exactly when the rows are replaced, so this re-fires precisely
+        // then, without allocating and comparing every path string on
+        // every body evaluation.
+        .task(id: displayVersion) {
             await FileIcon.prewarm(items.map(\.path))
         }
     }

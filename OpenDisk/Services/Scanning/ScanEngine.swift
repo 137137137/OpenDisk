@@ -169,7 +169,10 @@ final class ScanEngine: DiskScanning {
             cancellation.cancel()
         }
 
-        return ScanResult(rootPath: path, tree: tree)
+        return ScanResult(
+            rootPath: path, tree: tree,
+            unreadableDirectories: metrics.unreadableDirectories
+        )
     }
 
     // MARK: - Blocking scan pipeline

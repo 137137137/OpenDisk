@@ -9,9 +9,20 @@ final class ScanMetrics: Sendable {
     private struct Counters {
         var scannedBytes: Int64 = 0
         var itemsScanned: Int64 = 0
+        var unreadableDirectories = 0
     }
 
     private let state = Mutex(Counters())
+
+    /// Directories the scan failed to open so far.
+    var unreadableDirectories: Int {
+        state.withLock { $0.unreadableDirectories }
+    }
+
+    /// Records one directory the scan could not open.
+    func addUnreadable() {
+        state.withLock { $0.unreadableDirectories += 1 }
+    }
 
     /// Records one directory's worth of results.
     func add(bytes: Int64, items: Int) {

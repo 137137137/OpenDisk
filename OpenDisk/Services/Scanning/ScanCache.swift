@@ -82,16 +82,64 @@ enum ScanCache {
             at: directory, withIntermediateDirectories: true
         )
         let temporary = directory.appendingPathComponent(UUID().uuidString + ".tmp")
-        guard FileManager.default.createFile(atPath: temporary.path, contents: nil),
-              let handle = try? FileHandle(forWritingTo: temporary) else { return }
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil) else { return }
+        guard let handle = try? FileHandle(forWritingTo: temporary) else {
+            try? FileManager.default.removeItem(at: temporary)
+            return
+        }
         do {
             try handle.write(contentsOf: header)
             try handle.write(contentsOf: tree.serializedData())
             try handle.close()
             _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
+            prune(directory: directory, keeping: url)
         } catch {
             try? handle.close()
             try? FileManager.default.removeItem(at: temporary)
+        }
+    }
+
+    // MARK: - Eviction
+
+    /// Caches accumulate one file per scanned root, and a multi-million-node
+    /// tree serializes to hundreds of MB — scanning several disks would grow
+    /// Caches without bound. Keep the newest few within a byte budget (the
+    /// file just written always survives) and sweep stale temp files.
+    private static let maxCacheFiles = 8
+    private static let maxCacheBytes: Int64 = 4 << 30   // 4 GB
+
+    private static func prune(directory: URL, keeping justWritten: URL) {
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: Array(keys)
+        ) else { return }
+
+        var caches: [(url: URL, modified: Date, size: Int64)] = []
+        for url in entries {
+            let values = try? url.resourceValues(forKeys: keys)
+            let modified = values?.contentModificationDate ?? .distantPast
+            // A crash between create and replace can strand temp files;
+            // sweep any old enough that no save can still be writing them.
+            if url.pathExtension == "tmp" {
+                if modified < Date(timeIntervalSinceNow: -3600) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                continue
+            }
+            guard url.pathExtension == "dmscan" else { continue }
+            caches.append((url, modified, Int64(values?.fileSize ?? 0)))
+        }
+
+        caches.sort { $0.modified > $1.modified }   // newest first
+        var kept = 0
+        var bytes: Int64 = 0
+        for entry in caches {
+            kept += 1
+            bytes += entry.size
+            if (kept > maxCacheFiles || bytes > maxCacheBytes),
+               entry.url != justWritten {
+                try? FileManager.default.removeItem(at: entry.url)
+            }
         }
     }
 

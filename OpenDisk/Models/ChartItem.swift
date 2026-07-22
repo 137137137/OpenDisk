@@ -14,8 +14,8 @@ struct ChartItem: Equatable, Identifiable, Sendable {
     enum Kind: Equatable, Sendable {
         case file
         case directory
-        /// Not a real filesystem item — e.g. the "hidden space" slice for
-        /// bytes outside the scan.
+        /// Not a real filesystem item — e.g. the "Purgeable Space" lens's
+        /// root slice.
         case synthetic
     }
 
@@ -48,22 +48,15 @@ struct ChartItem: Equatable, Identifiable, Sendable {
     static let minVisibleFraction = 0.0015
 
     /// Builds the chart tree for the directory `node` of `tree`.
-    ///
-    /// `extraSlice` appends one synthetic child after the real ones (the
-    /// "hidden space" wedge); the root's total grows by its bytes so the
-    /// single proportional pass sizes everything consistently.
     static func build(
         from tree: FileTree,
         at node: FileTree.NodeID,
         name: String,
-        path: String,
-        extraSlice: (name: String, bytes: Int64)? = nil
+        path: String
     ) -> ChartItem {
-        let extra = (extraSlice?.bytes ?? 0) > 0 ? extraSlice : nil
-        return buildItem(
+        buildItem(
             tree: tree, node: node, name: name, path: path,
-            depth: 0, relStart: 0, relSize: 100, fractionOfRoot: 1,
-            extraSlice: extra
+            depth: 0, relStart: 0, relSize: 100, fractionOfRoot: 1
         )
     }
 
@@ -75,30 +68,14 @@ struct ChartItem: Equatable, Identifiable, Sendable {
         depth: Int,
         relStart: Double,
         relSize: Double,
-        fractionOfRoot: Double,
-        extraSlice: (name: String, bytes: Int64)? = nil
+        fractionOfRoot: Double
     ) -> ChartItem {
         let isDirectory = tree.isDirectory(node)
-        let extraBytes = extraSlice?.bytes ?? 0
-        let totalSize = tree.size(of: node) + extraBytes
+        let totalSize = tree.size(of: node)
         let parentSize = max(totalSize, 1)
         let hasChildren = isDirectory && tree.childCount(of: node) > 0
         var children: [ChartItem] = []
         var cursor = 0.0
-
-        // The synthetic slice leads: it starts the circle just as the
-        // matching list row is pinned to the top.
-        if let extraSlice, extraBytes > 0 {
-            let share = Double(extraBytes) / Double(parentSize) * 100
-            children.append(ChartItem(
-                name: extraSlice.name, path: "::" + extraSlice.name,
-                size: extraBytes,
-                depth: depth + 1, relStart: cursor, relSize: share,
-                fractionOfRoot: fractionOfRoot * share / 100,
-                kind: .synthetic, hasHiddenChildren: false, children: []
-            ))
-            cursor += share
-        }
 
         if hasChildren && depth < maxDepth {
             let prefix = path.directoryPrefix

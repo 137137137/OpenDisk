@@ -22,14 +22,12 @@ final class CheckForUpdatesViewModel: ObservableObject {
 }
 
 /// The "Check for Updates…" menu command, wired to Sparkle's standard updater.
+/// The view model is created once at app level and passed in — building it
+/// here would open a fresh KVO subscription (and reset `canCheckForUpdates`)
+/// on every menu re-render.
 struct CheckForUpdatesView: View {
-    @ObservedObject private var viewModel: CheckForUpdatesViewModel
-    private let updater: SPUUpdater
-
-    init(updater: SPUUpdater) {
-        self.updater = updater
-        self.viewModel = CheckForUpdatesViewModel(updater: updater)
-    }
+    @ObservedObject var viewModel: CheckForUpdatesViewModel
+    let updater: SPUUpdater
 
     var body: some View {
         Button("Check for Updates…") {

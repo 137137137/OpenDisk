@@ -149,10 +149,18 @@ struct FileTree: Sendable {
     func parent(of id: NodeID) -> NodeID { nodes[Int(id)].parent }
 
     /// Number of direct children (files and directories).
+    ///
+    /// Sibling walks here and below are bounded by the node count: a
+    /// corrupted cache file could contain a sibling-chain cycle that range
+    /// validation alone cannot catch, and an unbounded walk would hang the
+    /// app forever (`rollUpDirectorySizes` is already guarded; these were
+    /// not).
     func childCount(of id: NodeID) -> Int {
         var count = 0
+        var remaining = nodes.count
         var current = nodes[Int(id)].firstChild
-        while current != Self.noNode {
+        while current != Self.noNode, remaining > 0 {
+            remaining -= 1
             count += 1
             current = nodes[Int(current)].nextSibling
         }
@@ -161,8 +169,10 @@ struct FileTree: Sendable {
 
     func children(of id: NodeID) -> [NodeID] {
         var result: [NodeID] = []
+        var remaining = nodes.count
         var current = nodes[Int(id)].firstChild
-        while current != Self.noNode {
+        while current != Self.noNode, remaining > 0 {
+            remaining -= 1
             result.append(current)
             current = nodes[Int(current)].nextSibling
         }
@@ -170,8 +180,10 @@ struct FileTree: Sendable {
     }
 
     func child(of id: NodeID, named name: String) -> NodeID? {
+        var remaining = nodes.count
         var current = nodes[Int(id)].firstChild
-        while current != Self.noNode {
+        while current != Self.noNode, remaining > 0 {
+            remaining -= 1
             if names[Int(current)] == name { return current }
             current = nodes[Int(current)].nextSibling
         }
@@ -196,8 +208,10 @@ struct FileTree: Sendable {
     func path(of id: NodeID) -> String {
         guard id != Self.rootID else { return names[0] }
         var components: [String] = []
+        var remaining = nodes.count   // bound: see childCount(of:)
         var current = id
-        while current != Self.rootID && current != Self.noNode {
+        while current != Self.rootID && current != Self.noNode, remaining > 0 {
+            remaining -= 1
             components.append(names[Int(current)])
             current = nodes[Int(current)].parent
         }
@@ -233,8 +247,10 @@ struct FileTree: Sendable {
         var stack: [NodeID] = [Self.rootID]
         visited[Int(Self.rootID)] = true
         while let current = stack.popLast() {
+            var remaining = nodes.count   // bound: see childCount(of:)
             var child = nodes[Int(current)].firstChild
-            while child != Self.noNode {
+            while child != Self.noNode, remaining > 0 {
+                remaining -= 1
                 if !visited[Int(child)] {
                     visited[Int(child)] = true
                     stack.append(child)
@@ -442,9 +458,14 @@ struct FileTree: Sendable {
             rebuiltNodes.reserveCapacity(count)
             let bound = NodeID(count)
             for index in 0..<count {
-                // Malformed links would corrupt traversal; validate range.
-                guard parents[index] < bound, firstChildren[index] < bound,
-                      nextSiblings[index] < bound else { return nil }
+                // Malformed links would corrupt traversal; validate range —
+                // both ends, or a bit-rotted negative index (anything other
+                // than the -1 sentinel) traps on the first array access and
+                // turns a stale cache file into a crash loop.
+                guard parents[index] >= Self.noNode, parents[index] < bound,
+                      firstChildren[index] >= Self.noNode, firstChildren[index] < bound,
+                      nextSiblings[index] >= Self.noNode, nextSiblings[index] < bound
+                else { return nil }
                 rebuiltNodes.append(Node(
                     size: sizes[index],
                     parent: parents[index],

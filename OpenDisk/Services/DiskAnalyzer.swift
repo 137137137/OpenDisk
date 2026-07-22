@@ -31,11 +31,11 @@ final class DiskAnalyzer {
     /// Nil until the first snapshot arrives (charts show a placeholder
     /// during the skeleton phase — a shallow listing has no hierarchy).
     private(set) var chartRoot: ChartItem?
-    /// The gap between the volume's used space and what the scan saw,
-    /// measured after a completed volume-root scan. Shown (in the list
-    /// and as a gray chart slice) only at the scan root.
-    private(set) var hiddenSpace: HiddenSpaceInfo?
     private(set) var isScanning = false
+    /// Directories the finished scan could not open (permissions, a
+    /// revoked sandbox grant, a volume ejected mid-scan). Nonzero with an
+    /// empty result means "couldn't read", not "empty folder".
+    private(set) var unreadableDirectories = 0
     /// True when a scan of "/" was refused because Full Disk Access is
     /// missing.
     private(set) var needsFullDiskAccess = false
@@ -58,6 +58,9 @@ final class DiskAnalyzer {
     private(set) var searchResults: [FolderItem] = []
     /// Total matches before the display cap.
     private(set) var searchTotalMatches = 0
+    /// Bumped whenever `searchResults` is replaced — a cheap identity for
+    /// views to key work (icon prewarms) on instead of diffing paths.
+    private(set) var searchResultsVersion = 0
     /// True while an index build or query for the active search is in
     /// flight (the UI shows a spinner instead of "no results").
     private(set) var isSearchRunning = false
@@ -75,8 +78,11 @@ final class DiskAnalyzer {
     /// The path the running (or last finished) scan is rooted at.
     private var scanRootPath = ""
     /// The directory whose contents are on screen; may be deeper than the
-    /// scan root while the user navigates.
-    private var currentPath = ""
+    /// scan root while the user navigates. Read-only to views: the
+    /// analyzer owns it (it can reset to the scan root when a fresh tree
+    /// no longer contains the viewed folder), and the view keeps its
+    /// breadcrumb trail in sync by observing it.
+    private(set) var currentPath = ""
     private var scanTask: Task<ScanResult, Never>?
     /// Bumped per scan. Scan events hop to the main actor asynchronously,
     /// so every event carries the generation it belongs to and stale ones
@@ -114,7 +120,11 @@ final class DiskAnalyzer {
         generation &+= 1
         let generation = self.generation
 
-        if path == "/" && !FullDiskAccess.isGranted {
+        // Full Disk Access is the non-sandboxed build's mechanism. The
+        // sandboxed (App Store) build scans "/" through a security-scoped
+        // grant instead — and its FDA probe would always fail anyway (the
+        // probe paths resolve inside the app container).
+        if !ScanAccess.isSandboxed && path == "/" && !FullDiskAccess.isGranted {
             needsFullDiskAccess = true
             rootItems = []
             return
@@ -132,7 +142,7 @@ final class DiskAnalyzer {
         lastAppliedPartialSequence = 0
         rootItems = []
         chartRoot = nil
-        hiddenSpace = nil
+        unreadableDirectories = 0
         displayedTotalBytes = 0
         displayVersion += 1
         // The old tree's index is stale the moment a rescan starts. An
@@ -174,8 +184,17 @@ final class DiskAnalyzer {
         scanTask = task
         let result = await task.value
         // Task equality is identity-based: bail if another scan superseded
-        // this one while it was awaited.
-        guard scanTask == task else { return }
+        // this one while it was awaited. But a plain cancellation (view
+        // dismissed, no successor) must still clear the transient state,
+        // or the spinner runs forever if the view reappears.
+        guard scanTask == task else {
+            if self.generation == generation {
+                isScanning = false
+                isSearchRunning = false
+                scanStartDate = nil
+            }
+            return
+        }
         scanTask = nil
 
         scanResult = result
@@ -183,34 +202,15 @@ final class DiskAnalyzer {
         refreshDisplayedItems()
         scanDuration = Date().timeIntervalSince(startDate)
         isScanning = false
-        probeHiddenSpace(for: result, generation: generation)
+        unreadableDirectories = result.unreadableDirectories
+        // A cache-splice scan's live counters only covered the changed
+        // directories; the finished tree is the truth for the status bar.
+        totalDiskScannedBytes = result.tree.size(of: FileTree.rootID)
+        itemsScanned = max(itemsScanned, result.tree.nodeCount - 1)
         // Always index the finished tree (a few hundred ms, off-main) so
         // the first keystroke of a later search is instant; if a search is
         // already active it re-resolves against the final tree.
         rebuildSearchIndex()
-    }
-
-    /// Whether the currently viewed directory should show the hidden-space
-    /// entry (only the scan root of a volume accounts for whole-volume
-    /// used space).
-    var hiddenSpaceForCurrentDirectory: HiddenSpaceInfo? {
-        currentPath == scanRootPath ? hiddenSpace : nil
-    }
-
-    /// Measures purgeable space, snapshots and the unscanned remainder
-    /// once a volume-root scan finishes.
-    private func probeHiddenSpace(for result: ScanResult, generation: Int) {
-        let path = result.rootPath
-        let scanned = result.tree.size(of: FileTree.rootID)
-        Task { [weak self] in
-            let info = await Task.detached(priority: .utility) { () -> HiddenSpaceInfo? in
-                guard path == "/" || VolumeAttributes.isVolumeRoot(path) else { return nil }
-                return HiddenSpaceProbe.probe(volumePath: path, scannedBytes: scanned)
-            }.value
-            guard let self, self.generation == generation, let info else { return }
-            self.hiddenSpace = info
-            self.refreshDisplayedItems()
-        }
     }
 
     /// Cancels a scan in flight, if any.
@@ -411,8 +411,7 @@ final class DiskAnalyzer {
         // lens is a list-only shortcut (its bytes already appear under their
         // real parents in the chart), so no synthetic slice is added.
         chartRoot = ChartItem.build(
-            from: tree, at: node, name: name, path: currentPath,
-            extraSlice: nil
+            from: tree, at: node, name: name, path: currentPath
         )
     }
 
@@ -436,6 +435,7 @@ final class DiskAnalyzer {
         guard !searchQuery.isEmpty else {
             searchResults = []
             searchTotalMatches = 0
+            searchResultsVersion += 1
             isSearchRunning = false
             return
         }
@@ -457,6 +457,7 @@ final class DiskAnalyzer {
             guard let self, !Task.isCancelled, self.searchSequence == sequence else { return }
             self.searchResults = results.items
             self.searchTotalMatches = results.totalMatches
+            self.searchResultsVersion += 1
             self.searchResultsArePartial = fromPartial
             self.isSearchRunning = false
         }

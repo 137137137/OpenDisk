@@ -160,6 +160,12 @@ struct FolderRowView: View {
         // exclusively capture the gesture and starve `.draggable`.
         .simultaneousGesture(TapGesture().onEnded { onTap() })
         .contextMenu { menuContent }
+        // VoiceOver: the row is deliberately not a Button (a Button's press
+        // gesture would swallow `.draggable`), so it reads as static text
+        // without this — combine it into one element that acts like a button.
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onTap() }
     }
 
     /// Real Finder icon for on-disk items; a symbol for synthetic rows.

@@ -29,13 +29,14 @@ enum FSEventsChangeJournal {
     /// scan it replaces.
     private static let replayTimeout: TimeInterval = 10
 
-    /// Accumulates journal events. `changes`/`unreliable`/`rootPrefix` are
-    /// mutated only on the FSEvents callback queue and read on the resuming
-    /// task after `FSEventStreamStop`, ordered after the last write by the
-    /// continuation resume — the same synchronization the old
-    /// `DispatchSemaphore` relied on. The `waiter` mutex makes completion
-    /// resume the awaiting continuation exactly once. Hence @unchecked
-    /// Sendable.
+    /// Accumulates journal events. `changes`/`unreliable` are mutated only
+    /// on the FSEvents callback queue, and only while the latch is open —
+    /// the callback checks `isFinished` before touching them, so nothing
+    /// mutates after completion. The resuming task reads them exclusively
+    /// through a `queue.sync` barrier (see `changes(since:under:)`), which
+    /// both drains any callback still in flight and orders its writes
+    /// before the read. The `waiter` mutex makes completion resume the
+    /// awaiting continuation exactly once. Hence @unchecked Sendable.
     ///
     /// The C FSEvents callback reaches this object through the stream's
     /// `info` pointer (never a Swift capture), so it can be a context-free C
@@ -68,6 +69,14 @@ enum FSEventsChangeJournal {
                 return state.continuation
             }
             continuation?.resume(returning: completed)
+        }
+
+        /// Whether the outcome is already latched. The callback checks this
+        /// before mutating `changes`/`unreliable`: after HistoryDone the
+        /// stream is still live and keeps delivering current events, which
+        /// must not race the resumed task's reads.
+        var isFinished: Bool {
+            waiter.withLock { $0.result != nil }
         }
 
         /// Park the awaiting continuation, or resume it at once if completion
@@ -105,6 +114,10 @@ enum FSEventsChangeJournal {
         let callback: FSEventStreamCallback = { _, info, eventCount, eventPaths, eventFlags, _ in
             guard let info else { return }
             let collector = Unmanaged<Collector>.fromOpaque(info).takeUnretainedValue()
+            // Once the outcome latched (HistoryDone, timeout, cancellation),
+            // the resumed task owns the accumulated state — live events
+            // still streaming in must not mutate it.
+            guard !collector.isFinished else { return }
             let paths = Unmanaged<CFArray>.fromOpaque(eventPaths)
                 .takeUnretainedValue() as? [String] ?? []
 
@@ -186,13 +199,20 @@ enum FSEventsChangeJournal {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
 
-        guard completed, !collector.unreliable,
-              collector.changes.totalCount <= maxUsefulChanges else {
+        // Barrier on the callback queue: a callback that was already
+        // executing when the outcome latched may still be mid-append. After
+        // this, the collector is quiescent and its writes are visible here.
+        let (accumulated, unreliable) = queue.sync {
+            (collector.changes, collector.unreliable)
+        }
+
+        guard completed, !unreliable,
+              accumulated.totalCount <= maxUsefulChanges else {
             return nil
         }
         // Dedup, and order parents before children so a new directory is
         // adopted by its ancestor before its own event is processed.
-        var changes = collector.changes
+        var changes = accumulated
         changes.changedDirectories = Array(Set(changes.changedDirectories)).sorted {
             $0.components(separatedBy: "/").count < $1.components(separatedBy: "/").count
         }

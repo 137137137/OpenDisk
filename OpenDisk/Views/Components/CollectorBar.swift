@@ -335,6 +335,10 @@ private struct CollectedRow: View {
     let onRemove: () -> Void
     let onPreview: () -> Void
 
+    /// The row's real Finder icon once resolved off-main; until then the
+    /// row draws a type icon so the tray never blocks on IconServices.
+    @State private var resolvedIcon: NSImage?
+
     var body: some View {
         HStack(spacing: 8) {
             Button(action: onRemove) {
@@ -345,7 +349,14 @@ private struct CollectedRow: View {
             .buttonStyle(.plain)
             .help("Remove from Collector")
 
-            Image(nsImage: NSWorkspace.shared.icon(forFile: file.path))
+            // Cache, then the freshly resolved icon, then a no-I/O type
+            // icon — never a blocking per-path IconServices lookup in body.
+            Image(nsImage: resolvedIcon
+                ?? FileIcon.cached(for: file.path)
+                ?? FileIcon.typeIcon(
+                    forPathExtension: (file.name as NSString).pathExtension,
+                    isDirectory: file.isDirectory
+                ))
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 18, height: 18)
@@ -362,6 +373,13 @@ private struct CollectedRow: View {
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .hoverHighlight(cornerRadius: 6)
+        // Resolve the real Finder icon off the main thread; the row shows
+        // a type icon meanwhile (same pattern as the folder rows).
+        .task(id: file.path) {
+            guard FileIcon.cached(for: file.path) == nil else { return }
+            await FileIcon.warm(file.path)
+            resolvedIcon = FileIcon.cached(for: file.path)
+        }
         .contextMenu {
             Button(action: onPreview) {
                 Label("Preview", systemImage: "eye")

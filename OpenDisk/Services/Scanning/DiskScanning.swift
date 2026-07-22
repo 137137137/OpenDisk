@@ -4,6 +4,10 @@ import Foundation
 struct ScanResult: Sendable {
     let rootPath: String
     let tree: FileTree
+    /// Directories the scan could not open (permissions, revoked sandbox
+    /// grant, volume ejected mid-scan). Lets the UI distinguish "empty"
+    /// from "couldn't read".
+    var unreadableDirectories: Int = 0
 }
 
 /// A partial snapshot of a scan in flight: the tree as discovered so far,

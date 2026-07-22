@@ -2,32 +2,9 @@
 //  OpenDiskUITestsLaunchTests.swift
 //  OpenDiskUITests
 //
-//  Created by 137137137 on 9/2/25.
-//
 
 import XCTest
 
-final class OpenDiskUITestsLaunchTests: XCTestCase {
-
-    override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
-    }
-
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-    }
-
-    @MainActor
-    func testLaunch() throws {
-        let app = XCUIApplication()
-        app.launch()
-
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
-
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Launch Screen"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-}
+// The Xcode template's launch-screenshot and launch-performance tests were
+// removed: the real launch smoke test lives in OpenDiskUITests.swift. This
+// file stays (empty of tests) only because the Xcode project references it.
