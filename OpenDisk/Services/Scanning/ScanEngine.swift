@@ -177,6 +177,20 @@ final class ScanEngine: DiskScanning {
 
     // MARK: - Blocking scan pipeline
 
+    /// Dedicated queue for the blocking scan steps. A custom concurrent
+    /// queue, NOT `DispatchQueue.global(qos:)`: a global queue runs each
+    /// block at the QoS propagated from its submitter, so a submission
+    /// from an unspecified-QoS context executes at base priority 0 — and
+    /// that thread goes on to seed the traversal pool's semaphore and wait
+    /// on its DispatchGroup, a priority inversion against the
+    /// `.userInitiated` workers (flagged by the Thread Performance
+    /// Checker). A custom queue's own QoS is a floor no block runs below.
+    private static let offloadQueue = DispatchQueue(
+        label: "OpenDisk.ScanEngine.offload",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
     /// Runs one heavy, synchronous/blocking scan step on a dedicated
     /// background thread — never the Swift concurrency cooperative pool
     /// (mirrors the dispatch the old top-level scan entry used).
@@ -184,7 +198,7 @@ final class ScanEngine: DiskScanning {
         _ work: @escaping @Sendable () -> T
     ) async -> T {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
+            offloadQueue.async {
                 continuation.resume(returning: work())
             }
         }

@@ -142,7 +142,6 @@ enum TraversalScanner {
         onPartialTreeAvailable { tree.withLock { $0 } }
         let seenMultiLinkFiles = Mutex(Set<HardLinkKey>())
         let state = WorkState()
-        state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))
 
         let queue = DispatchQueue(
             label: "OpenDisk.TraversalScanner",
@@ -150,6 +149,15 @@ enum TraversalScanner {
             attributes: .concurrent
         )
         let group = DispatchGroup()
+
+        // Seed the stack from the worker queue, not the caller's thread:
+        // every signal of the pool's semaphore then originates at the
+        // queue's .userInitiated floor, so a caller running at a lower (or
+        // unspecified) QoS can never priority-invert a parked worker.
+        // Workers that start first simply park until this lands.
+        queue.async {
+            state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))
+        }
 
         for _ in 0..<workerCount {
             queue.async(group: group) {
