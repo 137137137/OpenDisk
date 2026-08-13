@@ -24,10 +24,6 @@ enum FSEventsChangeJournal {
     /// Above this many changed directories a full scan is faster than
     /// splicing.
     private static let maxUsefulChanges = 40_000
-    /// Historical replay is local journal reading; if it stalls, give up
-    /// and full-scan — the incremental path must never cost more than the
-    /// scan it replaces.
-    private static let replayTimeout: TimeInterval = 10
 
     /// Accumulates journal events. `changes`/`unreliable` are mutated only
     /// on the FSEvents callback queue, and only while the latch is open —
@@ -47,6 +43,14 @@ enum FSEventsChangeJournal {
         var changes = Changes()
         var unreliable = false
         let rootPrefix: String
+        /// Raw (pre-dedup) accumulated-change count at which history replay
+        /// gives up early — the outcome (full scan) is already decided, so
+        /// streaming the rest of the journal or riding out the timeout only
+        /// delays it. Raw counts overshoot deduplicated ones (one churning
+        /// directory logs many events), so this is a generous multiple of
+        /// `maxUsefulChanges`. Stored here so the C callback below never
+        /// references outer statics (which the Swift 6.3 frontend crashes on).
+        let earlyBailChangeCount = maxUsefulChanges * 4
 
         private struct Waiter {
             var continuation: CheckedContinuation<Bool, Never>?
@@ -93,14 +97,20 @@ enum FSEventsChangeJournal {
 
     /// Collects every change under `rootPath` since `eventID`, or nil when
     /// the journal cannot answer reliably (ID wrapped or purged, events
-    /// dropped, too many changes, replay too slow, task cancelled) — callers
-    /// then run a full scan.
+    /// dropped, too many changes, replay slower than `timeout`, task
+    /// cancelled) — callers then run a full scan.
+    ///
+    /// `timeout` is the caller's break-even budget: the incremental path
+    /// must never cost a meaningful fraction of the full scan it replaces,
+    /// so callers size it to the scan (see `ScanEngine`).
     ///
     /// The wait for HistoryDone is a pure Swift-concurrency suspension: no
     /// thread is blocked. The FSEvents callback still runs on a dedicated
     /// serial dispatch queue, so accumulation never touches the cooperative
     /// pool.
-    static func changes(since eventID: UInt64, under rootPath: String) async -> Changes? {
+    static func changes(
+        since eventID: UInt64, under rootPath: String, timeout: TimeInterval
+    ) async -> Changes? {
         let collector = Collector(rootPrefix: rootPath.directoryPrefix)
 
         var context = FSEventStreamContext(
@@ -154,6 +164,9 @@ enum FSEventsChangeJournal {
                     collector.changes.changedDirectories.append(normalized)
                 }
             }
+            if collector.changes.totalCount > collector.earlyBailChangeCount {
+                collector.finish(completed: false)
+            }
         }
 
         guard let stream = FSEventStreamCreate(
@@ -184,16 +197,16 @@ enum FSEventsChangeJournal {
         // or task cancellation — whichever fires first. The timeout runs on
         // the same serial queue as the callback, so the two never overlap;
         // the Collector latch makes the resume exactly-once regardless.
-        let timeout = DispatchWorkItem { collector.finish(completed: false) }
+        let timeoutItem = DispatchWorkItem { collector.finish(completed: false) }
         let completed = await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                 collector.install(continuation)
-                queue.asyncAfter(deadline: .now() + replayTimeout, execute: timeout)
+                queue.asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
             }
         } onCancel: {
             collector.finish(completed: false)
         }
-        timeout.cancel() // no-op if it already ran; avoids a late no-op fire
+        timeoutItem.cancel() // no-op if it already ran; avoids a late no-op fire
 
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)

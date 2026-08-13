@@ -23,8 +23,33 @@ enum ScanCache {
         // Mapping keeps the decode reading straight from the page cache
         // instead of copying the whole file up front.
         guard let url = cacheFileURL(forRoot: rootPath),
-              let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              let header = parseHeader(data, forRoot: rootPath),
+              // The tree decodes from a no-copy slice of the mapped file.
+              let tree = FileTree(serializedData: data[header.treeStart...]) else {
+            return nil
+        }
+        return Entry(tree: tree, eventID: header.eventID)
+    }
 
+    /// The cached scan's FSEvents ID and the cache file's size, validated
+    /// for this exact root — without decoding the tree (the expensive part
+    /// of `load`). Lets a journal replay start while the tree deserializes
+    /// in parallel; the byte count is a cheap proxy for how big the cached
+    /// scan was, which sizes the replay's time budget.
+    static func peek(forRoot rootPath: String) -> (eventID: UInt64, fileBytes: Int)? {
+        guard let url = cacheFileURL(forRoot: rootPath),
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              let header = parseHeader(data, forRoot: rootPath) else { return nil }
+        return (header.eventID, data.count)
+    }
+
+    /// Parses and validates the fixed header: the cache must describe this
+    /// exact root on this exact volume — a re-formatted or different disk
+    /// mounted at the same place must not resurrect a stale tree.
+    private static func parseHeader(
+        _ data: Data, forRoot rootPath: String
+    ) -> (eventID: UInt64, treeStart: Data.Index)? {
         var offset = data.startIndex
         func read<T>(_ type: T.Type) -> T? {
             let size = MemoryLayout<T>.size
@@ -44,17 +69,12 @@ enum ScanCache {
         let savedPath = String(decoding: data[offset..<(offset + Int(pathLength))], as: UTF8.self)
         offset += Int(pathLength)
 
-        // The cache must describe this exact root on this exact volume —
-        // a re-formatted or different disk mounted at the same place must
-        // not resurrect a stale tree. The tree decodes from a no-copy
-        // slice of the mapped file.
         guard savedPath == rootPath,
               let device = VolumeAttributes.deviceID(ofPath: rootPath),
-              UInt64(bitPattern: Int64(device)) == savedDevice,
-              let tree = FileTree(serializedData: data[offset...]) else {
+              UInt64(bitPattern: Int64(device)) == savedDevice else {
             return nil
         }
-        return Entry(tree: tree, eventID: eventID)
+        return (eventID, offset)
     }
 
     /// Blocking (~hundreds of ms for multi-million-node trees): call from

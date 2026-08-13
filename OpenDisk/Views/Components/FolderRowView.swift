@@ -18,6 +18,9 @@ struct FolderRowView: View {
     /// This item's size as a fraction of the largest sibling, driving the
     /// faint proportional bar. Nil (e.g. in search results) hides the bar.
     var sizeFraction: Double? = nil
+    /// Adds a "Quick Look" context-menu item that previews this row (the
+    /// spacebar shortcut's clickable counterpart). Nil hides the item.
+    var onQuickLook: ((FolderItem) -> Void)? = nil
     let onTap: () -> Void
 
     @Environment(Collector.self) private var collector
@@ -245,6 +248,14 @@ struct FolderRowView: View {
             }
 
             Divider()
+
+            if let onQuickLook {
+                Button {
+                    onQuickLook(item)
+                } label: {
+                    Label("Quick Look", systemImage: "eye")
+                }
+            }
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([fileURL])

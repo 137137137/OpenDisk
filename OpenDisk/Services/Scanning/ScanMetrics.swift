@@ -10,9 +10,16 @@ final class ScanMetrics: Sendable {
         var scannedBytes: Int64 = 0
         var itemsScanned: Int64 = 0
         var unreadableDirectories = 0
+        var phase: ScanPhase = .scanning
     }
 
     private let state = Mutex(Counters())
+
+    /// Marks what the scan is doing; surfaced through `snapshot()` so the
+    /// status bar can explain a stretch with no items counted yet.
+    func setPhase(_ phase: ScanPhase) {
+        state.withLock { $0.phase = phase }
+    }
 
     /// Directories the scan failed to open so far.
     var unreadableDirectories: Int {
@@ -45,7 +52,8 @@ final class ScanMetrics: Sendable {
         state.withLock {
             ScanProgress(
                 scannedBytes: $0.scannedBytes,
-                itemsScanned: Int($0.itemsScanned)
+                itemsScanned: Int($0.itemsScanned),
+                phase: $0.phase
             )
         }
     }

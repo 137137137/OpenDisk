@@ -267,22 +267,31 @@ final class ScanEngine: DiskScanning {
         // HFS+ volumes go through the catalog scanner; no cache there.
         let usesCatalog = usesCatalogScan(forRoot: path)
 
-        if !usesCatalog {
+        // The replay needs only the header's event ID, so it starts
+        // immediately — concurrent with the (much heavier) tree decode —
+        // instead of after it. Between them they are the pre-scan stretch
+        // where nothing is being counted; the phase marker lets the status
+        // bar say so instead of showing a dead "Scanning…".
+        if !usesCatalog, let header = ScanCache.peek(forRoot: path) {
+            metrics.setPhase(.checkingChanges)
+            // Pure async suspension — no thread is blocked while the
+            // journal streams HistoryDone, bails, or times out.
+            async let pendingChanges = FSEventsChangeJournal.changes(
+                since: header.eventID, under: path,
+                timeout: replayTimeBudget(cacheFileBytes: header.fileBytes)
+            )
             // Deserializing a saved tree is heavy: off the cooperative pool.
             let cached = await offload { ScanCache.load(forRoot: path) }
             if let cached, cached.tree.name(of: FileTree.rootID) == rootName {
                 // Show the previous scan instantly as the first partial
-                // snapshot, *before* the journal replay — so a re-scan isn't a
-                // blank 0% for a beat while the journal streams. The full-scan
-                // fallback below re-registers under the same key if the replay
-                // turns out unreliable, replacing this.
+                // snapshot, *before* the journal replay finishes — so a
+                // re-scan isn't a blank 0% while the journal streams. The
+                // full-scan fallback below re-registers under the same key if
+                // the replay turns out unreliable, replacing this.
                 let live = Mutex(cached.tree)
                 registerPartial { live.withLock { $0 } }
-                // Pure async suspension — no thread is blocked while the
-                // journal streams HistoryDone or times out.
-                let changes = await FSEventsChangeJournal.changes(
-                    since: cached.eventID, under: path
-                )
+                let changes = await pendingChanges
+                metrics.setPhase(.scanning)
                 if let changes {
                     // Splicing up to 40k changed directories is heavy work.
                     let applied = await offload {
@@ -298,6 +307,11 @@ final class ScanEngine: DiskScanning {
                         return tree
                     }
                 }
+            } else {
+                // Header parsed but the tree didn't (truncated file, format
+                // drift): drain the replay and full-scan.
+                _ = await pendingChanges
+                metrics.setPhase(.scanning)
             }
         }
 
@@ -313,6 +327,20 @@ final class ScanEngine: DiskScanning {
             saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
         }
         return tree
+    }
+
+    /// How long the journal replay may run before the engine gives up and
+    /// full-scans: a small fraction of what the full scan itself would
+    /// cost, so the incremental path can never lose much even when the
+    /// journal turns out useless. The full-scan cost is estimated from the
+    /// cache file's size (~50 serialized bytes per node, traversal reads
+    /// ~200k nodes/s ⇒ ~10 MB of cache per scan-second), taking a fifth of
+    /// that. Small scans wait at most a second; even a whole-disk,
+    /// multi-million-node scan waits at most a few — nothing like the
+    /// fixed 10s this replaced.
+    private static func replayTimeBudget(cacheFileBytes: Int) -> TimeInterval {
+        let estimatedFullScanSeconds = Double(cacheFileBytes) / 10_000_000
+        return min(4, max(1, estimatedFullScanSeconds / 5))
     }
 
     /// Serializing a multi-million-node tree takes hundreds of

@@ -5,6 +5,9 @@ import SwiftUI
 /// it finishes.
 struct ScanStatusBar: View {
     let isScanning: Bool
+    /// What the scan is doing; words the stretch before any item has been
+    /// counted (cache + change-journal work reads as a stall otherwise).
+    var phase: ScanPhase = .scanning
     /// Fraction of the volume's used bytes scanned so far; nil shows an
     /// indeterminate bar.
     let progressFraction: Double?
@@ -43,7 +46,11 @@ struct ScanStatusBar: View {
                 if isScanning {
                     ProgressView()
                         .controlSize(.mini)
-                    Text(itemsScanned > 0 ? scanStatus : "Scanning…")
+                    Text(itemsScanned > 0
+                        ? scanStatus
+                        : phase == .checkingChanges
+                            ? "Checking what changed since the last scan…"
+                            : "Scanning…")
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     if !filesPerSecond.isEmpty {

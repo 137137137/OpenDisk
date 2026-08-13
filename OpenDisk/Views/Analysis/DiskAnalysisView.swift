@@ -1,5 +1,6 @@
 import AppKit
 import QuickLook
+import QuickLookUI
 import SwiftUI
 
 /// Analysis screen for one disk (pushed from the disk picker): scans it,
@@ -83,6 +84,7 @@ struct DiskAnalysisView: View {
                 }
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
+                    phase: analyzer.scanPhase,
                     progressFraction: progressFraction,
                     scannedBytes: analyzer.totalDiskScannedBytes,
                     itemsScanned: analyzer.itemsScanned,
@@ -284,6 +286,7 @@ struct DiskAnalysisView: View {
                     query: searchText,
                     selectedPaths: selectedPaths,
                     selectionFiles: selectionFiles(in: items),
+                    onQuickLook: quickLook,
                     onOpen: handleRowTap
                 )
             } else {
@@ -294,6 +297,7 @@ struct DiskAnalysisView: View {
                         displayVersion: analyzer.displayVersion,
                         selectedPaths: selectedPaths,
                         selectionFiles: selectionFiles(in: items),
+                        onQuickLook: quickLook,
                         onFolderTap: handleRowTap
                     )
                 }
@@ -327,7 +331,53 @@ struct DiskAnalysisView: View {
         }
         guard let target = quickLookTarget else { return event }
         quickLookURL = target
+        centerQuickLookPanel()
         return nil
+    }
+
+    /// Context-menu entry point: select the row (so the highlight marks
+    /// what's being previewed) and open Quick Look on it.
+    private func quickLook(_ item: FolderItem) {
+        guard !item.path.hasPrefix("::") else { return }
+        selectedPaths = [item.path]
+        selectionAnchor = item.path
+        quickLookURL = URL(fileURLWithPath: item.path)
+        centerQuickLookPanel()
+    }
+
+    /// Centers the shared Quick Look panel over the app window instead of
+    /// the middle of the screen — the preview belongs to the window it was
+    /// invoked from. The SwiftUI modifier creates and shows the panel
+    /// asynchronously, so this retries over a few runloop turns until the
+    /// panel exists, then nudges it into place (clamped to the screen).
+    private func centerQuickLookPanel(attempts: Int = 10) {
+        guard quickLookURL != nil else { return }
+        guard QLPreviewPanel.sharedPreviewPanelExists(),
+              let panel = QLPreviewPanel.shared(), panel.isVisible,
+              let window = NSApp.mainWindow else {
+            if attempts > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                    centerQuickLookPanel(attempts: attempts - 1)
+                }
+            }
+            return
+        }
+        var frame = panel.frame
+        frame.origin = NSPoint(
+            x: window.frame.midX - frame.width / 2,
+            y: window.frame.midY - frame.height / 2
+        )
+        if let screen = (window.screen ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = min(
+                max(frame.origin.x, screen.minX),
+                max(screen.minX, screen.maxX - frame.width)
+            )
+            frame.origin.y = min(
+                max(frame.origin.y, screen.minY),
+                max(screen.minY, screen.maxY - frame.height)
+            )
+        }
+        panel.setFrame(frame, display: true)
     }
 
     /// What spacebar previews: the first selected row in display order,

@@ -41,6 +41,9 @@ final class DiskAnalyzer {
     private(set) var needsFullDiskAccess = false
     private(set) var totalDiskScannedBytes: Int64 = 0
     private(set) var itemsScanned = 0
+    /// What the running scan is doing; the status bar words the "no items
+    /// counted yet" stretch with it.
+    private(set) var scanPhase: ScanPhase = .scanning
     /// When the running scan started; views derive throughput from it.
     private(set) var scanStartDate: Date?
     private(set) var scanDuration: TimeInterval = 0
@@ -134,6 +137,7 @@ final class DiskAnalyzer {
         isScanning = true
         totalDiskScannedBytes = 0
         itemsScanned = 0
+        scanPhase = .scanning
         scanDuration = 0
         scanRootPath = path
         currentPath = path
@@ -333,6 +337,7 @@ final class DiskAnalyzer {
     private func apply(_ progress: ScanProgress, startedAt: Date) {
         totalDiskScannedBytes = progress.scannedBytes
         itemsScanned = progress.itemsScanned
+        scanPhase = progress.phase
     }
 
     /// Re-materializes the on-screen rows from the current tree, keeping
