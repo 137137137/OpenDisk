@@ -17,9 +17,7 @@ struct OpenDiskApp: App {
     private let checkForUpdatesViewModel: CheckForUpdatesViewModel
 
     init() {
-        let controller = SPUStandardUpdaterController(
-            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
-        )
+        let controller = SoftwareUpdater.controller
         updaterController = controller
         checkForUpdatesViewModel = CheckForUpdatesViewModel(updater: controller.updater)
     }

@@ -9,6 +9,17 @@ import Sparkle
 // false there, the "Check for Updates…" menu item disappears, and updates
 // route through the App Store instead (Sparkle is not permitted in MAS builds).
 
+/// The one Sparkle updater for the whole app. A shared instance (not created
+/// per-view) because the app-menu command and the disk picker's button must
+/// drive — and reflect the state of — the same updater, and because
+/// `SPUStandardUpdaterController` starts the update cycle once on creation.
+@MainActor
+enum SoftwareUpdater {
+    static let controller = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+    )
+}
+
 /// Publishes the updater's `canCheckForUpdates` so the menu item enables and
 /// disables itself correctly (e.g. it greys out while an update is already in
 /// flight), across macOS versions.

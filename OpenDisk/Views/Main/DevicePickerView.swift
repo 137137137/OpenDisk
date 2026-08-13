@@ -1,5 +1,8 @@
 import AppKit
 import SwiftUI
+#if canImport(Sparkle)
+import Sparkle
+#endif
 
 /// Opening screen: a compact, centered card of scannable locations plus a
 /// grant/scan button. It adapts to the distribution build:
@@ -51,8 +54,17 @@ struct DevicePickerView: View {
             }
         }
 
-        Button("Scan Folder…", systemImage: "folder.badge.plus") {
-            chooseFolder()
+        HStack {
+            Button("Scan Folder…", systemImage: "folder.badge.plus") {
+                chooseFolder()
+            }
+            #if canImport(Sparkle)
+            // Website build only: a discoverable counterpart to the
+            // app-menu "Check for Updates…" (same shared updater). The MAS
+            // build updates through the App Store, so no button there.
+            Spacer()
+            CheckForUpdatesButton()
+            #endif
         }
     }
 
@@ -97,6 +109,24 @@ struct DevicePickerView: View {
             if let grant = scanAccess.requestGrant() { open(grant) }
         }
     }
+
+    #if canImport(Sparkle)
+    /// Manual update check on the opening screen. Uses the app-wide shared
+    /// updater; the view model mirrors `canCheckForUpdates` so the button
+    /// greys out while a check or install is already in flight.
+    private struct CheckForUpdatesButton: View {
+        @StateObject private var viewModel = CheckForUpdatesViewModel(
+            updater: SoftwareUpdater.controller.updater
+        )
+
+        var body: some View {
+            Button("Check for Updates…", systemImage: "arrow.triangle.2.circlepath") {
+                SoftwareUpdater.controller.updater.checkForUpdates()
+            }
+            .disabled(!viewModel.canCheckForUpdates)
+        }
+    }
+    #endif
 
     /// Granted locations that aren't one of the listed disks (arbitrary folders).
     private var folderGrants: [ScanAccess.Grant] {
