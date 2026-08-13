@@ -1,4 +1,5 @@
 import AppKit
+import QuickLook
 import SwiftUI
 
 /// Analysis screen for one disk (pushed from the disk picker): scans it,
@@ -28,6 +29,11 @@ struct DiskAnalysisView: View {
     @State private var selectedPaths = Set<String>()
     /// The last plainly clicked row — the fixed end of a shift-click range.
     @State private var selectionAnchor: String?
+    /// The item shown in the Quick Look panel (spacebar, like Finder);
+    /// nil while the panel is closed.
+    @State private var quickLookURL: URL?
+    /// Local key-down monitor that makes spacebar toggle Quick Look.
+    @State private var quickLookKeyMonitor: Any?
     /// Column sort for the directory list (search keeps its own relevance
     /// order). Defaults to largest-first, matching the scan's own ordering.
     @State private var sort: SortField = .size
@@ -125,6 +131,15 @@ struct DiskAnalysisView: View {
             }
         }
         .onAppear {
+            // Spacebar toggles Quick Look, like Finder. A local monitor
+            // rather than .onKeyPress: the list is a plain ScrollView with
+            // no focus management, so there is no focused view to receive
+            // key presses.
+            if quickLookKeyMonitor == nil {
+                quickLookKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    handleQuickLookKey(event)
+                }
+            }
             guard !hasInitiallyScanned else { return }
             hasInitiallyScanned = true
             // Sandboxed (App Store) build: hold security-scoped access to the
@@ -134,6 +149,11 @@ struct DiskAnalysisView: View {
             Task { await analyzer.scanDirectory(rootPath) }
         }
         .onDisappear {
+            if let quickLookKeyMonitor {
+                NSEvent.removeMonitor(quickLookKeyMonitor)
+                self.quickLookKeyMonitor = nil
+            }
+            quickLookURL = nil
             analyzer.cancelCurrentScan()
             scanAccess.endAccess(toPath: rootPath)
         }
@@ -253,30 +273,78 @@ struct DiskAnalysisView: View {
         // and the selection payload share it instead of re-filtering and
         // re-sorting per use.
         let items = visibleItems
-        if isSearchActive {
-            SearchResultsView(
-                items: items,
-                resultsVersion: analyzer.searchResultsVersion,
-                totalMatches: analyzer.searchTotalMatches,
-                isRunning: analyzer.isSearchRunning,
-                resultsArePartial: analyzer.searchResultsArePartial,
-                query: searchText,
-                selectedPaths: selectedPaths,
-                selectionFiles: selectionFiles(in: items),
-                onOpen: handleRowTap
-            )
-        } else {
-            VStack(spacing: 0) {
-                columnHeader
-                ScanResultsView(
+        Group {
+            if isSearchActive {
+                SearchResultsView(
                     items: items,
-                    displayVersion: analyzer.displayVersion,
+                    resultsVersion: analyzer.searchResultsVersion,
+                    totalMatches: analyzer.searchTotalMatches,
+                    isRunning: analyzer.isSearchRunning,
+                    resultsArePartial: analyzer.searchResultsArePartial,
+                    query: searchText,
                     selectedPaths: selectedPaths,
                     selectionFiles: selectionFiles(in: items),
-                    onFolderTap: handleRowTap
+                    onOpen: handleRowTap
                 )
+            } else {
+                VStack(spacing: 0) {
+                    columnHeader
+                    ScanResultsView(
+                        items: items,
+                        displayVersion: analyzer.displayVersion,
+                        selectedPaths: selectedPaths,
+                        selectionFiles: selectionFiles(in: items),
+                        onFolderTap: handleRowTap
+                    )
+                }
             }
         }
+        // Quick Look panel (spacebar, see handleQuickLookKey). Passing the
+        // visible rows lets the panel's arrow keys walk the list in display
+        // order, like Finder. Synthetic rows have no on-disk file to show.
+        .quickLookPreview(
+            $quickLookURL,
+            in: items.compactMap {
+                $0.path.hasPrefix("::") ? nil : URL(fileURLWithPath: $0.path)
+            }
+        )
+    }
+
+    // MARK: - Quick Look
+
+    /// Spacebar toggles the Quick Look panel; every other key (and space
+    /// while a text field is being edited) passes through untouched.
+    private func handleQuickLookKey(_ event: NSEvent) -> NSEvent? {
+        guard event.keyCode == 49, !event.isARepeat,
+              event.modifierFlags.intersection([.command, .option, .control]).isEmpty
+        else { return event }
+        // Never steal space from active text editing (the search field —
+        // its field editor is an NSTextView first responder).
+        if event.window?.firstResponder is NSTextView { return event }
+        if quickLookURL != nil {
+            quickLookURL = nil
+            return nil
+        }
+        guard let target = quickLookTarget else { return event }
+        quickLookURL = target
+        return nil
+    }
+
+    /// What spacebar previews: the first selected row in display order,
+    /// falling back to the last plainly clicked row. Synthetic rows have
+    /// nothing on disk to preview.
+    private var quickLookTarget: URL? {
+        let items = visibleItems
+        if let selected = items.first(where: {
+            selectedPaths.contains($0.path) && !$0.path.hasPrefix("::")
+        }) {
+            return URL(fileURLWithPath: selected.path)
+        }
+        if let anchor = selectionAnchor, !anchor.hasPrefix("::"),
+           items.contains(where: { $0.path == anchor }) {
+            return URL(fileURLWithPath: anchor)
+        }
+        return nil
     }
 
     // MARK: - Sortable column header
@@ -360,8 +428,13 @@ struct DiskAnalysisView: View {
         selectionAnchor = item.path
         if isSearchActive {
             openSearchResult(item)
-        } else {
+        } else if item.isDirectory {
             navigateToFolder(item)
+        } else if selectable {
+            // A plain click on a file selects it (Finder's rule) — it has
+            // nowhere to navigate to, and the highlight marks what spacebar
+            // will Quick Look.
+            selectedPaths = [item.path]
         }
     }
 

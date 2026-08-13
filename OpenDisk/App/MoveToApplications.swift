@@ -19,11 +19,20 @@ enum MoveToApplications {
     /// any further startup prompts.
     @MainActor
     static func promptIfNeeded() -> Bool {
+        #if DEBUG
+        // Development runs live in DerivedData under Xcode's control —
+        // moving the app out from under it would break the debugger and
+        // the next build.
+        return false
+        #else
         let bundleURL = Bundle.main.bundleURL
         // The on-disk location to move: if we're translocated, Bundle.main
         // points inside the read-only mount, not at the real app in Downloads.
         let sourceURL = translocationOriginal(of: bundleURL) ?? bundleURL
 
+        // A Release build run from Xcode (Profile, or a Debug scheme set to
+        // Release) is still a development run.
+        guard !sourceURL.path.contains("/DerivedData/") else { return false }
         guard !isInApplicationsFolder(sourceURL) else { return false }
         guard !UserDefaults.standard.bool(forKey: suppressionKey) else { return false }
 
@@ -51,6 +60,7 @@ enum MoveToApplications {
         }
         relaunch(at: destination)
         return true
+        #endif
     }
 
     private static func isInApplicationsFolder(_ url: URL) -> Bool {
