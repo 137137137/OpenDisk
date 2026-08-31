@@ -8,13 +8,15 @@ import SwiftUI
 /// a split view with the folder list on the left and the rings chart on
 /// the right, both updating as the scan runs.
 ///
-/// Navigation chrome is standard: the stack's back button returns to the
-/// disk picker, refresh lives in the toolbar, and the breadcrumb path bar
-/// sits in the content layer with no custom background.
+/// Navigation chrome makes leaving the scan explicit: an unmount button
+/// confirms before returning to the disk picker and clearing the scan data.
+/// Refresh lives in the toolbar, and the breadcrumb path bar sits in the
+/// content layer with no custom background.
 struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(ScanAccess.self) private var scanAccess
     @State private var analyzer = DiskAnalyzer()
     @State private var collector = Collector()
@@ -24,6 +26,7 @@ struct DiskAnalysisView: View {
     @State private var hasInitiallyScanned = false
     @State private var searchText = ""
     @State private var searchPresented = false
+    @State private var isShowingUnmountConfirmation = false
     /// Multi-selection (shift-click ranges, ⌘-click toggles) across the
     /// visible list, keyed by path like everything else. A drag from any
     /// selected row carries the whole selection to the Collector.
@@ -113,11 +116,30 @@ struct DiskAnalysisView: View {
         )
         // Native window title + subtitle: the folder currently shown and its
         // size, updating as you navigate (like Finder). The path bar below is
-        // the interactive trail; the toolbar's system back button returns to
-        // the disk list.
+        // the interactive trail; unmounting returns to the disk list.
         .navigationTitle(windowTitle)
         .navigationSubtitle(windowSubtitle)
+        .navigationBarBackButtonHidden()
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button(
+                    "Unmount",
+                    systemImage: "eject",
+                    action: requestUnmount
+                )
+                .keyboardShortcut("[", modifiers: .command)
+                .help("Unmount and clear scan data")
+                .confirmationDialog(
+                    "Unmount \(rootName)?",
+                    isPresented: $isShowingUnmountConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Unmount", role: .destructive, action: unmount)
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This clears the current scan data and returns to disk selection. It does not eject the disk from macOS.")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     // Refreshing inside the synthetic purgeable view
@@ -211,6 +233,14 @@ struct DiskAnalysisView: View {
                 .opacity(0)
                 .accessibilityHidden(true)
         }
+    }
+
+    private func requestUnmount() {
+        isShowingUnmountConfirmation = true
+    }
+
+    private func unmount() {
+        dismiss()
     }
 
     // MARK: - List pane
