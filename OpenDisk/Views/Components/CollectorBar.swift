@@ -119,14 +119,13 @@ struct CollectorBar: View {
     // MARK: - Footer (always in layout)
 
     private var footerBar: some View {
-        GlassEffectContainer {
+        PanelContainer {
             footerContent
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .glassEffect(
-                    rejecting ? .regular.tint(.red)
-                        : (isTargeted ? .regular.tint(.accentColor) : .regular),
+                .panelBackground(
+                    tint: rejecting ? .red : (isTargeted ? .accentColor : nil),
                     in: shape
                 )
                 .overlay {
@@ -273,7 +272,7 @@ struct CollectorBar: View {
     // MARK: - Floating layers (overlay, over the chart)
 
     private var listPanel: some View {
-        GlassEffectContainer {
+        PanelContainer {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(collector.items) { file in
@@ -292,7 +291,7 @@ struct CollectorBar: View {
             // tall as needed) up to a generous cap, then scroll.
             .frame(height: listHeight)
             .scrollBounceBehavior(.basedOnSize)
-            .glassEffect(.regular, in: shape)
+            .panelBackground(in: shape)
         }
     }
 
@@ -306,7 +305,7 @@ struct CollectorBar: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.tint(.orange), in: shape)
+        .panelBackground(tint: .orange, in: shape)
     }
 
     // MARK: - Actions
@@ -470,5 +469,41 @@ private struct QuickLookView: NSViewRepresentable {
 
     final class Coordinator {
         var preview: QLPreviewView?
+    }
+}
+
+// MARK: - macOS 15 / 26 panel styling
+
+/// Liquid Glass on macOS 26, where nearby panels merge as they move;
+/// a plain group on macOS 15, where there is nothing to merge.
+private struct PanelContainer<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if #available(macOS 26, *) {
+            GlassEffectContainer(content: content)
+        } else {
+            content()
+        }
+    }
+}
+
+private extension View {
+    /// The floating-panel surface: Liquid Glass on macOS 26, the standard
+    /// regular material (the look of Sequoia's own floating panels) before
+    /// it. `tint` washes the surface with a status color either way.
+    @ViewBuilder
+    func panelBackground(tint: Color? = nil, in shape: RoundedRectangle) -> some View {
+        if #available(macOS 26, *) {
+            glassEffect(tint.map { Glass.regular.tint($0) } ?? .regular, in: shape)
+        } else {
+            background {
+                ZStack {
+                    shape.fill(.regularMaterial)
+                    if let tint { shape.fill(tint.opacity(0.18)) }
+                }
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
+            }
+        }
     }
 }

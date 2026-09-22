@@ -66,7 +66,7 @@ Full scan of a 1 TB Apple Silicon volume, cold cache.
 
 ## Requirements
 
-- macOS 26 (Tahoe) or later, on Apple Silicon or Intel.
+- macOS 15 (Sequoia) or later, on Apple Silicon or Intel.
 - Full Disk Access, otherwise macOS hides parts of the filesystem and the totals come up short. Grant it in **System Settings → Privacy & Security → Full Disk Access**. The app prompts for it on first launch.
 
 ## Building
