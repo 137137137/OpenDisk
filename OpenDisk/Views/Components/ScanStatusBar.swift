@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Bottom bar under the analysis split view:
 /// live progress + throughput while a scan runs, totals and duration once
-/// it finishes.
+/// it finishes, and the volume's capacity throughout ("X available of Y",
+/// the phrasing System Settings › Storage uses).
 struct ScanStatusBar: View {
     let isScanning: Bool
     /// What the scan is doing; words the stretch before any item has been
@@ -18,6 +19,8 @@ struct ScanStatusBar: View {
     let scanDuration: TimeInterval
     let totalBytes: Int64
     let itemCount: Int
+    /// Capacity of the volume being analyzed; nil hides the readout.
+    var volumeCapacity: VolumeCapacity?
 
     private var scanStatus: String {
         "Scanning: \(ByteFormatter.formatFileSize(scannedBytes)) (\(itemsScanned.formatted()) items)"
@@ -64,6 +67,11 @@ struct ScanStatusBar: View {
 
                 Spacer(minLength: 12)
 
+                if let volumeCapacity {
+                    capacityReadout(volumeCapacity)
+                    Spacer(minLength: 12)
+                }
+
                 Text(ByteFormatter.formatFileSize(totalBytes))
                     .fontWeight(.semibold)
                     .monospacedDigit()
@@ -76,5 +84,30 @@ struct ScanStatusBar: View {
             .padding(.vertical, 6)
         }
         .background(.bar)
+    }
+
+    /// Capacity bar plus "X available of Y". The tooltip and accessibility
+    /// value carry the full used / available / total breakdown so the bar
+    /// text can stay short.
+    private func capacityReadout(_ capacity: VolumeCapacity) -> some View {
+        let available = ByteFormatter.formatFileSize(capacity.available)
+        let used = ByteFormatter.formatFileSize(capacity.used)
+        let total = ByteFormatter.formatFileSize(capacity.total)
+        return HStack(spacing: 8) {
+            StorageProgressBar(
+                totalBytes: capacity.total,
+                availableBytes: capacity.available
+            )
+            .frame(width: 96)
+            Text("\(available) available of \(total)")
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .lineLimit(1)
+        }
+        .help("Used: \(used)\nAvailable: \(available)\nTotal: \(total)")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Disk space")
+        .accessibilityValue("\(used) used, \(available) available of \(total)")
     }
 }

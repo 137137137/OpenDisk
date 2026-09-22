@@ -71,21 +71,25 @@ final class DeviceMonitor {
         return devices
     }
 
-    private nonisolated static func volumeCapacity(
-        ofPath path: String
-    ) -> (total: Int64, available: Int64)? {
+    /// Live capacity of the volume containing `path`, or nil when the
+    /// system cannot report it. Cheap (one `statfs`), safe off the main
+    /// actor.
+    nonisolated static func volumeCapacity(ofPath path: String) -> VolumeCapacity? {
         let url = URL(fileURLWithPath: path)
         if let values = try? url.resourceValues(forKeys: [
             .volumeTotalCapacityKey, .volumeAvailableCapacityKey
         ]), let total = values.volumeTotalCapacity {
-            return (Int64(total), Int64(values.volumeAvailableCapacity ?? 0))
+            return VolumeCapacity(
+                total: Int64(total),
+                available: Int64(values.volumeAvailableCapacity ?? 0)
+            )
         }
 
         // Fallback for volumes where resource values fail.
         if let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path),
            let total = attributes[.systemSize] as? Int64,
            let free = attributes[.systemFreeSize] as? Int64 {
-            return (total, free)
+            return VolumeCapacity(total: total, available: free)
         }
         return nil
     }

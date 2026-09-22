@@ -25,3 +25,12 @@ struct DeviceInfo: Identifiable, Hashable, Sendable {
         ByteFormatter.formatDecimalNoFraction(usedBytes)
     }
 }
+
+/// Capacity of the volume containing a path, as the system reports it
+/// (`available` already excludes space the system keeps in reserve).
+struct VolumeCapacity: Hashable, Sendable {
+    let total: Int64
+    let available: Int64
+
+    var used: Int64 { total - available }
+}

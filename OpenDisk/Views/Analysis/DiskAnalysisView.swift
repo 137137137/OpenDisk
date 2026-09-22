@@ -40,6 +40,9 @@ struct DiskAnalysisView: View {
     @State private var sort: SortField = .size
     @State private var sortAscending = false
     private let totalUsedDiskSpace: Int64
+    /// Live capacity of the volume under `rootPath`, shown in the status
+    /// bar; re-read when a scan ends so deletions and the like show up.
+    @State private var volumeCapacity: VolumeCapacity?
 
     init(
         rootPath: String,
@@ -91,7 +94,8 @@ struct DiskAnalysisView: View {
                     scanStartDate: analyzer.scanStartDate,
                     scanDuration: analyzer.scanDuration,
                     totalBytes: analyzer.displayedTotalBytes,
-                    itemCount: analyzer.rootItems.count
+                    itemCount: analyzer.rootItems.count,
+                    volumeCapacity: volumeCapacity
                 )
             } else if analyzer.isScanning {
                 // Only visible for the moments before the skeleton lands.
@@ -149,6 +153,13 @@ struct DiskAnalysisView: View {
             // A no-op in the non-sandboxed website build.
             scanAccess.beginAccess(toPath: rootPath)
             Task { await analyzer.scanDirectory(rootPath) }
+        }
+        // Volume capacity for the status bar: read once up front and again
+        // whenever a scan ends (a rescan after deleting files is the moment
+        // the user looks for the freed space).
+        .task(id: rootPath) { await refreshVolumeCapacity() }
+        .onChange(of: analyzer.isScanning) { _, isScanning in
+            if !isScanning { Task { await refreshVolumeCapacity() } }
         }
         .onDisappear {
             if let quickLookKeyMonitor {
@@ -560,6 +571,13 @@ struct DiskAnalysisView: View {
     private var progressFraction: Double? {
         guard totalUsedDiskSpace > 0 else { return nil }
         return min(1.0, Double(analyzer.totalDiskScannedBytes) / Double(totalUsedDiskSpace))
+    }
+
+    private func refreshVolumeCapacity() async {
+        let path = rootPath
+        volumeCapacity = await Task.detached(priority: .utility) {
+            DeviceMonitor.volumeCapacity(ofPath: path)
+        }.value
     }
 
     // MARK: - Window title
