@@ -1,127 +1,95 @@
 <div align="center">
 
-<img src="AppIcon/OpenDisk-O-Ring-Single.png" alt="OpenDisk icon" width="128" height="128"/>
+<img src="AppIcon/OpenDisk-O-Ring-Single.png" alt="OpenDisk icon" width="112" height="112"/>
 
 <h1>OpenDisk</h1>
 
-A fast, free, and **open-source** disk space analyzer for macOS — an open alternative to DaisyDisk. Maps your drive as an interactive sunburst chart, scanning a full disk in seconds and streaming results live as it runs.
+<p>See what's filling up your Mac and clear it out. Free and open source.</p>
 
 [![release](https://img.shields.io/github/release/137137137/OpenDisk.svg?style=flat)](https://github.com/137137137/OpenDisk/releases/latest)
 [![license](https://img.shields.io/github/license/137137137/OpenDisk.svg?style=flat)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue.svg?style=flat)](https://www.apple.com/macos/)
+[![platform](https://img.shields.io/badge/macOS-15%2B-blue.svg?style=flat)](#install)
 
-**[⬇&nbsp;&nbsp;Download for macOS](https://opendisk.app)** &nbsp;·&nbsp; [GitHub releases](https://github.com/137137137/OpenDisk/releases/latest)
+<a href="https://opendisk.app"><b>Download</b></a> &nbsp;·&nbsp;
+<a href="https://apps.apple.com/app/opendisk/id6793260558">Mac App Store</a> &nbsp;·&nbsp;
+<a href="https://formulae.brew.sh/cask/opendisk">Homebrew</a>
 
-Unzip and launch — OpenDisk offers to move itself into Applications, and keeps itself up to date automatically.
+<br/><br/>
 
-Or install with [Homebrew](https://formulae.brew.sh/cask/opendisk):
+<img src="docs/screenshot.png" alt="OpenDisk scanning a Mac" width="860"/>
+
+</div>
+
+OpenDisk scans your drive and shows you where the space went, so you can find the big stuff and delete it. It's a free alternative to DaisyDisk, and it scans about twice as fast.
+
+## Install
+
+**Download** from [opendisk.app](https://opendisk.app), unzip, and open it. It offers to move itself into Applications and updates itself.
+
+**Homebrew**
 
 ```sh
 brew install --cask opendisk
 ```
 
-<img src="docs/screenshot.png" alt="OpenDisk showing an interactive sunburst chart beside a sortable folder list" width="900"/>
+**Mac App Store:** [OpenDisk on the App Store](https://apps.apple.com/app/opendisk/id6793260558). Apple's sandbox means this version only scans the drives and folders you pick, so the download is the better choice if you want to scan your whole Mac.
 
-</div>
+Requires macOS 15 or later, on Apple Silicon or Intel.
 
-## Features
+## What you can do with it
 
-- Interactive sunburst chart, where each ring is one level deeper into the tree.
-- Hover any slice to see its exact size, click to zoom into that folder.
-- Sortable, Finder-style folder list beside the chart, with breadcrumbs.
-- Results stream in live during the scan, so the chart and list fill in as it runs.
-- Incremental rescans reuse the previous scan and replay filesystem events, so a repeat scan is 20–28x faster than a cold one.
-- Understands APFS volume groups, firmlinks, purgeable space, and system volumes, so the total matches what your Mac reports as used.
-- Instant search across the whole scanned tree — results appear as you type, even on drives with millions of files.
-- Collector: drag files and folders into it from anywhere in the app, review the reclaimed total, and delete them in one action.
-- Purgeable-space breakdown shows caches and other reclaimable storage.
-- External drives appear automatically when connected.
-- Keeps itself up to date automatically (via Sparkle).
+- Scan a 1 TB drive in about 17 seconds. Results fill in while it's still scanning.
+- Rescan in a couple of seconds, because OpenDisk only looks at what changed since last time.
+- Click into any folder to dig deeper, and hover to see exact sizes.
+- Search every file on the drive by name, with results as you type.
+- Drag things you don't need into the Collector, see how much space you'll get back, and delete them all at once.
+- See purgeable space and caches, so the numbers match what macOS reports.
+- See external drives as soon as you plug them in.
 
-## Why OpenDisk?
+## Speed
 
-The DaisyDisk-style sunburst you know — but **free**, **open source**, and **faster**.
+Full scan of a 1 TB drive on an Apple Silicon Mac, with a cold cache.
 
-| | OpenDisk | DaisyDisk |
-| :-- | :-: | :-: |
-| Price | **Free** | Paid |
-| License | **Open source (MIT)** | Proprietary |
-| Interactive sunburst | ✓ | ✓ |
-| 1 TB cold scan | **17s** | 37s |
+| App | Time |
+| :-- | --: |
+| **OpenDisk** | **17s** |
+| DaisyDisk | 37s |
 
-## Benchmarks
+Rescanning the same drive with OpenDisk is 20 to 28 times faster than the first scan.
 
-Full scan of a 1 TB Apple Silicon volume, cold cache.
+## Good to know
 
-<div align="center">
+**Why does it need Full Disk Access?** Without it, macOS hides parts of the disk and the totals come up short. OpenDisk asks on first launch. You can also turn it on in System Settings > Privacy & Security > Full Disk Access.
 
-<img src="docs/benchmark.svg" alt="Bar chart comparing full-scan time on a 1 TB drive" width="520"/>
+**Is deleting safe?** Deleting from the Collector is permanent and skips the Trash, so check what's in it first. OpenDisk won't let you delete system folders, your home folder, or your Library.
 
-<table align="center">
-<thead>
-<tr><th align="left">Tool</th><th align="center">1 TB scan</th><th align="left">Relative</th></tr>
-</thead>
-<tbody>
-<tr><td align="left">OpenDisk</td><td align="center">17s</td><td align="left">1x</td></tr>
-<tr><td align="left">DaisyDisk</td><td align="center">37s</td><td align="left">2.2x slower</td></tr>
-<tr><td align="left">Baobab</td><td align="center">2m 15s</td><td align="left">~8x slower</td></tr>
-</tbody>
-</table>
+**Does it send any data?** No. The downloaded version checks opendisk.app for updates, and that's the only network request it makes. There are no analytics or accounts.
 
-</div>
+## Build from source
 
-## Requirements
-
-- macOS 15 (Sequoia) or later, on Apple Silicon or Intel.
-- Full Disk Access, otherwise macOS hides parts of the filesystem and the totals come up short. Grant it in **System Settings → Privacy & Security → Full Disk Access**. The app prompts for it on first launch.
-
-## Building
-
-Open `OpenDisk.xcodeproj` in Xcode and run, or build from the command line:
+You need Xcode 26 or later.
 
 ```sh
-xcodebuild -project "OpenDisk.xcodeproj" -scheme "OpenDisk" build
+git clone https://github.com/137137137/OpenDisk.git
+cd OpenDisk
+xcodebuild -project OpenDisk.xcodeproj -scheme OpenDisk build
 ```
 
-## Usage
+Or open `OpenDisk.xcodeproj` in Xcode and press Run.
 
-1. Launch OpenDisk and grant **Full Disk Access** when prompted, so nothing is hidden from the scan.
-2. Pick a drive, or choose **Scan Folder…** to analyze any directory.
-3. Explore the sunburst — hover a slice for its exact size, click to zoom in, and use the breadcrumbs or folder list to step back out.
-4. Open **Purgeable Space** to see caches and other reclaimable storage broken down.
+## How it's fast
 
-## How it works
-
-- Reads directory metadata in bulk with `getattrlistbulk(2)` and `searchfs(2)` instead of one `stat` per file.
-- Uses a small number of concurrent readers (4–5 for subtrees, ~8 for a whole volume), since APFS serializes directory reads and throughput drops off past that point.
-- Runs the blocking reads on a fixed pool of dedicated worker threads pulling from a shared work stack.
-- Stops at mount points and snapshot volumes using a per-child mount flag, so scanning `/` does not count the disk twice.
+- It reads directory entries in bulk with `getattrlistbulk(2)` instead of calling `stat` on every file.
+- It runs a small pool of readers, about 8 for a whole drive. APFS locks directory reads, so adding more threads makes it slower.
+- It stops at mount points and snapshots, so scanning `/` never counts the same disk twice.
+- It keeps each finished scan and replays filesystem events on the next run, so it only rescans folders that changed.
 
 ## Contributing
 
-If you want, you can fork the code, make improvements and submit a pull request to improve the app. Accepting a PR is solely in the hands of the maintainer. Before making fundamental changes expecting them to be accepted, please consult the maintainer of the project first.
+Bug reports and pull requests are welcome. For bigger changes, open an issue first so we can agree on the approach.
 
-## Project layout
-
-```
-OpenDisk/
-├── App/                    App entry point
-├── Models/                 Folder items, chart data, scan progress
-├── Services/
-│   ├── DiskAnalyzer.swift  Top-level scan orchestration
-│   └── Scanning/           Scanner core
-│       ├── ScanEngine.swift        Strategy selection and streaming snapshots
-│       ├── TraversalScanner.swift  getattrlistbulk worker pool
-│       ├── CatalogScanner.swift    searchfs catalog scans
-│       ├── ScanCache.swift         Incremental rescan cache
-│       └── SystemInterop/          Wrappers over the kernel APIs
-├── Views/
-│   ├── Charts/             Sunburst rings chart
-│   ├── Analysis/           Results screen
-│   └── Components/         Rows, breadcrumbs, status bar
-└── Resources/              Assets and icons
-```
+To report a security problem, please follow the [security policy](SECURITY.md) instead of opening a public issue.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+[MIT](LICENSE). The Full Disk Access check is adapted from [inket/FullDiskAccess](https://github.com/inket/FullDiskAccess), and updates use [Sparkle](https://sparkle-project.org).
