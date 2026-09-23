@@ -14,6 +14,12 @@ A fast, free, and **open-source** disk space analyzer for macOS — an open alte
 
 Unzip and launch — OpenDisk offers to move itself into Applications, and keeps itself up to date automatically.
 
+Or install with [Homebrew](https://formulae.brew.sh/cask/opendisk):
+
+```sh
+brew install --cask opendisk
+```
+
 <img src="docs/screenshot.png" alt="OpenDisk showing an interactive sunburst chart beside a sortable folder list" width="900"/>
 
 </div>
