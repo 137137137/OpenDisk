@@ -1,8 +1,9 @@
 <div align="center">
 
-<img src="AppIcon/OpenDisk-O-Ring-Single.png" alt="OpenDisk icon" width="112" height="112"/>
-
-<h1>OpenDisk</h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+  <img src="docs/logo.svg" alt="OpenDisk" width="360">
+</picture>
 
 <p>See what's filling up your Mac and clear it out. Free and open source.</p>
 
@@ -16,7 +17,7 @@
 
 <br/><br/>
 
-<img src="docs/screenshot.png" alt="OpenDisk scanning a Mac" width="860"/>
+<img src="docs/demo.gif" alt="OpenDisk scanning a Mac, zooming into a folder, and collecting Caches for deletion" width="860"/>
 
 </div>
 
