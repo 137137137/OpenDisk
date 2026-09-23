@@ -34,9 +34,32 @@
 		AAAA0000000000000000A008 /* OpenDisk MAS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenDisk MAS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		CA7A00000000000000000001 /* Exceptions for "OpenDisk" folder in "OpenDisk" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Services/Scanning/CatalogScanner.swift,
+				Services/Scanning/SystemInterop/SearchFS.swift,
+			);
+			target = 1AE9EBF32E67533B00E04C69 /* OpenDisk */;
+		};
+		CA7A00000000000000000002 /* Exceptions for "OpenDisk" folder in "OpenDisk MAS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Services/Scanning/CatalogScanner.swift,
+				Services/Scanning/SystemInterop/SearchFS.swift,
+			);
+			target = AAAA0000000000000000A001 /* OpenDisk MAS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1AE9EBF62E67533B00E04C69 /* OpenDisk */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				CA7A00000000000000000001 /* Exceptions for "OpenDisk" folder in "OpenDisk" target */,
+				CA7A00000000000000000002 /* Exceptions for "OpenDisk" folder in "OpenDisk MAS" target */,
+			);
 			path = OpenDisk;
 			sourceTree = "<group>";
 		};

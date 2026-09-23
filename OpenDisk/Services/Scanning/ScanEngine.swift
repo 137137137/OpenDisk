@@ -176,12 +176,6 @@ final class ScanEngine: DiskScanning {
         return FileManager.default.fileExists(atPath: dataPath) ? dataPath : path
     }
 
-    private static func usesCatalogScan(forRoot path: String) -> Bool {
-        VolumeAttributes.isVolumeRoot(path)
-            && VolumeAttributes.filesystemType(ofVolumeContaining: path) == "hfs"
-            && VolumeAttributes.supportsCatalogSearch(atPath: path)
-    }
-
     private static func scanRootTreeUsingCache(
         path: String,
         rootName: String,
@@ -192,9 +186,7 @@ final class ScanEngine: DiskScanning {
     ) async -> FileTree {
         let startEventID = FSEventsChangeJournal.currentEventID
 
-        let usesCatalog = usesCatalogScan(forRoot: path)
-
-        if !usesCatalog, let header = ScanCache.peek(forRoot: path) {
+        if let header = ScanCache.peek(forRoot: path) {
             metrics.setPhase(.checkingChanges)
             async let pendingChanges = FSEventsChangeJournal.changes(
                 since: header.eventID, under: path,
@@ -227,13 +219,13 @@ final class ScanEngine: DiskScanning {
         }
 
         let tree = await offload {
-            scanVolumeOrTraverse(
+            traverse(
                 path: path, rootName: rootName, allowedDevices: allowedDevices,
                 metrics: metrics, isCancelled: isCancelled,
                 registerPartial: registerPartial
             )
         }
-        if !usesCatalog && !isCancelled() {
+        if !isCancelled() {
             saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
         }
         return tree
@@ -263,7 +255,7 @@ final class ScanEngine: DiskScanning {
         return devices
     }
 
-    private static func scanVolumeOrTraverse(
+    private static func traverse(
         path: String,
         rootName: String,
         allowedDevices: Set<dev_t>? = nil,
@@ -271,22 +263,9 @@ final class ScanEngine: DiskScanning {
         isCancelled: @escaping @Sendable () -> Bool,
         registerPartial: @escaping @Sendable (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
-        let isVolumeRoot = VolumeAttributes.isVolumeRoot(path)
-        if usesCatalogScan(forRoot: path) {
-            do {
-                return try CatalogScanner.scanVolume(
-                    mountPoint: path, rootName: rootName,
-                    metrics: metrics, isCancelled: isCancelled,
-                    onPartialTreeAvailable: registerPartial
-                )
-            } catch CatalogSearchError.cancelled {
-                return FileTree(rootName: rootName)
-            } catch {
-            }
-        }
-        return TraversalScanner.scan(
+        TraversalScanner.scan(
             path: path, rootName: rootName, allowedDevices: allowedDevices,
-            workerCount: isVolumeRoot
+            workerCount: VolumeAttributes.isVolumeRoot(path)
                 ? TraversalScanner.volumeWorkerCount
                 : TraversalScanner.subtreeWorkerCount,
             metrics: metrics, isCancelled: isCancelled,
@@ -321,7 +300,7 @@ final class ScanEngine: DiskScanning {
             if isCancelled() { break }
             let mountPoint = systemVolumesDirectory + "/" + name
             let tree = await offload {
-                scanVolumeOrTraverse(
+                traverse(
                     path: mountPoint, rootName: mountPoint,
                     metrics: metrics, isCancelled: isCancelled,
                     registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
