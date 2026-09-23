@@ -7,7 +7,7 @@ enum ScanCache {
         let eventID: UInt64
     }
 
-    private static let formatVersion: UInt32 = 1
+    private static let formatVersion: UInt32 = 2
 
     static func load(forRoot rootPath: String) -> Entry? {
         guard let url = cacheFileURL(forRoot: rootPath),

@@ -65,11 +65,6 @@ enum TraversalScanner {
         }
     }
 
-    private struct HardLinkKey: Hashable {
-        let device: dev_t
-        let fileID: UInt64
-    }
-
     static func scan(
         path: String,
         rootName: String,
@@ -88,7 +83,7 @@ enum TraversalScanner {
 
         let tree = Mutex(FileTree(rootName: rootName))
         onPartialTreeAvailable { tree.withLock { $0 } }
-        let seenMultiLinkFiles = Mutex(Set<HardLinkKey>())
+        let seenMultiLinkFiles = Mutex(Set<FileTree.HardLinkKey>())
         let state = WorkState()
 
         let queue = DispatchQueue(
@@ -122,7 +117,7 @@ enum TraversalScanner {
     private static func runWorker(
         state: WorkState,
         tree: borrowing Mutex<FileTree>,
-        seenMultiLinkFiles: borrowing Mutex<Set<HardLinkKey>>,
+        seenMultiLinkFiles: borrowing Mutex<Set<FileTree.HardLinkKey>>,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
@@ -136,28 +131,25 @@ enum TraversalScanner {
             let outcome = reader.read(
                 directoryAt: item.path, allowedDevices: allowedDevices
             )
-            guard case .contents(var contents, let device) = outcome else {
+            guard case .contents(let contents, let device) = outcome else {
                 if case .unreadable = outcome { metrics.addUnreadable() }
                 continue
             }
 
             var directoryBytes: Int64 = 0
-            for index in contents.files.indices {
-                let file = contents.files[index]
+            var countedSizes: [Int64] = []
+            countedSizes.reserveCapacity(contents.files.count)
+            for file in contents.files {
+                var size = file.size
                 if file.linkCount > 1, file.fileID > 0 {
-                    let key = HardLinkKey(device: device, fileID: file.fileID)
+                    let key = FileTree.HardLinkKey(device: device, fileID: file.fileID)
                     let firstSighting = seenMultiLinkFiles.withLock {
                         $0.insert(key).inserted
                     }
-                    if !firstSighting {
-                        contents.files[index] = DirectoryFileEntry(
-                            name: file.name, size: 0,
-                            fileID: file.fileID, linkCount: file.linkCount
-                        )
-                        continue
-                    }
+                    if !firstSighting { size = 0 }
                 }
-                directoryBytes += file.size
+                countedSizes.append(size)
+                directoryBytes += size
             }
 
             let directoryPrefix = item.path.directoryPrefix
@@ -165,11 +157,18 @@ enum TraversalScanner {
             discovered.reserveCapacity(contents.subdirectoryNames.count)
 
             tree.withLock { tree in
-                for file in contents.files {
-                    tree.addNode(
+                for (index, file) in contents.files.enumerated() {
+                    let id = tree.addNode(
                         name: file.name, parent: item.directoryID,
-                        size: file.size, isDirectory: false
+                        size: countedSizes[index], isDirectory: false
                     )
+                    if file.linkCount > 1, file.fileID > 0 {
+                        tree.recordHardLink(
+                            id,
+                            key: FileTree.HardLinkKey(device: device, fileID: file.fileID),
+                            allocatedSize: file.size
+                        )
+                    }
                 }
                 for name in contents.subdirectoryNames {
                     let id = tree.addNode(

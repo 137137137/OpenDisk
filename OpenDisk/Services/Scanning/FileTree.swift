@@ -5,6 +5,25 @@ struct FileTree: Sendable {
     static let rootID: NodeID = 0
     static let noNode: NodeID = -1
 
+    struct HardLinkKey: Hashable, Sendable {
+        let device: UInt64
+        let fileID: UInt64
+
+        init(device: UInt64, fileID: UInt64) {
+            self.device = device
+            self.fileID = fileID
+        }
+
+        init(device: dev_t, fileID: UInt64) {
+            self.init(device: UInt64(bitPattern: Int64(device)), fileID: fileID)
+        }
+    }
+
+    private struct HardLink: Sendable {
+        let key: HardLinkKey
+        let allocatedSize: Int64
+    }
+
     private struct Node: Sendable {
         var size: Int64
         var parent: NodeID
@@ -15,6 +34,7 @@ struct FileTree: Sendable {
 
     private var nodes: [Node]
     private var names: [String]
+    private var hardLinks: [NodeID: HardLink] = [:]
 
     init(rootName: String) {
         nodes = [Node(
@@ -48,6 +68,31 @@ struct FileTree: Sendable {
         ))
         names.append(name)
         return id
+    }
+
+    mutating func recordHardLink(_ id: NodeID, key: HardLinkKey, allocatedSize: Int64) {
+        hardLinks[id] = HardLink(key: key, allocatedSize: allocatedSize)
+    }
+
+    func hardLinkKey(of id: NodeID) -> HardLinkKey? {
+        hardLinks[id]?.key
+    }
+
+    var hardLinkKeys: Set<HardLinkKey> {
+        Set(hardLinks.values.map(\.key))
+    }
+
+    mutating func normalizeHardLinks() {
+        guard !hardLinks.isEmpty else { return }
+        let reachable = reachabilityBitmap()
+        var counted = Set<HardLinkKey>()
+        for id in hardLinks.keys.sorted() {
+            guard reachable[Int(id)], let link = hardLinks[id] else {
+                hardLinks[id] = nil
+                continue
+            }
+            nodes[Int(id)].size = counted.insert(link.key).inserted ? link.allocatedSize : 0
+        }
     }
 
     mutating func link(_ id: NodeID, under parent: NodeID) {
@@ -304,11 +349,18 @@ struct FileTree: Sendable {
         for name in names {
             data.append(contentsOf: name.utf8)
         }
+
+        let linkedIDs = hardLinks.keys.sorted()
+        append(UInt32(linkedIDs.count))
+        appendArray(linkedIDs)
+        appendArray(linkedIDs.map { hardLinks[$0]!.key.device })
+        appendArray(linkedIDs.map { hardLinks[$0]!.key.fileID })
+        appendArray(linkedIDs.map { hardLinks[$0]!.allocatedSize })
         return data
     }
 
     init?(serializedData data: Data) {
-        let result: (nodes: [Node], names: [String])? = data.withUnsafeBytes { raw in
+        let result: (nodes: [Node], names: [String], hardLinks: [NodeID: HardLink])? = data.withUnsafeBytes { raw in
             var offset = 0
             func read<T>(_ type: T.Type) -> T? {
                 let size = MemoryLayout<T>.size
@@ -369,14 +421,31 @@ struct FileTree: Sendable {
                     isDirectory: directoryFlags[index] != 0
                 ))
             }
-            return (rebuiltNodes, rebuiltNames)
+            guard let linkCount32 = read(UInt32.self) else { return nil }
+            let linkCount = Int(linkCount32)
+            guard linkCount <= count,
+                  let linkedIDs = readArray(NodeID.self, count: linkCount),
+                  let devices = readArray(UInt64.self, count: linkCount),
+                  let fileIDs = readArray(UInt64.self, count: linkCount),
+                  let allocatedSizes = readArray(Int64.self, count: linkCount) else { return nil }
+            var rebuiltHardLinks = [NodeID: HardLink](minimumCapacity: linkCount)
+            for index in 0..<linkCount {
+                let id = linkedIDs[index]
+                guard id > Self.rootID, id < bound, !rebuiltNodes[Int(id)].isDirectory else { return nil }
+                rebuiltHardLinks[id] = HardLink(
+                    key: HardLinkKey(device: devices[index], fileID: fileIDs[index]),
+                    allocatedSize: allocatedSizes[index]
+                )
+            }
+            return (rebuiltNodes, rebuiltNames, rebuiltHardLinks)
         }
         guard let result else { return nil }
         nodes = result.nodes
         names = result.names
+        hardLinks = result.hardLinks
     }
 
-    private static let serializationMagic: UInt32 = 0x444D_5432
+    private static let serializationMagic: UInt32 = 0x444D_5433
 
     mutating func adoptSubtree(
         from other: FileTree, otherNode: FileTree.NodeID, under parent: NodeID
@@ -389,6 +458,9 @@ struct FileTree: Sendable {
                 size: other.isDirectory(source) ? 0 : other.size(of: source),
                 isDirectory: other.isDirectory(source)
             )
+            if let link = other.hardLinks[source] {
+                hardLinks[copy] = link
+            }
             var child = other.nodes[Int(source)].firstChild
             while child != Self.noNode {
                 stack.append((child, copy))
