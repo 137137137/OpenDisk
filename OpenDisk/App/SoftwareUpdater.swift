@@ -20,7 +20,6 @@ final class CheckForUpdatesViewModel: ObservableObject {
     }
 }
 
-// Pass the view model in; creating it here opens a new KVO subscription on every menu re-render.
 struct CheckForUpdatesView: View {
     @ObservedObject var viewModel: CheckForUpdatesViewModel
     let updater: SPUUpdater

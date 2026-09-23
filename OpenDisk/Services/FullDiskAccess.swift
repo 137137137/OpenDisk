@@ -2,15 +2,12 @@ import AppKit
 import Foundation
 import OSLog
 
-// Derived from github.com/inket/FullDiskAccess by Mahdi Bchatnia (MIT).
 enum FullDiskAccess {
-
     private static let log = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "OpenDisk",
         category: "FullDiskAccess"
     )
 
-    // Only probe FDA-gated paths; a world-readable one like /Library/Application Support succeeds without FDA.
     static var isGranted: Bool {
         let home = NSHomeDirectory()
         let probes = [

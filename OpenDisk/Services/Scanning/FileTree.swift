@@ -109,7 +109,6 @@ struct FileTree: Sendable {
     func isDirectory(_ id: NodeID) -> Bool { nodes[Int(id)].isDirectory }
     func parent(of id: NodeID) -> NodeID { nodes[Int(id)].parent }
 
-    // Bounded by node count: a corrupted cache can contain a sibling-chain cycle.
     func childCount(of id: NodeID) -> Int {
         var count = 0
         var remaining = nodes.count

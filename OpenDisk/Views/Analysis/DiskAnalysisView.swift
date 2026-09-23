@@ -127,7 +127,6 @@ struct DiskAnalysisView: View {
             }
         }
         .onAppear {
-            // Local monitor, not .onKeyPress: the plain ScrollView list has no focused view to receive keys.
             if quickLookKeyMonitor == nil {
                 quickLookKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                     handleQuickLookKey(event)
@@ -496,7 +495,7 @@ struct DiskAnalysisView: View {
             ContentUnavailableView {
                 Label("Full Disk Access Required", systemImage: "exclamationmark.shield")
             } description: {
-                Text("OpenDisk needs Full Disk Access to analyze your entire system. Turn it on in System Settings, then **quit and reopen OpenDisk** — macOS only applies the change to a freshly launched app.")
+                Text("OpenDisk needs Full Disk Access to analyze your entire system. Turn it on in System Settings, then **quit and reopen OpenDisk**. macOS only applies the change to a freshly launched app.")
             } actions: {
                 Button("Open System Settings") {
                     FullDiskAccess.openSystemSettings()
@@ -510,7 +509,7 @@ struct DiskAnalysisView: View {
             ContentUnavailableView {
                 Label("Couldn't Read This Location", systemImage: "lock.slash")
             } description: {
-                Text("macOS denied access to this location. Check its permissions — or remove and re-grant it — then rescan.")
+                Text("macOS denied access to this location. Check its permissions, or remove and re-grant it, then rescan.")
             } actions: {
                 Button("Rescan") {
                     Task { await analyzer.scanDirectory(rootPath) }

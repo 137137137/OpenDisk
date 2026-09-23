@@ -8,7 +8,6 @@ enum SearchScope: String, CaseIterable, Identifiable, Sendable {
 }
 
 struct SearchIndex: Sendable {
-
     static let resultLimit = 500
 
     let tree: FileTree
@@ -166,7 +165,6 @@ struct SearchIndex: Sendable {
         return Results(items: items, totalMatches: total)
     }
 
-    // memmem, not a Swift byte loop: the loop was ~1700x slower at -Onone (seconds per keystroke on 5M nodes).
     private func sweep(
         names: Range<Int>, primary: [UInt8], secondary: [[UInt8]], scope: SearchScope
     ) -> ChunkResult? {

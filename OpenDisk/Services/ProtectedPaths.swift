@@ -14,7 +14,6 @@ enum ProtectedPaths {
         if p == "/" { return "is the disk root and can't be deleted" }
         if systemRoots.contains(p) { return "is a macOS system folder and can't be deleted" }
 
-        // Real home: in the sandbox NSHomeDirectory() is the container, leaving ~/Library unprotected.
         let home = normalized(UserHome.path)
         if p == home { return "is your home folder and can't be deleted" }
         if p == home + "/Library" { return "is your Library and can't be deleted" }

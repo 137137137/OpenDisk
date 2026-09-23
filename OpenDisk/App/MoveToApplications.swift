@@ -18,7 +18,7 @@ enum MoveToApplications {
 
         let alert = NSAlert()
         alert.messageText = "Move OpenDisk to your Applications folder?"
-        alert.informativeText = "OpenDisk works best from the Applications folder — automatic updates require it. It will move itself and reopen."
+        alert.informativeText = "OpenDisk works best from the Applications folder, and automatic updates require it. It will move itself and reopen."
         alert.addButton(withTitle: "Move to Applications")
         alert.addButton(withTitle: "Not Now")
         alert.showsSuppressionButton = true
@@ -79,7 +79,6 @@ enum MoveToApplications {
         return nil
     }
 
-    // A programmatic move keeps the quarantine xattr, so the moved copy would be translocated again.
     private static func stripQuarantine(at url: URL) {
         let xattr = Process()
         xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")

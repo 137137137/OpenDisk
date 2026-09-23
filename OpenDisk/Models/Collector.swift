@@ -58,7 +58,6 @@ final class Collector {
         }
     }
 
-    // SwiftUI doesn't reliably report drag end, so the reason self-clears as a safety net.
     func flagDraggedProtected(_ reason: String?) {
         dragNoticeTask?.cancel()
         draggedProtectedReason = reason

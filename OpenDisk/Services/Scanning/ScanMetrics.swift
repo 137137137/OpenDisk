@@ -2,7 +2,6 @@ import Foundation
 import Synchronization
 
 final class ScanMetrics: Sendable {
-
     private struct Counters {
         var scannedBytes: Int64 = 0
         var itemsScanned: Int64 = 0

@@ -113,7 +113,6 @@ struct FolderRowView: View {
             await FileIcon.warm(item.path)
             resolvedIcon = FileIcon.cached(for: item.path)
         }
-        // simultaneousGesture, not onTapGesture: onTapGesture starves .draggable.
         .simultaneousGesture(TapGesture().onEnded { onTap() })
         .contextMenu { menuContent }
         .accessibilityElement(children: .combine)

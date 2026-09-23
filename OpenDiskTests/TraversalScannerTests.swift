@@ -4,7 +4,6 @@ import Testing
 
 @Suite("TraversalScanner integration", .serialized)
 struct TraversalScannerTests {
-
     private func withTemporaryTree(
         _ body: (URL) throws -> Void
     ) throws {

@@ -119,7 +119,6 @@ final class ScanEngine: DiskScanning {
         )
     }
 
-    // Custom queue, not DispatchQueue.global: global inherits submitter QoS (possibly 0), inverting priority vs .userInitiated workers.
     private static let offloadQueue = DispatchQueue(
         label: "OpenDisk.ScanEngine.offload",
         qos: .userInitiated,
@@ -264,7 +263,6 @@ final class ScanEngine: DiskScanning {
         return devices
     }
 
-    // APFS: traversal beats searchfs (~12.6s vs 27s+ on 4M entries, plus EBUSY full restarts); HFS+ catalog walk is ~10x faster.
     private static func scanVolumeOrTraverse(
         path: String,
         rootName: String,
@@ -319,7 +317,6 @@ final class ScanEngine: DiskScanning {
         )
         results.withLock { $0[rootTreeKey] = rootTree }
 
-        // Strictly sequential: concurrent worker pools on one APFS container hit the kernel-lock contention cliff.
         for name in siblingNames {
             if isCancelled() { break }
             let mountPoint = systemVolumesDirectory + "/" + name

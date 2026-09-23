@@ -33,7 +33,6 @@ enum IncrementalUpdater {
         return !isCancelled()
     }
 
-    // FSEvents on "/" reports /Volumes aliases and snapshot mounts sharing the boot device ID; never splice into another mount root.
     private static func resolveTarget(
         at path: String, rootPath: String, in tree: borrowing Mutex<FileTree>
     ) -> FileTree.NodeID? {

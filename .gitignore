@@ -1,22 +1,18 @@
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 Icon
 ._*
 
-# Xcode — per-user state (never commit)
 xcuserdata/
 *.xcuserstate
 *.xcscmblueprint
 *.xccheckout
 
-# Release artifacts + tooling (kept out of the repo)
 distribution/
 scripts/
 DISTRIBUTION.md
 
-# Xcode — build output
 build/
 DerivedData/
 *.moved-aside
@@ -25,15 +21,12 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 
-# Swift Package Manager
 .build/
 .swiftpm/
 
-# CocoaPods / Carthage (if ever added)
 Pods/
 Carthage/Build/
 
-# fastlane (if ever added)
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/test_output

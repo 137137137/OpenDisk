@@ -10,7 +10,6 @@ struct OpenDiskApp: App {
 
     #if canImport(Sparkle)
     private let updaterController: SPUStandardUpdaterController
-    // Created once, not per menu render, so the menu item's KVO subscription survives re-renders.
     private let checkForUpdatesViewModel: CheckForUpdatesViewModel
 
     init() {

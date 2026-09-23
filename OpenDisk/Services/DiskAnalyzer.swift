@@ -397,7 +397,6 @@ final class DiskAnalyzer {
             let name = url.lastPathComponent
             let item = FolderItem(
                 name: name,
-                // Must match FileTree.path(of:) so SwiftUI can diff skeleton rows against scanned rows.
                 path: prefix + name,
                 size: isDirectory ? 0 : Int64(values?.totalFileAllocatedSize ?? 0),
                 isDirectory: isDirectory,

@@ -4,7 +4,6 @@ import Testing
 
 @Suite("FileTree serialization")
 struct FileTreeSerializationTests {
-
     @Test("binary roundtrip preserves structure, sizes and names")
     func serializationRoundtrip() throws {
         var tree = FileTree(rootName: "/Volumes/T")

@@ -1,7 +1,6 @@
 import XCTest
 
 final class OpenDiskUITests: XCTestCase {
-
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

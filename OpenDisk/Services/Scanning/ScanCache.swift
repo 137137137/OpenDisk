@@ -2,7 +2,6 @@ import Darwin
 import Foundation
 
 enum ScanCache {
-
     struct Entry {
         let tree: FileTree
         let eventID: UInt64

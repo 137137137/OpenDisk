@@ -61,7 +61,7 @@ struct DevicePickerView: View {
                 ContentUnavailableView {
                     Label("Choose What to Scan", systemImage: "externaldrive.badge.plus")
                 } description: {
-                    Text("Grant OpenDisk access to your startup disk to analyze your whole Mac — or to any folder or volume. Your choice is remembered.")
+                    Text("Grant OpenDisk access to your startup disk to analyze your whole Mac, or to any folder or volume. Your choice is remembered.")
                 }
                 .padding(.vertical, 8)
             } else {
@@ -115,7 +115,6 @@ struct DevicePickerView: View {
             onScanFolder(device)
             return
         }
-        // NSOpenPanel cannot select "/" from its parent level, so the boot volume gets no suggested name.
         let isBootVolume = device.path == "/"
         let start = isBootVolume
             ? URL(fileURLWithPath: "/")
@@ -234,7 +233,7 @@ private struct VolumeShortcutRow: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.callout)
-                        .help("Access granted — scans in one click")
+                        .help("Access granted. Scans in one click.")
                 }
                 Image(systemName: "chevron.right")
                     .font(.caption)

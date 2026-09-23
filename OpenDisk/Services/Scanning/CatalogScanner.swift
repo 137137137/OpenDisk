@@ -2,7 +2,6 @@ import Darwin
 import Foundation
 import Synchronization
 
-// On APFS searchfs is ~2x slower than getattrlistbulk traversal and aborts with EBUSY on concurrent mutation; ScanEngine prefers traversal there.
 enum CatalogScanner {
     private static let metricsBatchSize = 8_192
 

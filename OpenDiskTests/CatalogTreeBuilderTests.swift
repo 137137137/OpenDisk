@@ -4,7 +4,6 @@ import Testing
 
 @Suite("CatalogTreeBuilder")
 struct CatalogTreeBuilderTests {
-
     private func entry(
         name: String, fileID: UInt64, parentID: UInt64,
         size: Int64 = 0, isDirectory: Bool = false, linkCount: UInt32 = 1

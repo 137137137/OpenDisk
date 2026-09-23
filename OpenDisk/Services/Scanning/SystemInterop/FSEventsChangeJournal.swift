@@ -3,7 +3,6 @@ import Foundation
 import Synchronization
 
 enum FSEventsChangeJournal {
-
     struct Changes {
         var changedDirectories: [String] = []
         var subtreesToRescan: [String] = []
@@ -17,7 +16,6 @@ enum FSEventsChangeJournal {
         var changes = Changes()
         var unreliable = false
         let rootPrefix: String
-        // Stored per-instance: referencing outer statics from the C callback crashes the Swift 6.3 frontend.
         let earlyBailChangeCount = maxUsefulChanges * 4
 
         private struct Waiter {
@@ -142,7 +140,6 @@ enum FSEventsChangeJournal {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
 
-        // Barrier: a callback already running when the outcome latched may still be mid-append.
         let (accumulated, unreliable) = queue.sync {
             (collector.changes, collector.unreliable)
         }

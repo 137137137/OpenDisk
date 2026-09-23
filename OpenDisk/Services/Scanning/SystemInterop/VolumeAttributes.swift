@@ -2,7 +2,6 @@ import Darwin
 import Foundation
 
 enum VolumeAttributes {
-
     private static let attrVolInfo: UInt32 = 0x8000_0000
     private static let attrVolCapabilities: UInt32 = 0x0002_0000
     private static let volCapIntSearchFS: UInt32 = 0x0000_0001

@@ -4,7 +4,6 @@ import Observation
 @MainActor
 @Observable
 final class DeviceMonitor {
-
     private(set) var devices: [DeviceInfo] = []
 
     init() {

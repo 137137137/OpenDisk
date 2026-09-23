@@ -3,8 +3,6 @@ import Foundation
 import Synchronization
 
 enum TraversalScanner {
-
-    // APFS dir reads serialize on kernel locks: measured peak ~4-5 workers for subtrees, ~8 for whole volumes, then a steep cliff.
     static var subtreeWorkerCount: Int {
         min(5, max(3, ProcessInfo.processInfo.activeProcessorCount / 4))
     }

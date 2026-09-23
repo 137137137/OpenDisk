@@ -5,7 +5,6 @@ import Testing
 
 @Suite("Chart model and layouts")
 struct ChartModelTests {
-
     private func makeTree() -> FileTree {
         var tree = FileTree(rootName: "/Volumes/T")
         let big = tree.addNode(name: "big", parent: FileTree.rootID, size: 0, isDirectory: true)

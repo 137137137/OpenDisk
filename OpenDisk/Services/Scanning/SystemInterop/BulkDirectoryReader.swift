@@ -21,7 +21,6 @@ enum DirectoryReadResult {
 }
 
 final class BulkDirectoryReader {
-
     private static let bufferSize = 256 * 1024
 
     private let buffer: UnsafeMutableRawPointer
@@ -51,7 +50,6 @@ final class BulkDirectoryReader {
             UInt32(ATTR_CMN_OBJTYPE) |
             UInt32(ATTR_CMN_FILEID)
         )
-        // st_dev often matches across APFS volume-group/snapshot mounts; MOUNTSTATUS is the reliable boundary check.
         request.dirattr = attrgroup_t(UInt32(ATTR_DIR_MOUNTSTATUS))
         request.fileattr = attrgroup_t(
             UInt32(ATTR_FILE_LINKCOUNT) | UInt32(ATTR_FILE_ALLOCSIZE)

@@ -54,7 +54,6 @@ struct CollectorBar: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
-            // Delayed close bridges the 8pt gap between the footer and list hover regions.
             .onChange(of: wantsList) { _, want in
                 collapseTask?.cancel()
                 if want {

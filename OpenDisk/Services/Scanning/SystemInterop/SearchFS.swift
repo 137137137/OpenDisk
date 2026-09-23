@@ -70,7 +70,6 @@ enum CatalogSearch {
         var uid: uid_t
     }
 
-    // No RETURNED_ATTRS bitmap in searchfs: name dataoffset 28 = dir, 40 = file record; fileid at offset 16 is only 4-byte aligned.
     private static let dirNameDataOffset: Int32 = 28
     private static let fileNameDataOffset: Int32 = 40
 
@@ -135,7 +134,6 @@ enum CatalogSearch {
 
         var options = srchfsStart | srchfsMatchFiles | srchfsMatchDirs
 
-        // rethrows closures erase typed errors, so the loop returns its failure and the typed throw happens outside.
         let failure = withUnsafeMutablePointer(to: &returnAttrs) { returnAttrsPtr in
             withUnsafeMutablePointer(to: &lowerBound) { lowerPtr in
                 withUnsafeMutablePointer(to: &upperBound) { upperPtr -> CatalogSearchError? in

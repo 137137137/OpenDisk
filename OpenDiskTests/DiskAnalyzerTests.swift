@@ -49,7 +49,6 @@ private final class GatedScanner: DiskScanning, Sendable {
 @Suite("DiskAnalyzer")
 @MainActor
 struct DiskAnalyzerTests {
-
     private static func makeResult(rootPath: String) -> ScanResult {
         var tree = FileTree(rootName: rootPath)
         let docs = tree.addNode(name: "Documents", parent: FileTree.rootID, size: 0, isDirectory: true)

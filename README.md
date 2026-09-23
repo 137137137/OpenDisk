@@ -73,7 +73,7 @@ You need Xcode 26 or later.
 ```sh
 git clone https://github.com/137137137/OpenDisk.git
 cd OpenDisk
-xcodebuild -project OpenDisk.xcodeproj -scheme OpenDisk build
+xcodebuild -project OpenDisk.xcodeproj -scheme OpenDisk CODE_SIGNING_ALLOWED=NO build
 ```
 
 Or open `OpenDisk.xcodeproj` in Xcode and press Run.

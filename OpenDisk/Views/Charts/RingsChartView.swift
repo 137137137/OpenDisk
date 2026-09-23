@@ -32,7 +32,6 @@ struct RingsChartView: View {
                     hoveredPath = nil
                 }
             }
-            // simultaneousGesture, not onTapGesture: onTapGesture starves .draggable.
             .simultaneousGesture(
                 SpatialTapGesture().onEnded { value in
                     guard let segment = layout?.segment(at: value.location) else { return }
@@ -171,7 +170,6 @@ private struct StaticChartLayer: View, Equatable {
 }
 
 private enum ChartDrawing {
-
     static func draw(
         _ segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,

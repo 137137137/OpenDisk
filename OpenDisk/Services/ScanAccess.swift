@@ -43,7 +43,7 @@ final class ScanAccess {
                 + "OpenDisk remembers your choice, so next time it's one click."
         } else {
             panel.message = "Choose what to scan. To analyze your whole Mac, pick your startup disk "
-                + "(e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume — "
+                + "(e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume. "
                 + "OpenDisk remembers your choice."
         }
         panel.directoryURL = startURL ?? URL(fileURLWithPath: "/")
@@ -94,7 +94,6 @@ final class ScanAccess {
     }
 
     func endAccess(toPath path: String) {
-        // Resolve against `accessing`, not the grant set, so begin/end pair on the same root.
         guard let root = Self.longestRoot(containing: path, in: accessing.keys),
               let url = accessing[root] else { return }
         url.stopAccessingSecurityScopedResource()

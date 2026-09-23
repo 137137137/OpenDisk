@@ -1,8 +1,6 @@
 import SwiftUI
 
-// Drawn in the Canvas, not a SwiftUI overlay: an overlay re-laid-out and shifted the chart on every hover move.
 enum ChartTipRenderer {
-
     private static let padding = CGSize(width: 8, height: 5)
     private static let pointerOffset = CGPoint(x: 14, y: -28)
 

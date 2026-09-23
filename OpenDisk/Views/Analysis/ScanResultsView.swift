@@ -10,7 +10,6 @@ struct ScanResultsView: View {
 
     var body: some View {
         let maxSize = items.map(\.size).max() ?? 0
-        // Not a List: on macOS List intercepts row drag gestures, breaking drags into the Collector.
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(items) { item in

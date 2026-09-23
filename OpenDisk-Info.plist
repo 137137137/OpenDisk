@@ -2,9 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Sparkle (website build). Merged into the generated Info.plist via
-	     INFOPLIST_FILE — the INFOPLIST_KEY_ build-setting mechanism only
-	     supports Xcode's own known keys, NOT custom ones like these. -->
 	<key>SUFeedURL</key>
 	<string>https://opendisk.app/appcast.xml</string>
 	<key>SUPublicEDKey</key>
