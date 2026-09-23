@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Root navigation: a disk-picker screen, pushing the analysis screen for
-/// the selected disk or a user-chosen folder. `NavigationStack` provides
-/// the system back button, title handling and toolbar treatment.
 struct ContentView: View {
     @State private var deviceMonitor = DeviceMonitor()
     @State private var scanAccess = ScanAccess()
@@ -22,8 +19,6 @@ struct ContentView: View {
                 )
             }
         }
-        // Reachable by both the picker (to grant/list locations) and the
-        // analysis screen (to hold security-scoped access during a scan).
         .environment(scanAccess)
     }
 }

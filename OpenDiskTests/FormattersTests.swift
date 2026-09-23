@@ -7,9 +7,7 @@ struct FormattersTests {
 
     @Test("file sizes pick sensible units")
     func fileSizes() {
-        // Exact strings shift between OS releases (e.g. "Zero KB" became
-        // "Zero bytes"); assert the stable parts — unit choice and the
-        // zero spelling.
+        // Exact strings vary across OS releases ("Zero KB" became "Zero bytes"); assert only stable parts.
         #expect(ByteFormatter.formatFileSize(0).hasPrefix("Zero"))
         #expect(ByteFormatter.formatFileSize(1_024) == "1 KB")
         #expect(ByteFormatter.formatFileSize(1_024 * 1_024) == "1 MB")

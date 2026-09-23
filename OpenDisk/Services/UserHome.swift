@@ -1,11 +1,6 @@
 import Foundation
 
-/// The user's real home directory (e.g. "/Users/alice").
-///
-/// Inside the App Sandbox (the Mac App Store build) `NSHomeDirectory()`
-/// points at the app's *container* — so anything that reasons about the
-/// user's actual files (protected paths, cache catalogs) must resolve the
-/// true home through the passwd database instead.
+// NSHomeDirectory() points at the sandbox container in the MAS build; resolve via passwd.
 enum UserHome {
     static let path: String = {
         if let passwd = getpwuid(getuid()), let dir = passwd.pointee.pw_dir {

@@ -1,8 +1,6 @@
 import Foundation
 import Observation
 
-/// Enumerates the devices offered in the sidebar: the boot volume group
-/// plus mounted external volumes.
 @MainActor
 @Observable
 final class DeviceMonitor {
@@ -13,14 +11,11 @@ final class DeviceMonitor {
         Task { await refresh() }
     }
 
-    /// Rebuilds the device list from the currently mounted volumes.
     func refresh() async {
         devices = await Task.detached(priority: .utility) {
             Self.currentDevices()
         }.value
     }
-
-    // MARK: - Enumeration (off the main actor)
 
     private nonisolated static func currentDevices() -> [DeviceInfo] {
         var devices: [DeviceInfo] = []
@@ -36,10 +31,6 @@ final class DeviceMonitor {
         }
 
         let bootDevice = VolumeAttributes.deviceID(ofPath: "/")
-        // `mountedVolumeURLs` with `.skipHiddenVolumes` already excludes the
-        // system-managed APFS volumes in the boot container (Recovery,
-        // Preboot, VM, Update), which report the whole container's capacity
-        // and are not separately scannable devices.
         let keys: [URLResourceKey] = [
             .volumeIsBrowsableKey, .volumeNameKey,
             .volumeTotalCapacityKey, .volumeAvailableCapacityKey,
@@ -51,8 +42,6 @@ final class DeviceMonitor {
         for url in volumeURLs {
             let path = url.path
             let values = try? url.resourceValues(forKeys: Set(keys))
-            // Belt-and-suspenders: only user-browsable volumes, never the
-            // boot volume (matched by device ID rather than by name).
             guard values?.volumeIsBrowsable == true,
                   VolumeAttributes.deviceID(ofPath: path) != bootDevice,
                   FileManager.default.isReadableFile(atPath: path),
@@ -71,9 +60,6 @@ final class DeviceMonitor {
         return devices
     }
 
-    /// Live capacity of the volume containing `path`, or nil when the
-    /// system cannot report it. Cheap (one `statfs`), safe off the main
-    /// actor.
     nonisolated static func volumeCapacity(ofPath path: String) -> VolumeCapacity? {
         let url = URL(fileURLWithPath: path)
         if let values = try? url.resourceValues(forKeys: [
@@ -85,7 +71,6 @@ final class DeviceMonitor {
             )
         }
 
-        // Fallback for volumes where resource values fail.
         if let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path),
            let total = attributes[.systemSize] as? Int64,
            let free = attributes[.systemFreeSize] as? Int64 {

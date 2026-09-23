@@ -84,7 +84,6 @@ struct SettingsView: View {
         .onAppear(perform: checkFullDiskAccessStatus)
     }
 
-    /// The probe does filesystem work; run it off the main thread.
     private func checkFullDiskAccessStatus() {
         isCheckingAccess = true
         Task {

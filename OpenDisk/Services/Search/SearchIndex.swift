@@ -1,6 +1,5 @@
 import Foundation
 
-/// Which kinds of entries a search matches.
 enum SearchScope: String, CaseIterable, Identifiable, Sendable {
     case all = "All"
     case folders = "Folders"
@@ -8,70 +7,30 @@ enum SearchScope: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-/// Immutable name-search index over one `FileTree` snapshot.
-///
-/// Every node's name is case-folded and canonically composed (so an NFC
-/// query like "café" matches APFS's decomposed on-disk form), then packed
-/// into one contiguous NUL-separated UTF-8 blob with an offsets array.
-///
-/// A query is answered by sweeping the whole blob with `memmem` — the
-/// byte scanning happens inside libc, so throughput is identical in Debug
-/// and Release builds (a per-name Swift loop was ~1700x slower at -Onone,
-/// seconds per keystroke on a 5M-node tree). Names cannot contain NUL, so
-/// a match can never straddle two names, and Swift code runs only per
-/// *hit*, not per byte. Chunks of the name range sweep in parallel.
-///
-/// Value semantics: `Sendable`, safe to hand to any task. The tree it
-/// wraps is retained so results can materialize paths and sizes.
 struct SearchIndex: Sendable {
 
-    /// Matches are unbounded (a short query can hit millions of names);
-    /// only the largest `resultLimit` are materialized for display.
     static let resultLimit = 500
 
     let tree: FileTree
-    /// Folded names back to back, each terminated by a 0x00 separator.
     private let blob: [UInt8]
-    /// `nodeCount + 1` entries; name `i` occupies
-    /// `blob[offsets[i] ..< offsets[i + 1] - 1]` (the -1 skips its NUL).
     private let offsets: [Int]
-    /// Nodes reachable from the root; garbage left by incremental
-    /// unlinking never appears in results.
     private let reachable: [Bool]
-    /// Flat per-node copies of size and kind. The sweep reads these
-    /// through raw pointers instead of calling tree accessors per hit —
-    /// a method call per hit is ARC-bound and ruinously slow in Debug
-    /// builds when a one-letter query hits millions of names.
     private let sizes: [Int64]
     private let directoryFlags: [Bool]
 
-    /// Carries an unsafe buffer pointer into a `@Sendable` closure. The
-    /// disjoint-write pattern (one slot per `concurrentPerform` iteration)
-    /// makes this race-free; the wrapper just states that to the compiler.
     private struct UncheckedSendableBuffer<Element>: @unchecked Sendable {
         let base: UnsafeMutableBufferPointer<Element>
     }
 
-    // MARK: - Construction
-
-    /// Builds the index. Runs the name folding in parallel chunks with a
-    /// byte-level ASCII fast path (Foundation folding only for the rare
-    /// non-ASCII name) — a few hundred ms for a multi-million-node tree,
-    /// in Debug builds too. Still: call off the main actor.
     init(tree: FileTree) {
         let count = tree.nodeCount
         let chunkSize = 131_072
         let chunkCount = max(1, (count + chunkSize - 1) / chunkSize)
 
-        // Each chunk folds its share of names into a private buffer and
-        // records per-name lengths (name bytes + NUL); the buffers are
-        // then stitched with bulk copies.
         var chunkBlobs = [[UInt8]](repeating: [], count: chunkCount)
         var chunkLengths = [[Int32]](repeating: [], count: chunkCount)
         chunkBlobs.withUnsafeMutableBufferPointer { blobsOut in
             chunkLengths.withUnsafeMutableBufferPointer { lengthsOut in
-                // Safe to share across the @Sendable closure: every
-                // iteration writes only its own `chunk` slot.
                 let blobs = UncheckedSendableBuffer<[UInt8]>(base: blobsOut)
                 let allLengths = UncheckedSendableBuffer<[Int32]>(base: lengthsOut)
                 DispatchQueue.concurrentPerform(iterations: chunkCount) { chunk in
@@ -119,16 +78,10 @@ struct SearchIndex: Sendable {
         (self.sizes, self.directoryFlags) = tree.sizeAndKindArrays()
     }
 
-    /// The one normalization applied to indexed names and queries alike:
-    /// case folding plus canonical composition, so byte-level matching is
-    /// correct for mixed-case and decomposed-Unicode names.
     private static func fold(_ s: String) -> String {
         s.lowercased().precomposedStringWithCanonicalMapping
     }
 
-    /// Appends `fold(name)`'s UTF-8 to `out`. Pure-ASCII names (the vast
-    /// majority) are lowercased byte-by-byte with no Foundation round
-    /// trip; anything else takes the full folding path.
     private static func appendFolded(_ name: String, to out: inout [UInt8]) {
         var name = name
         let handled = name.withUTF8 { bytes -> Bool in
@@ -151,12 +104,8 @@ struct SearchIndex: Sendable {
         }
     }
 
-    // MARK: - Searching
-
     struct Results: Sendable {
-        /// The largest `resultLimit` matches, size-descending.
         let items: [FolderItem]
-        /// Total match count before the display cap.
         let totalMatches: Int
 
         static let empty = Results(items: [], totalMatches: 0)
@@ -167,17 +116,11 @@ struct SearchIndex: Sendable {
         let matched: Int
     }
 
-    /// Finds every reachable node whose name contains all whitespace-
-    /// separated tokens of `query` (case- and composition-insensitive),
-    /// returning the largest matches first. Cancelling the surrounding
-    /// task aborts the sweep within milliseconds.
     func search(query: String, scope: SearchScope) async -> Results {
         var tokens = Self.fold(query)
             .split(whereSeparator: \.isWhitespace)
             .map { Array($0.utf8) }
         guard !tokens.isEmpty, tree.nodeCount > 1 else { return .empty }
-        // The longest token drives the C sweep (fewest hits); the rest
-        // are verified per hit within the one matched name.
         tokens.sort { $0.count > $1.count }
         let primary = tokens[0]
         let secondary = Array(tokens.dropFirst())
@@ -206,8 +149,6 @@ struct SearchIndex: Sendable {
         }
         if Task.isCancelled { return .empty }
 
-        // Size-descending, name ascending on ties — the app's one display
-        // order, so search reads like the rest of the UI.
         let ranked = heap.entries.sorted {
             $0.size == $1.size
                 ? tree.name(of: $0.id) < tree.name(of: $1.id)
@@ -225,11 +166,7 @@ struct SearchIndex: Sendable {
         return Results(items: items, totalMatches: total)
     }
 
-    /// Sweeps one contiguous range of names with `memmem`. Byte scanning
-    /// stays inside libc; Swift work is proportional to the number of
-    /// hits. Returns nil when cancelled mid-sweep (partial data useless).
-    /// The root (node 0) never matches — its "name" is the scan root's
-    /// path, not a real entry.
+    // memmem, not a Swift byte loop: the loop was ~1700x slower at -Onone (seconds per keystroke on 5M nodes).
     private func sweep(
         names: Range<Int>, primary: [UInt8], secondary: [[UInt8]], scope: SearchScope
     ) -> ChunkResult? {
@@ -250,10 +187,6 @@ struct SearchIndex: Sendable {
                         var cursor = offset[names.lowerBound]
                         let end = offset[names.upperBound]
                         var hits = 0
-                        // Inline heap-admission threshold: once the heap
-                        // is full, the common case (a match too small to
-                        // display) is rejected with one integer compare
-                        // instead of a method call.
                         var heapFull = false
                         var heapMin = Int64.min
 
@@ -262,10 +195,7 @@ struct SearchIndex: Sendable {
                                 base + cursor, end - cursor, needle, needleLength
                             ) else { break }
                             let position = UnsafeRawPointer(found) - UnsafeRawPointer(base)
-                            // Hits arrive in order; roll the name index
-                            // forward to the one containing this hit.
                             while offset[nameIndex + 1] <= position { nameIndex += 1 }
-                            // One hit per name: resume after this name.
                             cursor = offset[nameIndex + 1]
 
                             hits += 1
@@ -317,9 +247,6 @@ struct SearchIndex: Sendable {
     }
 }
 
-/// Fixed-capacity min-heap keeping the K largest (size, node) pairs seen.
-/// Comparisons touch only `Int64` sizes — no name materialization — so
-/// feeding it millions of matches stays cheap.
 private struct MinSizeHeap {
     struct Entry {
         let size: Int64

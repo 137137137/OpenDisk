@@ -1,25 +1,14 @@
 import SwiftUI
 
-/// Search results list, shown in place of the directory list while a
-/// query is active. Rows are the same draggable/collectible rows as the
-/// directory listing, with the containing folder as a second line so hits
-/// from anywhere in the tree stay identifiable.
 struct SearchResultsView: View {
     let items: [FolderItem]
-    /// Bumped by the analyzer whenever the results are replaced — keys the
-    /// icon prewarm without comparing every path string per render.
     let resultsVersion: Int
-    /// Total matches before the display cap (`SearchIndex.resultLimit`).
     let totalMatches: Int
     let isRunning: Bool
-    /// The scan was still in flight when these results were computed.
     let resultsArePartial: Bool
     let query: String
-    /// Paths of the multi-selected rows, and the same selection as
-    /// collector payloads for group drags.
     var selectedPaths: Set<String> = []
     var selectionFiles: [CollectedFile] = []
-    /// Passed through to each row's "Quick Look" context-menu item.
     var onQuickLook: ((FolderItem) -> Void)? = nil
     let onOpen: (FolderItem) -> Void
 
@@ -53,9 +42,6 @@ struct SearchResultsView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                // Icons resolve in display order before their rows scroll
-                // into view; scrolling then blits cached bitmaps instead
-                // of racing per-row loads.
                 .task(id: resultsVersion) {
                     await FileIcon.prewarm(items.map(\.path))
                 }
@@ -92,7 +78,6 @@ struct SearchResultsView: View {
             : "\(totalMatches.formatted()) matches · largest first"
     }
 
-    /// Containing folder, home-abbreviated ("~/Library/Caches").
     private func location(of item: FolderItem) -> String {
         ((item.path as NSString).deletingLastPathComponent as NSString)
             .abbreviatingWithTildeInPath

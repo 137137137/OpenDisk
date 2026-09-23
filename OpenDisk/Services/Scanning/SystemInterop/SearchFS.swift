@@ -1,16 +1,6 @@
 import Darwin
 import Foundation
 
-/// Raw interface to the `searchfs(2)` syscall: a kernel-side walk of a
-/// volume's catalog B-tree that streams every file and directory on the
-/// volume without opening a single directory. On HFS+ this is by far the
-/// fastest way to enumerate a whole volume (the technique behind classic
-/// DaisyDisk-class scanners); on APFS it measures ~2x slower than parallel getattrlistbulk traversal.
-///
-/// The syscall has no prototype in the public headers; the symbol lives in
-/// libsystem_kernel and is declared here directly. Struct layouts mirror
-/// `bsd/sys/attr.h` exactly.
-///
 @_silgen_name("searchfs")
 private func darwin_searchfs(
     _ path: UnsafePointer<CChar>,
@@ -21,39 +11,24 @@ private func darwin_searchfs(
     _ state: UnsafeMutableRawPointer
 ) -> Int32
 
-/// One catalog entry streamed out of a `searchfs` volume scan.
 struct CatalogEntry {
     let name: String
     let fileID: UInt64
     let parentID: UInt64
-    /// Physical (allocated) size in bytes, all forks. Zero for directories.
     let size: Int64
     let isDirectory: Bool
     let linkCount: UInt32
 }
 
-/// Errors that abort a catalog scan; callers fall back to traversal.
 enum CatalogSearchError: Error {
-    /// The volume's filesystem does not implement `searchfs` (ENOTSUP).
     case unsupported
-    /// The catalog changed underneath the search too many times (EBUSY).
     case volumeKeptChanging
-    /// A result record did not have the expected shape for our attribute set.
     case unexpectedRecordLayout
-    /// Any other errno from the syscall.
     case systemError(Int32)
-    /// The scan was cancelled by the caller.
     case cancelled
 }
 
-/// Streams every entry of one mounted volume via `searchfs(2)`.
-///
-/// Stateless namespace: each call allocates and frees its own buffers, so
-/// concurrent scans of different volumes are safe.
 enum CatalogSearch {
-
-    // MARK: Constants (bsd/sys/attr.h)
-
     private static let srchfsStart: UInt32 = 0x0000_0001
     private static let srchfsMatchDirs: UInt32 = 0x0000_0004
     private static let srchfsMatchFiles: UInt32 = 0x0000_0008
@@ -66,25 +41,17 @@ enum CatalogSearch {
     private static let attrFileLinkCount: UInt32 = 0x0000_0001
     private static let attrFileAllocSize: UInt32 = 0x0000_0004
 
-    /// `fsobj_type_t` values from `sys/vnode.h`.
     private static let vdir: UInt32 = 2
 
-    /// UTF-8 script code used by Apple's own sample code (value is ignored
-    /// by current kernels but documented in the man page example).
     private static let scriptUTF8: UInt32 = 0x0800_0103
 
-    /// Kernel time slices are clamped to 100 ms anyway (HFS
-    /// `kMaxMicroSecsInKernel`); this just tunes per-call batch latency.
     private static let timeLimitMicroseconds: Int32 = 100_000
 
     private static let resultBufferSize = 2 * 1024 * 1024
     private static let maxMatchesPerCall: UInt = 16_384
     private static let maxCatalogRestarts = 3
-    /// `struct searchstate` is 556 bytes packed; over-allocate for safety.
     private static let searchStateSize = 1_024
 
-    /// Mirrors `struct fssearchblock`. Every field is naturally aligned, so
-    /// the Swift layout matches the C layout (104 bytes total).
     private struct FSSearchBlock {
         var returnattrs: UnsafeMutablePointer<attrlist>?
         var returnbuffer: UnsafeMutableRawPointer?
@@ -98,44 +65,15 @@ enum CatalogSearch {
         var searchattrs: attrlist
     }
 
-    /// Packed search parameter for a scalar `ATTR_CMN_OWNERID` range match:
-    /// a leading buffer length followed by the uid value.
     private struct OwnerIDParam {
         var length: UInt32
         var uid: uid_t
     }
 
-    // MARK: Result record layout
-
-    // With returnattrs = NAME | OBJTYPE | FILEID | PARENTID (common) and
-    // LINKCOUNT | ALLOCSIZE (file), each record is packed as:
-    //
-    //   offset 0   u32            length (includes itself)
-    //   offset 4   attrreference  name (dataoffset relative to offset 4)
-    //   offset 12  u32            objtype
-    //   offset 16  u64            fileid      (only 4-byte aligned!)
-    //   offset 24  u64            parentid
-    //   -- files only (absent for directories):
-    //   offset 32  u32            linkcount
-    //   offset 36  s64            allocsize
-    //   -- then the UTF-8 name bytes at offset 4 + name.dataoffset
-    //
-    // searchfs has no ATTR_CMN_RETURNED_ATTRS bitmap, so presence of the
-    // file group is derived from the name's dataoffset: 28 for directory
-    // records, 40 for file records. Anything else means the filesystem
-    // packed the record differently than we expect and we bail out.
+    // No RETURNED_ATTRS bitmap in searchfs: name dataoffset 28 = dir, 40 = file record; fileid at offset 16 is only 4-byte aligned.
     private static let dirNameDataOffset: Int32 = 28
     private static let fileNameDataOffset: Int32 = 40
 
-    /// Enumerates the entire volume containing `mountPoint`.
-    ///
-    /// `body` is invoked once per catalog entry, in catalog order (not
-    /// hierarchical order). Callers should ignore the volume's root
-    /// directory (file ID 2) if the filesystem chooses to report it.
-    ///
-    /// On EBUSY (catalog mutated between continuation calls) the whole scan
-    /// restarts from scratch, `onRestart` is called so the caller can throw
-    /// away partial state, and a bounded number of restarts is attempted.
     static func enumerateVolume(
         at mountPoint: String,
         isCancelled: () -> Bool,
@@ -190,7 +128,6 @@ enum CatalogSearch {
         searchAttrs.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
         searchAttrs.commonattr = attrCmnOwnerID
 
-        // Match everything: owner uid in the inclusive range [0, UInt32.max].
         var lowerBound = OwnerIDParam(length: UInt32(MemoryLayout<OwnerIDParam>.size), uid: 0)
         var upperBound = OwnerIDParam(length: UInt32(MemoryLayout<OwnerIDParam>.size), uid: uid_t.max)
 
@@ -198,9 +135,7 @@ enum CatalogSearch {
 
         var options = srchfsStart | srchfsMatchFiles | srchfsMatchDirs
 
-        // The pointer-scoping closures are `rethrows`, which erases typed
-        // errors to `any Error`; the loop returns its failure instead so
-        // the typed throw happens outside the closures.
+        // rethrows closures erase typed errors, so the loop returns its failure and the typed throw happens outside.
         let failure = withUnsafeMutablePointer(to: &returnAttrs) { returnAttrsPtr in
             withUnsafeMutablePointer(to: &lowerBound) { lowerPtr in
                 withUnsafeMutablePointer(to: &upperBound) { upperPtr -> CatalogSearchError? in
@@ -283,7 +218,6 @@ enum CatalogSearch {
             defer { offset += recordLength }
 
             let nameDataOffset = record.loadUnaligned(fromByteOffset: 4, as: Int32.self)
-            // Name length includes the trailing NUL.
             let nameLength = Int(record.loadUnaligned(fromByteOffset: 8, as: UInt32.self)) - 1
 
             let hasFileAttrs: Bool
@@ -303,9 +237,6 @@ enum CatalogSearch {
             let parentID = record.loadUnaligned(fromByteOffset: 24, as: UInt64.self)
 
             let isDirectory = (objType == vdir)
-            // The file attribute group is only packed for non-directories,
-            // which `hasFileAttrs` already encodes; the objtype check guards
-            // against a filesystem that packs both groups unconditionally.
             var linkCount: UInt32 = 1
             var size: Int64 = 0
             if hasFileAttrs && !isDirectory {

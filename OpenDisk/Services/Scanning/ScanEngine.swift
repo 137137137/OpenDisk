@@ -2,10 +2,6 @@ import Darwin
 import Foundation
 import Synchronization
 
-/// Thread-safe cancellation signal shared between the async world and the
-/// blocking scan workers. An atomic, not a lock: workers poll it once per
-/// directory, and relaxed ordering suffices for a monotonic latch whose
-/// only effect is an early return.
 final class CancellationFlag: Sendable {
     private let state = Atomic(false)
 
@@ -13,15 +9,7 @@ final class CancellationFlag: Sendable {
     func cancel() { state.store(true, ordering: .relaxed) }
 }
 
-/// Assembles displayable snapshots of a scan in flight.
-///
-/// Scanner components register thread-safe partial-tree providers under
-/// stable keys as they start, and the scan plan installs a composer that
-/// combines those snapshots exactly the way the final result is composed —
-/// so a partial snapshot is always a smaller version of the eventual
-/// result, never a differently shaped one.
 private final class PartialResultAssembler: Sendable {
-
     private struct State {
         var providers: [String: PartialTreeProvider] = [:]
         var compose: (@Sendable ([String: FileTree]) -> FileTree)?
@@ -37,9 +25,6 @@ private final class PartialResultAssembler: Sendable {
         state.withLock { $0.compose = compose }
     }
 
-    /// Snapshots every registered component and composes them, or nil until
-    /// a composer and at least one provider are installed. Blocking (tree
-    /// copies plus an O(n) size roll-up): call from a background queue.
     func assemble() -> FileTree? {
         let (providers, compose) = state.withLock { ($0.providers, $0.compose) }
         guard let compose, !providers.isEmpty else { return nil }
@@ -47,48 +32,12 @@ private final class PartialResultAssembler: Sendable {
     }
 }
 
-/// The production scanner: picks the fastest strategy per volume and
-/// composes the results.
-///
-/// Strategy selection:
-/// - Scanning `/` composes several volumes: the Data volume and the sealed
-///   System volume are catalog-scanned in parallel and merged along their
-///   firmlink points, and every other volume mounted under
-///   `/System/Volumes` (Preboot, VM, Update, ...) is grafted in — matching
-///   what "used space on this Mac" actually means on a volume-group system.
-/// - Scanning any other volume root (external drives) catalog-scans that
-///   volume when it supports `searchfs`.
-/// - Subtree rescans and every fallback use the traversal scanner.
-///
-/// While the scan runs, the engine streams `.partial` snapshots — the
-/// same composition applied to whatever each scanner has discovered so
-/// far — so the UI can show live, monotonically growing results.
-///
-/// All blocking work runs on dedicated dispatch queues, never on the Swift
-/// concurrency cooperative pool.
 final class ScanEngine: DiskScanning {
-
-    /// Cadence of lightweight `.progress` events.
     private static let progressInterval: Duration = .milliseconds(33)
-    /// Cadence of `.partial` tree snapshots while the tree is small. Each
-    /// snapshot costs an O(n) copy and roll-up of everything scanned so
-    /// far (and the next tree mutation pays a copy-on-write duplication),
-    /// so as the tree grows the cadence backs off — see the multiplier
-    /// below — keeping snapshot overhead a bounded fraction of scan time.
     private static let minPartialSnapshotInterval: Duration = .milliseconds(500)
-    /// High ceiling by design: on multi-million-node scans one snapshot
-    /// can cost seconds, and a low cap would defeat the overhead bound —
-    /// snapshots simply become sparse late in a huge scan, when the
-    /// top-level picture has already stabilized anyway.
     private static let maxPartialSnapshotInterval: Duration = .seconds(15)
-    /// The next snapshot waits at least this many times the cost of the
-    /// last one, bounding worst-case overhead to roughly 1/multiplier of
-    /// the scan (assembly time is the best available proxy for the
-    /// copy-on-write stall the snapshot also inflicts on scan workers).
     private static let snapshotBackoffMultiplier = 8
 
-    /// Process-wide tuning, applied once: favor scan I/O and raise the
-    /// file-descriptor ceiling for the worker pool.
     private static let processTuning: Void = {
         setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_PROCESS, IOPOL_IMPORTANT)
         var limits = rlimit()
@@ -116,17 +65,12 @@ final class ScanEngine: DiskScanning {
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.progressInterval)
                 let snapshot = metrics.snapshot()
-                // Quiet stretches (e.g. one worker stuck in a huge
-                // directory) emit nothing new; skip the no-op event.
                 guard snapshot != lastEmitted else { continue }
                 lastEmitted = snapshot
                 onEvent(.progress(snapshot))
             }
         }
 
-        // Snapshot assembly is real CPU work; run it on its own queue so it
-        // never blocks the cooperative pool, and serially so a slow
-        // assembly skips ticks instead of piling up.
         let snapshotQueue = DispatchQueue(
             label: "OpenDisk.ScanEngine.partials", qos: .userInitiated
         )
@@ -175,25 +119,13 @@ final class ScanEngine: DiskScanning {
         )
     }
 
-    // MARK: - Blocking scan pipeline
-
-    /// Dedicated queue for the blocking scan steps. A custom concurrent
-    /// queue, NOT `DispatchQueue.global(qos:)`: a global queue runs each
-    /// block at the QoS propagated from its submitter, so a submission
-    /// from an unspecified-QoS context executes at base priority 0 — and
-    /// that thread goes on to seed the traversal pool's semaphore and wait
-    /// on its DispatchGroup, a priority inversion against the
-    /// `.userInitiated` workers (flagged by the Thread Performance
-    /// Checker). A custom queue's own QoS is a floor no block runs below.
+    // Custom queue, not DispatchQueue.global: global inherits submitter QoS (possibly 0), inverting priority vs .userInitiated workers.
     private static let offloadQueue = DispatchQueue(
         label: "OpenDisk.ScanEngine.offload",
         qos: .userInitiated,
         attributes: .concurrent
     )
 
-    /// Runs one heavy, synchronous/blocking scan step on a dedicated
-    /// background thread — never the Swift concurrency cooperative pool
-    /// (mirrors the dispatch the old top-level scan entry used).
     private static func offload<T: Sendable>(
         _ work: @escaping @Sendable () -> T
     ) async -> T {
@@ -232,7 +164,6 @@ final class ScanEngine: DiskScanning {
             metrics: metrics, isCancelled: isCancelled,
             registerPartial: { assembler.register(subtreeKey, provider: $0) }
         )
-        // Rolling up a multi-million-node tree is heavy: keep it off the pool.
         return await offload {
             var tree = scanned
             tree.rollUpDirectorySizes()
@@ -240,32 +171,18 @@ final class ScanEngine: DiskScanning {
         }
     }
 
-    /// Some entries shown at "/" exist only in the Data volume's
-    /// namespace; translate so rescanning them works, while presenting
-    /// results under the requested path.
     private static func resolveDataVolumeAlias(_ path: String) -> String {
         guard !FileManager.default.fileExists(atPath: path) else { return path }
         let dataPath = dataVolumeMountPoint + path
         return FileManager.default.fileExists(atPath: dataPath) ? dataPath : path
     }
 
-    /// Whether the volume rooted at `path` scans through the catalog
-    /// scanner. One predicate feeds both strategy selection and cache
-    /// eligibility (the cache only backs traversal scans).
     private static func usesCatalogScan(forRoot path: String) -> Bool {
         VolumeAttributes.isVolumeRoot(path)
             && VolumeAttributes.filesystemType(ofVolumeContaining: path) == "hfs"
             && VolumeAttributes.supportsCatalogSearch(atPath: path)
     }
 
-    // MARK: - Scan cache
-
-    /// Scans `path` through the on-disk cache when possible: a cached
-    /// tree plus an FSEvents journal replay turns a repeat scan into a
-    /// splice of only the directories that changed since — the cached
-    /// tree also appears in full as the very first partial snapshot.
-    /// Falls back to (and refreshes the cache from) a full scan whenever
-    /// the cache or journal cannot answer reliably.
     private static func scanRootTreeUsingCache(
         path: String,
         rootName: String,
@@ -274,40 +191,23 @@ final class ScanEngine: DiskScanning {
         isCancelled: @escaping @Sendable () -> Bool,
         registerPartial: @escaping @Sendable (@escaping PartialTreeProvider) -> Void
     ) async -> FileTree {
-        // Captured before any reading so changes made during this scan
-        // replay into the next one.
         let startEventID = FSEventsChangeJournal.currentEventID
 
-        // HFS+ volumes go through the catalog scanner; no cache there.
         let usesCatalog = usesCatalogScan(forRoot: path)
 
-        // The replay needs only the header's event ID, so it starts
-        // immediately — concurrent with the (much heavier) tree decode —
-        // instead of after it. Between them they are the pre-scan stretch
-        // where nothing is being counted; the phase marker lets the status
-        // bar say so instead of showing a dead "Scanning…".
         if !usesCatalog, let header = ScanCache.peek(forRoot: path) {
             metrics.setPhase(.checkingChanges)
-            // Pure async suspension — no thread is blocked while the
-            // journal streams HistoryDone, bails, or times out.
             async let pendingChanges = FSEventsChangeJournal.changes(
                 since: header.eventID, under: path,
                 timeout: replayTimeBudget(cacheFileBytes: header.fileBytes)
             )
-            // Deserializing a saved tree is heavy: off the cooperative pool.
             let cached = await offload { ScanCache.load(forRoot: path) }
             if let cached, cached.tree.name(of: FileTree.rootID) == rootName {
-                // Show the previous scan instantly as the first partial
-                // snapshot, *before* the journal replay finishes — so a
-                // re-scan isn't a blank 0% while the journal streams. The
-                // full-scan fallback below re-registers under the same key if
-                // the replay turns out unreliable, replacing this.
                 let live = Mutex(cached.tree)
                 registerPartial { live.withLock { $0 } }
                 let changes = await pendingChanges
                 metrics.setPhase(.scanning)
                 if let changes {
-                    // Splicing up to 40k changed directories is heavy work.
                     let applied = await offload {
                         IncrementalUpdater.apply(
                             changes, to: live, rootPath: path,
@@ -322,14 +222,11 @@ final class ScanEngine: DiskScanning {
                     }
                 }
             } else {
-                // Header parsed but the tree didn't (truncated file, format
-                // drift): drain the replay and full-scan.
                 _ = await pendingChanges
                 metrics.setPhase(.scanning)
             }
         }
 
-        // Full scan/traversal is the multi-second bulk: off the cooperative pool.
         let tree = await offload {
             scanVolumeOrTraverse(
                 path: path, rootName: rootName, allowedDevices: allowedDevices,
@@ -343,22 +240,11 @@ final class ScanEngine: DiskScanning {
         return tree
     }
 
-    /// How long the journal replay may run before the engine gives up and
-    /// full-scans: a small fraction of what the full scan itself would
-    /// cost, so the incremental path can never lose much even when the
-    /// journal turns out useless. The full-scan cost is estimated from the
-    /// cache file's size (~50 serialized bytes per node, traversal reads
-    /// ~200k nodes/s ⇒ ~10 MB of cache per scan-second), taking a fifth of
-    /// that. Small scans wait at most a second; even a whole-disk,
-    /// multi-million-node scan waits at most a few — nothing like the
-    /// fixed 10s this replaced.
     private static func replayTimeBudget(cacheFileBytes: Int) -> TimeInterval {
         let estimatedFullScanSeconds = Double(cacheFileBytes) / 10_000_000
         return min(4, max(1, estimatedFullScanSeconds / 5))
     }
 
-    /// Serializing a multi-million-node tree takes hundreds of
-    /// milliseconds; keep it off the scan's critical path.
     private static func saveCacheInBackground(
         tree: FileTree, rootPath: String, eventID: UInt64
     ) {
@@ -367,10 +253,6 @@ final class ScanEngine: DiskScanning {
         }
     }
 
-    /// Devices a subtree scan may descend into: the root's own device,
-    /// plus the Data volume when the root sits on the System volume — a
-    /// System-side subtree (like /usr with its firmlinked /usr/local) must
-    /// compose across the volume group exactly as the live namespace does.
     private static func subtreeAllowedDevices(forScanRoot path: String) -> Set<dev_t> {
         guard let rootDevice = VolumeAttributes.deviceID(ofPath: path) else { return [] }
         var devices: Set<dev_t> = [rootDevice]
@@ -382,26 +264,7 @@ final class ScanEngine: DiskScanning {
         return devices
     }
 
-    /// Scans one volume or subtree with the fastest measured strategy.
-    ///
-    /// Strategy, benchmarked on this hardware (4M-entry APFS Data volume):
-    /// - APFS: parallel `getattrlistbulk` traversal, ~12.6s. `searchfs`
-    ///   measured 27s+ on the same volume (the kernel's APFS catalog walk
-    ///   streams only ~150k entries/s regardless of batch size) and worse,
-    ///   any concurrent volume mutation aborts it with EBUSY and forces a
-    ///   full re-walk — up to 4x on a busy system. The catalog's only
-    ///   advantage is seeing entries inside directories the process cannot
-    ///   open (~0.3% of items here).
-    /// - HFS+ (and anything else advertising `searchfs`): catalog scan —
-    ///   on spinning-disk-era HFS+ the catalog walk is roughly an order of
-    ///   magnitude faster than traversal, and such volumes are usually
-    ///   external/read-mostly, where EBUSY restarts are rare.
-    /// - No `searchfs` support (network mounts, exFAT) or subtree rescans:
-    ///   traversal.
-    ///
-    /// `registerPartial` receives the running scanner's partial-tree
-    /// provider; on a catalog-to-traversal fallback it is called again and
-    /// the later registration must win.
+    // APFS: traversal beats searchfs (~12.6s vs 27s+ on 4M entries, plus EBUSY full restarts); HFS+ catalog walk is ~10x faster.
     private static func scanVolumeOrTraverse(
         path: String,
         rootName: String,
@@ -421,7 +284,6 @@ final class ScanEngine: DiskScanning {
             } catch CatalogSearchError.cancelled {
                 return FileTree(rootName: rootName)
             } catch {
-                // Fall through to traversal on any other catalog failure.
             }
         }
         return TraversalScanner.scan(
@@ -434,12 +296,9 @@ final class ScanEngine: DiskScanning {
         )
     }
 
-    // MARK: - Boot volume group
-
     private static let rootTreeKey = "root"
     private static func siblingTreeKey(_ name: String) -> String { "sibling:" + name }
 
-    /// Composes the boot volume group into one tree rooted at "/".
     private static func scanBootVolumeGroup(
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
@@ -452,20 +311,6 @@ final class ScanEngine: DiskScanning {
 
         let results = Mutex<[String: FileTree]>([:])
 
-        // One traversal of "/" covers the whole volume group: firmlinks
-        // compose the System and Data volumes into the live namespace
-        // exactly as the user sees it, and per-entry mount-status cutoffs
-        // keep every other volume out — including the booted volume's
-        // /Volumes alias and Time Machine local-snapshot mounts, which can
-        // share the boot volume's device ID (so a device allowlist alone
-        // would count the disk several times over, and scanning the Data
-        // volume separately and merging would double-count it the same
-        // way). The allowlist still matters on systems where firmlink
-        // targets carry the Data volume's distinct device ID.
-        // Known omission: housekeeping directories at the Data volume's
-        // own root (.Spotlight-V100, .fseventsd, ...) are not firmlinked
-        // into "/" and are skipped, matching what the live namespace
-        // shows.
         let rootTree = await scanRootTreeUsingCache(
             path: "/", rootName: "/",
             allowedDevices: subtreeAllowedDevices(forScanRoot: "/"),
@@ -474,17 +319,10 @@ final class ScanEngine: DiskScanning {
         )
         results.withLock { $0[rootTreeKey] = rootTree }
 
-        // Helper volumes of the group (Preboot, VM, Update, ...): real used
-        // space, shown where they live under /System/Volumes. They are
-        // small (well under a second combined) and run after the main
-        // volume so reader concurrency never exceeds one worker pool —
-        // concurrent pools on one APFS container blow past the kernel-lock
-        // contention cliff and slow every scan down.
+        // Strictly sequential: concurrent worker pools on one APFS container hit the kernel-lock contention cliff.
         for name in siblingNames {
             if isCancelled() { break }
             let mountPoint = systemVolumesDirectory + "/" + name
-            // Off the cooperative pool; the `await` still runs siblings
-            // strictly one after another (the APFS single-worker-pool rule).
             let tree = await offload {
                 scanVolumeOrTraverse(
                     path: mountPoint, rootName: mountPoint,
@@ -495,7 +333,6 @@ final class ScanEngine: DiskScanning {
             results.withLock { $0[siblingTreeKey(name)] = tree }
         }
 
-        // Final roll-up of the whole tree is heavy: off the cooperative pool.
         return await offload {
             composeBootVolumeGroup(
                 results.withLock { $0 }, siblingNames: siblingNames
@@ -503,11 +340,6 @@ final class ScanEngine: DiskScanning {
         }
     }
 
-    /// Merges per-volume trees into one rolled-up tree rooted at "/".
-    /// Used for both the final result and every partial snapshot, so live
-    /// results always have the same shape the finished scan will have.
-    /// Volumes without a tree yet (a snapshot taken before every scanner
-    /// registered) are simply absent from that snapshot.
     private static func composeBootVolumeGroup(
         _ trees: [String: FileTree], siblingNames: [String]
     ) -> FileTree {
@@ -524,16 +356,12 @@ final class ScanEngine: DiskScanning {
             }
         }
 
-        // External volumes are separate devices in the sidebar; hide the
-        // mount-point stubs from the "/" results.
         merged.removeChild(named: "Volumes", of: FileTree.rootID)
 
         merged.rollUpDirectorySizes()
         return merged
     }
 
-    /// Names of volumes mounted under /System/Volumes, minus Data (which is
-    /// merged into "/" instead of shown in place).
     private static func siblingVolumeNames() -> [String] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             atPath: systemVolumesDirectory

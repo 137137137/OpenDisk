@@ -1,16 +1,10 @@
 import Foundation
 
-/// A scannable device shown in the sidebar: the boot volume group or an
-/// external volume.
 struct DeviceInfo: Identifiable, Hashable, Sendable {
-    /// The scan path is unique per device and stable across refreshes, so
-    /// sidebar selection survives device-list rebuilds.
     var id: String { path }
 
     let name: String
-    /// SF Symbol name for the sidebar row.
     let icon: String
-    /// Path scanned when the device is selected.
     let path: String
     let totalBytes: Int64
     let availableBytes: Int64
@@ -26,8 +20,6 @@ struct DeviceInfo: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Capacity of the volume containing a path, as the system reports it
-/// (`available` already excludes space the system keeps in reserve).
 struct VolumeCapacity: Hashable, Sendable {
     let total: Int64
     let available: Int64

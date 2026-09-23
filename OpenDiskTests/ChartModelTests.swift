@@ -6,7 +6,6 @@ import Testing
 @Suite("Chart model and layouts")
 struct ChartModelTests {
 
-    /// root(1000) ├─ big(600: a 400, b 200) ├─ small(300) └─ file(100)
     private func makeTree() -> FileTree {
         var tree = FileTree(rootName: "/Volumes/T")
         let big = tree.addNode(name: "big", parent: FileTree.rootID, size: 0, isDirectory: true)
@@ -68,7 +67,6 @@ struct ChartModelTests {
         if let big {
             #expect(abs(big.sweep - 0.6 * 2 * .pi) < 0.001)
             #expect(big.innerRadius == layout.ringThickness)
-            // Children stay inside the parent's angular span, one ring out.
             let a = layout.segments.first { $0.name == "a.bin" }
             #expect(a != nil)
             if let a {
@@ -78,8 +76,6 @@ struct ChartModelTests {
             }
         }
 
-        // Hit-testing: the center resolves to the root, a point in the
-        // first ring at big's mid-angle resolves to big.
         #expect(layout.segment(at: layout.center)?.depth == 0)
         if let big {
             let angle = big.startAngle + big.sweep / 2

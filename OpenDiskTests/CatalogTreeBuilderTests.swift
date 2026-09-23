@@ -18,8 +18,6 @@ struct CatalogTreeBuilderTests {
     @Test("links children that stream before their parents")
     func outOfOrderEntriesLink() {
         var builder = CatalogTreeBuilder(rootName: "/")
-        // Child arrives before its parent directory; parent IDs reference
-        // the volume root (2) and directory 10.
         _ = builder.add(entry(name: "file.bin", fileID: 11, parentID: 10, size: 500))
         _ = builder.add(entry(name: "Folder", fileID: 10, parentID: 2, isDirectory: true))
 
@@ -62,7 +60,6 @@ struct CatalogTreeBuilderTests {
         var tree = builder.buildTree()
         tree.rollUpDirectorySizes()
 
-        // Both names visible, bytes counted once.
         #expect(tree.childCount(of: FileTree.rootID) == 2)
         #expect(tree.size(of: FileTree.rootID) == 1_000)
     }
@@ -70,19 +67,15 @@ struct CatalogTreeBuilderTests {
     @Test("partial snapshots exclude orphans until their ancestors stream in")
     func partialTreeExcludesOrphans() {
         var builder = CatalogTreeBuilder(rootName: "/")
-        // A file whose parent directory has not streamed yet, plus one
-        // directly under the volume root.
         _ = builder.add(entry(name: "file.bin", fileID: 11, parentID: 10, size: 500))
         _ = builder.add(entry(name: "rootfile.dat", fileID: 12, parentID: 2, size: 40))
 
         var early = builder.buildPartialTree()
         early.rollUpDirectorySizes()
-        // The orphan must not flash at the top level of a live snapshot.
         #expect(early.child(of: FileTree.rootID, named: "file.bin") == nil)
         #expect(early.child(of: FileTree.rootID, named: "rootfile.dat") != nil)
         #expect(early.size(of: FileTree.rootID) == 40)
 
-        // Its parent arrives: the next snapshot includes the whole chain.
         _ = builder.add(entry(name: "Folder", fileID: 10, parentID: 2, isDirectory: true))
         var later = builder.buildPartialTree()
         later.rollUpDirectorySizes()
@@ -94,7 +87,6 @@ struct CatalogTreeBuilderTests {
         }
         #expect(later.size(of: FileTree.rootID) == 540)
 
-        // Snapshots never disturb the final build.
         var final = builder.buildTree()
         final.rollUpDirectorySizes()
         #expect(final.size(of: FileTree.rootID) == 540)
@@ -109,7 +101,6 @@ struct CatalogTreeBuilderTests {
         var tree = builder.buildTree()
         tree.rollUpDirectorySizes()
 
-        // child.txt cannot live under a file; it lands at the root.
         #expect(tree.childCount(of: FileTree.rootID) == 2)
         #expect(tree.size(of: FileTree.rootID) == 30)
     }

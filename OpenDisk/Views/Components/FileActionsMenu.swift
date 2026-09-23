@@ -1,10 +1,6 @@
 import SwiftUI
 import AppKit
 
-/// The shared right-click menu for a single real file/folder: collect it for
-/// deletion (blocked for macOS-protected paths), reveal it in Finder, or copy
-/// its path. Used by both the results-list rows and the chart rings so the two
-/// context menus stay in lockstep.
 struct FileActionsMenu: View {
     let file: CollectedFile
     let collector: Collector
@@ -15,7 +11,6 @@ struct FileActionsMenu: View {
         } label: {
             Label("Add to Collector", systemImage: "trash")
         }
-        // macOS-critical locations can't be deleted.
         .disabled(ProtectedPaths.isProtected(file.path))
 
         Divider()

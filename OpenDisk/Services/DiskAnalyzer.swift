@@ -1,132 +1,56 @@
 import Foundation
 import Observation
 
-/// Main-actor view model for the analysis screen: runs scans through an
-/// injected `DiskScanning` implementation and serves navigable slices of
-/// the resulting `FileTree` to the UI.
-///
-/// Results appear in three waves, each replacing the last:
-/// 1. A skeleton — one directory read of the scan root, shown within
-///    milliseconds with pending sizes.
-/// 2. Live partial trees streamed by the scanner, with sizes growing as
-///    the scan discovers more.
-/// 3. The final tree.
 @MainActor
 @Observable
 final class DiskAnalyzer {
-
-    /// Only the largest entries of a directory are materialized for
-    /// display; navigation into any of them is still exact.
     private static let maxVisibleChildren = 100
-    /// Entries at or below this size are noise for a disk-usage view.
-    /// Applied only to final results — during a live scan a directory's
-    /// size starts at zero and grows, so nothing is hidden yet.
     private static let minVisibleSize: Int64 = 1_024
 
-    // MARK: - Observable UI state
-
     private(set) var rootItems: [FolderItem] = []
-    /// Depth-limited tree of the viewed directory for the chart views,
-    /// rebuilt from the same (partial or final) snapshot as `rootItems`.
-    /// Nil until the first snapshot arrives (charts show a placeholder
-    /// during the skeleton phase — a shallow listing has no hierarchy).
     private(set) var chartRoot: ChartItem?
     private(set) var isScanning = false
-    /// Directories the finished scan could not open (permissions, a
-    /// revoked sandbox grant, a volume ejected mid-scan). Nonzero with an
-    /// empty result means "couldn't read", not "empty folder".
     private(set) var unreadableDirectories = 0
-    /// True when a scan of "/" was refused because Full Disk Access is
-    /// missing.
     private(set) var needsFullDiskAccess = false
     private(set) var totalDiskScannedBytes: Int64 = 0
     private(set) var itemsScanned = 0
-    /// What the running scan is doing; the status bar words the "no items
-    /// counted yet" stretch with it.
     private(set) var scanPhase: ScanPhase = .scanning
-    /// When the running scan started; views derive throughput from it.
     private(set) var scanStartDate: Date?
     private(set) var scanDuration: TimeInterval = 0
-    /// Total for the status bar: the viewed directory's actual size (plus
-    /// hidden space at the scan root), not a sum of trimmed visible rows.
     private(set) var displayedTotalBytes: Int64 = 0
-    /// Bumped whenever the displayed rows are replaced — a cheap value
-    /// for views to animate on instead of diffing whole row arrays.
     private(set) var displayVersion = 0
 
-    // MARK: - Search state
-
-    /// The largest matches for the active query, size-descending, capped
-    /// at `SearchIndex.resultLimit`.
     private(set) var searchResults: [FolderItem] = []
-    /// Total matches before the display cap.
     private(set) var searchTotalMatches = 0
-    /// Bumped whenever `searchResults` is replaced — a cheap identity for
-    /// views to key work (icon prewarms) on instead of diffing paths.
     private(set) var searchResultsVersion = 0
-    /// True while an index build or query for the active search is in
-    /// flight (the UI shows a spinner instead of "no results").
     private(set) var isSearchRunning = false
-    /// True when the shown results were computed from a mid-scan partial
-    /// snapshot rather than a finished tree.
     private(set) var searchResultsArePartial = false
-
-    // MARK: - Dependencies & state
 
     private let scanner: any DiskScanning
     private var scanResult: ScanResult?
-    /// True while `scanResult` holds a live partial snapshot rather than a
-    /// finished scan.
     private var resultIsPartial = false
-    /// The path the running (or last finished) scan is rooted at.
     private var scanRootPath = ""
-    /// The directory whose contents are on screen; may be deeper than the
-    /// scan root while the user navigates. Read-only to views: the
-    /// analyzer owns it (it can reset to the scan root when a fresh tree
-    /// no longer contains the viewed folder), and the view keeps its
-    /// breadcrumb trail in sync by observing it.
     private(set) var currentPath = ""
     private var scanTask: Task<ScanResult, Never>?
-    /// Bumped per scan. Scan events hop to the main actor asynchronously,
-    /// so every event carries the generation it belongs to and stale ones
-    /// are dropped.
     private var generation = 0
-    /// Partial snapshots can arrive out of order; only ever apply forward.
     private var lastAppliedPartialSequence = 0
-    /// Search index over the current `scanResult` tree, or nil until one
-    /// is built. Built eagerly when a scan finishes and on demand when the
-    /// user searches mid-scan.
     private var searchIndex: SearchIndex?
-    /// True when `searchIndex` was built from a partial snapshot.
     private var searchIndexIsPartial = false
     private var searchIndexBuildTask: Task<Void, Never>?
-    /// The active query/scope as last set by the UI; kept so results can
-    /// re-run when a fresh index lands.
     private var searchQuery = ""
     private var searchScope: SearchScope = .all
-    /// Bumped per search request; async completions drop stale results.
     private var searchSequence = 0
-    /// The in-flight query task; cancelled the moment a newer keystroke
-    /// supersedes it so stacked searches never pile up on the cores.
     private var searchTask: Task<Void, Never>?
 
     init(scanner: any DiskScanning = ScanEngine()) {
         self.scanner = scanner
     }
 
-    // MARK: - Scanning
-
-    /// Scans `path` and shows its contents, streaming results as they are
-    /// discovered.
     func scanDirectory(_ path: String) async {
         cancelCurrentScan()
         generation &+= 1
         let generation = self.generation
 
-        // Full Disk Access is the non-sandboxed build's mechanism. The
-        // sandboxed (App Store) build scans "/" through a security-scoped
-        // grant instead — and its FDA probe would always fail anyway (the
-        // probe paths resolve inside the app container).
         if !ScanAccess.isSandboxed && path == "/" && !FullDiskAccess.isGranted {
             needsFullDiskAccess = true
             rootItems = []
@@ -149,9 +73,6 @@ final class DiskAnalyzer {
         unreadableDirectories = 0
         displayedTotalBytes = 0
         displayVersion += 1
-        // The old tree's index is stale the moment a rescan starts. An
-        // active query stays active and resolves against the new tree
-        // (mid-scan on demand, and again when the scan finishes).
         searchIndexBuildTask?.cancel()
         searchIndexBuildTask = nil
         searchTask?.cancel()
@@ -165,8 +86,6 @@ final class DiskAnalyzer {
         let startDate = Date()
         scanStartDate = startDate
 
-        // Instant skeleton: one shallow directory read shows the top-level
-        // names right away, before the scan has produced any numbers.
         Task { [weak self] in
             let items = await Self.skeletonItems(forRoot: path)
             guard let self, self.generation == generation, self.isScanning,
@@ -187,10 +106,6 @@ final class DiskAnalyzer {
         }
         scanTask = task
         let result = await task.value
-        // Task equality is identity-based: bail if another scan superseded
-        // this one while it was awaited. But a plain cancellation (view
-        // dismissed, no successor) must still clear the transient state,
-        // or the spinner runs forever if the view reappears.
         guard scanTask == task else {
             if self.generation == generation {
                 isScanning = false
@@ -207,30 +122,16 @@ final class DiskAnalyzer {
         scanDuration = Date().timeIntervalSince(startDate)
         isScanning = false
         unreadableDirectories = result.unreadableDirectories
-        // A cache-splice scan's live counters only covered the changed
-        // directories; the finished tree is the truth for the status bar.
         totalDiskScannedBytes = result.tree.size(of: FileTree.rootID)
         itemsScanned = max(itemsScanned, result.tree.nodeCount - 1)
-        // Always index the finished tree (a few hundred ms, off-main) so
-        // the first keystroke of a later search is instant; if a search is
-        // already active it re-resolves against the final tree.
         rebuildSearchIndex()
     }
 
-    /// Cancels a scan in flight, if any.
     func cancelCurrentScan() {
         scanTask?.cancel()
         scanTask = nil
     }
 
-    // MARK: - Navigation
-
-    /// Shows the contents of `path`, resolved instantly from the scanned
-    /// tree (partial or complete).
-    ///
-    /// Returns false when the path is not in the tree — either outside the
-    /// scan entirely, or simply not discovered yet by a running scan;
-    /// callers decide whether that warrants a fresh scan.
     @discardableResult
     func navigateToPath(_ path: String) -> Bool {
         if path == HiddenSpaceInfo.sentinelPath {
@@ -245,12 +146,6 @@ final class DiskAnalyzer {
         return true
     }
 
-    /// Contents of the synthetic "Purgeable Space" folder: the curated cache
-    /// locations resolved against the scanned tree. Each is a real, deletable
-    /// folder (navigable onward); their bytes also live under their true
-    /// parents, so this is a curated cleanup lens, not a disjoint partition of
-    /// the disk. (macOS's auto-managed purgeable pool has no deletable path —
-    /// the OS frees it on demand — so it isn't listed here.)
     private func displayCleanableSpace() {
         var items = cleanableCacheEntries().map {
             FolderItem(name: $0.name, path: $0.path, size: $0.size, isDirectory: true, itemCount: 0)
@@ -262,8 +157,6 @@ final class DiskAnalyzer {
         chartRoot = cleanableChartRoot(items: items, total: displayedTotalBytes)
     }
 
-    /// One-ring chart of the cleanable view: cache slices are real
-    /// directories (clickable), the purgeable pool is a plain slice.
     private func cleanableChartRoot(items: [FolderItem], total: Int64) -> ChartItem? {
         guard total > 0 else { return nil }
         var children: [ChartItem] = []
@@ -288,7 +181,6 @@ final class DiskAnalyzer {
         )
     }
 
-    /// Catalog locations that exist in the scanned tree with nonzero size.
     private func cleanableCacheEntries() -> [(name: String, path: String, size: Int64)] {
         guard let result = scanResult else { return [] }
         return CleanableCacheCatalog.locations.compactMap { location in
@@ -300,16 +192,11 @@ final class DiskAnalyzer {
         }
     }
 
-    /// The cleanable cache folders as Collector payloads. Dragging the
-    /// "Purgeable Space" row expands to exactly these, so the collected total
-    /// matches the row's size and deleting them frees that space.
     func collectablePurgeableFiles() -> [CollectedFile] {
         cleanableCacheEntries().map {
             CollectedFile(path: $0.path, name: $0.name, size: $0.size, isDirectory: true)
         }
     }
-
-    // MARK: - Event handling
 
     private func handle(_ event: ScanEvent, generation: Int, startedAt: Date) {
         guard generation == self.generation, isScanning else { return }
@@ -324,10 +211,6 @@ final class DiskAnalyzer {
             scanResult = ScanResult(rootPath: scanRootPath, tree: partial.tree)
             resultIsPartial = true
             refreshDisplayedItems()
-            // A search typed before the first snapshot arrived had no tree
-            // to index; index this one. Later snapshots don't re-index (a
-            // multi-million-node rebuild per 500 ms snapshot would starve
-            // cores) — mid-scan results refine when the scan finishes.
             if !searchQuery.isEmpty && searchIndex == nil && searchIndexBuildTask == nil {
                 rebuildSearchIndex()
             }
@@ -340,10 +223,6 @@ final class DiskAnalyzer {
         scanPhase = progress.phase
     }
 
-    /// Re-materializes the on-screen rows from the current tree, keeping
-    /// the user's position. While a partial tree does not contain the
-    /// viewed directory yet, whatever is on screen (skeleton or an older
-    /// snapshot) stays put rather than flashing empty.
     private func refreshDisplayedItems() {
         if let node = nodeID(forPath: currentPath) {
             display(node: node)
@@ -353,15 +232,8 @@ final class DiskAnalyzer {
         }
     }
 
-    /// Replaces the on-screen rows, chart and totals with `node`'s
-    /// contents — the one place display state is derived from the tree.
     private func display(node: FileTree.NodeID) {
         rootItems = folderItems(for: node, limit: displayLimit(for: currentPath))
-        // At the scan root, pin a "Purgeable Space" shortcut that aggregates
-        // the cleanable caches. It's a cleanup lens — its bytes also live
-        // under their real parents, so it is NOT added to the disk total —
-        // sized to the cache total so it matches what dragging it collects
-        // and what deleting it frees.
         if currentPath == scanRootPath {
             let caches = cleanableCacheEntries()
             let cacheTotal = caches.reduce(0) { $0 + $1.size }
@@ -378,15 +250,9 @@ final class DiskAnalyzer {
         }
         displayedTotalBytes = scanResult?.tree.size(of: node) ?? 0
         displayVersion += 1
-        // Defer the sunburst rebuild off the navigation's critical path so the
-        // list (what you're clicking through) transitions instantly. The
-        // chart's recursive depth-5 build can be heavy for large folders;
-        // running it a tick later keeps clicks responsive. Rapid navigations
-        // coalesce to the latest node.
         scheduleChartRebuild(for: node)
     }
 
-    /// Deferred, coalesced chart rebuild — see `display(node:)`.
     private var pendingChartNode: FileTree.NodeID?
     private var chartRebuildScheduled = false
 
@@ -408,23 +274,12 @@ final class DiskAnalyzer {
             chartRoot = nil
             return
         }
-        // The center ring shows the volume/folder's display name — its last
-        // path component — e.g. "2TB External", not "/Volumes/2TB External".
-        // ("/" stays "/".)
         let name = (currentPath as NSString).lastPathComponent
-        // The chart shows the true hierarchy; the "Purgeable Space" cleanup
-        // lens is a list-only shortcut (its bytes already appear under their
-        // real parents in the chart), so no synthetic slice is added.
         chartRoot = ChartItem.build(
             from: tree, at: node, name: name, path: currentPath
         )
     }
 
-    // MARK: - Search
-
-    /// Sets the active query/scope and (re)runs the search. Searches are
-    /// fast enough (~ms over millions of names) to run on every keystroke
-    /// with no debounce; a sequence counter drops out-of-order completions.
     func updateSearch(query: String, scope: SearchScope) {
         searchQuery = query.trimmingCharacters(in: .whitespaces)
         searchScope = scope
@@ -445,9 +300,6 @@ final class DiskAnalyzer {
             return
         }
         guard let index = searchIndex else {
-            // No index yet: mid-scan before any snapshot, or a build is
-            // already in flight. Either way the pending build re-runs the
-            // active search when it lands.
             isSearchRunning = true
             if searchIndexBuildTask == nil { rebuildSearchIndex() }
             return
@@ -468,8 +320,6 @@ final class DiskAnalyzer {
         }
     }
 
-    /// Builds a fresh index from the current tree off the main actor, then
-    /// re-runs the active search against it.
     private func rebuildSearchIndex() {
         searchIndexBuildTask?.cancel()
         guard let result = scanResult else {
@@ -491,11 +341,6 @@ final class DiskAnalyzer {
         }
     }
 
-    // MARK: - Private helpers
-
-    /// The scan root shows everything (matching the previous engine);
-    /// drill-in levels pass a limit so a 100k-entry folder never
-    /// materializes 100k path strings.
     private func displayLimit(for path: String) -> Int? {
         path == scanRootPath ? nil : Self.maxVisibleChildren
     }
@@ -507,11 +352,7 @@ final class DiskAnalyzer {
 
     private func folderItems(for node: FileTree.NodeID, limit: Int?) -> [FolderItem] {
         guard let tree = scanResult?.tree, tree.isDirectory(node) else { return [] }
-        // Live results keep zero-size entries (their sizes are still
-        // arriving); finished results hide sub-1KB noise.
         let minVisibleSize = resultIsPartial ? Int64(-1) : Self.minVisibleSize
-        // Sort and trim on node IDs first so only the visible rows ever
-        // materialize path strings.
         return tree.childrenSortedForDisplay(of: node)
             .prefix(limit ?? Int.max)
             .filter { tree.size(of: $0) > minVisibleSize }
@@ -526,11 +367,6 @@ final class DiskAnalyzer {
             }
     }
 
-    // MARK: - Skeleton
-
-    /// One shallow, non-recursive directory read of the scan root,
-    /// performed off the main thread (a cold or network directory can make
-    /// even a single `readdir` slow).
     private nonisolated static func skeletonItems(forRoot path: String) async -> [FolderItem] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -539,8 +375,6 @@ final class DiskAnalyzer {
         }
     }
 
-    /// Directories come first, alphabetically, with pending sizes; files
-    /// follow with their real allocated sizes.
     private nonisolated static func readSkeleton(_ path: String) -> [FolderItem] {
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey, .totalFileAllocatedSizeKey,
@@ -558,22 +392,12 @@ final class DiskAnalyzer {
         var files: [FolderItem] = []
         for url in urls {
             let values = try? url.resourceValues(forKeys: keys)
-            // Skeleton rows that can't survive the scan cause a jarring flash:
-            // they show for a moment, then vanish once real results land.
-            //   • Symlinks (/home, /etc, /var, /.file, …) are never followed by
-            //     the scanner, so they never appear in the tree. (Firmlinked
-            //     dirs like /Users are NOT symlinks — the OS reports them as
-            //     real directories — so they're correctly kept.)
-            //   • Hidden entries (/.vol, /.nofollow, …) are volume-root noise
-            //     that the finished list drops as sub-1KB anyway.
-            // Filtering both here makes the skeleton a faithful preview.
             if values?.isSymbolicLink == true || values?.isHidden == true { continue }
             let isDirectory = values?.isDirectory ?? false
             let name = url.lastPathComponent
             let item = FolderItem(
                 name: name,
-                // Built exactly like FileTree.path(of:) builds paths, so
-                // SwiftUI can diff skeleton rows against scanned rows.
+                // Must match FileTree.path(of:) so SwiftUI can diff skeleton rows against scanned rows.
                 path: prefix + name,
                 size: isDirectory ? 0 : Int64(values?.totalFileAllocatedSize ?? 0),
                 isDirectory: isDirectory,

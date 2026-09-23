@@ -1,12 +1,6 @@
 import SwiftUI
 
-/// Draws the baobab-style hover tip (dark pill with name, size and share)
-/// directly into a chart's `Canvas`.
-///
-/// Rendered with `GraphicsContext` on purpose: the tip follows the pointer
-/// on every hover event, and as a SwiftUI overlay each move would
-/// participate in layout — which visibly shifted the whole chart around.
-/// Inside the canvas it can only ever trigger a repaint.
+// Drawn in the Canvas, not a SwiftUI overlay: an overlay re-laid-out and shifted the chart on every hover move.
 enum ChartTipRenderer {
 
     private static let padding = CGSize(width: 8, height: 5)
@@ -39,8 +33,6 @@ enum ChartTipRenderer {
             height: titleSize.height + detailSize.height + 2 + padding.height * 2
         )
 
-        // Beside the pointer, flipped or clamped when it would leave the
-        // canvas.
         var origin = CGPoint(
             x: location.x + pointerOffset.x,
             y: location.y + pointerOffset.y - pill.height / 2

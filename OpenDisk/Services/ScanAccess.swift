@@ -2,23 +2,12 @@ import AppKit
 import Foundation
 import Observation
 
-/// Bridges the two distribution builds' file-access models:
-///   • Website (non-sandboxed): Full Disk Access — scan any path directly.
-///   • App Store (sandboxed): scan only folders/volumes the user grants through
-///     an open panel, remembered across launches via security-scoped bookmarks.
-///
-/// Everything sandbox-specific is gated on `isSandboxed` (a runtime check), so
-/// the identical code ships in both targets — the website build simply never
-/// enters the grant path (`beginAccess` is a no-op that always succeeds).
 @MainActor
 @Observable
 final class ScanAccess {
-
-    /// True when running inside the App Sandbox — i.e. the Mac App Store build.
     nonisolated static let isSandboxed =
         ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
 
-    /// A location the user has granted, re-openable without re-granting.
     struct Grant: Identifiable, Hashable {
         let path: String
         let name: String
@@ -28,9 +17,7 @@ final class ScanAccess {
     private(set) var grants: [Grant] = []
 
     private let defaultsKey = "granted_scan_bookmarks"
-    /// Granted root path → its security-scoped bookmark.
     private var bookmarks: [String: Data] = [:]
-    /// Granted roots we've begun accessing, so `stopAccessing` stays balanced.
     private var accessing: [String: URL] = [:]
 
     init() {
@@ -43,20 +30,8 @@ final class ScanAccess {
         }
     }
 
-    // MARK: - Granting
-
-    /// Asks the user to choose a folder or volume, stores a security-scoped
-    /// bookmark for it, and returns the grant. Nil if the user cancels.
-    /// True when we already hold a bookmark for exactly this path, so it can be
-    /// re-scanned with no panel — the one-click case for a disk shortcut.
     func isGranted(_ path: String) -> Bool { bookmarks[path] != nil }
 
-    /// Asks the user to choose a folder or volume, stores a security-scoped
-    /// bookmark, and returns the grant. Nil if the user cancels.
-    ///
-    /// `startURL` pre-navigates the panel (used when the user taps a disk
-    /// shortcut, so the disk is right there); `suggestedName` tailors the
-    /// instruction to it.
     func requestGrant(startingAt startURL: URL? = nil, suggestedName: String? = nil) -> Grant? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -71,7 +46,6 @@ final class ScanAccess {
                 + "(e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume — "
                 + "OpenDisk remembers your choice."
         }
-        // Open next to the target (or at the disk root) rather than deep in home.
         panel.directoryURL = startURL ?? URL(fileURLWithPath: "/")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return store(url)
@@ -101,11 +75,6 @@ final class ScanAccess {
         return grant
     }
 
-    // MARK: - Access lifetime
-
-    /// Starts security-scoped access to the granted root containing `path`, so
-    /// a scan can read it and its subtree. Returns true when access is
-    /// available — always true outside the sandbox.
     @discardableResult
     func beginAccess(toPath path: String) -> Bool {
         guard Self.isSandboxed else { return true }
@@ -120,27 +89,18 @@ final class ScanAccess {
         ), url.startAccessingSecurityScopedResource() else { return false }
 
         accessing[root] = url
-        if stale { store(url) }   // refresh a bookmark macOS marked stale
+        if stale { store(url) }
         return true
     }
 
     func endAccess(toPath path: String) {
-        // Resolve against the roots we actually began (not the grant set,
-        // which may have changed since), so begin/end always pair on the
-        // same root and `stopAccessing` never goes unbalanced.
+        // Resolve against `accessing`, not the grant set, so begin/end pair on the same root.
         guard let root = Self.longestRoot(containing: path, in: accessing.keys),
               let url = accessing[root] else { return }
         url.stopAccessingSecurityScopedResource()
         accessing[root] = nil
     }
 
-    // MARK: - Helpers
-
-    /// The granted root whose subtree contains `path` (or equals it). With
-    /// nested grants (e.g. "/Volumes/X" and "/Volumes/X/Projects") the
-    /// longest match wins — deterministic, unlike first-match over the
-    /// unordered dictionary, which could pair begin and end on different
-    /// roots and leak the security-scoped resource.
     private func grantRoot(containing path: String) -> String? {
         Self.longestRoot(containing: path, in: bookmarks.keys)
     }

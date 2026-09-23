@@ -1,51 +1,27 @@
 import Darwin
 import Foundation
 
-/// One file entry produced by reading a directory.
 struct DirectoryFileEntry {
     let name: String
-    /// Physical (allocated) size in bytes. Zero if unknown.
     let size: Int64
     let fileID: UInt64
     let linkCount: UInt32
 }
 
-/// The parsed contents of a single directory.
 struct DirectoryContents {
     var files: [DirectoryFileEntry] = []
-    /// Subdirectories a scan may descend into.
     var subdirectoryNames: [String] = []
-    /// Subdirectories that are mount points (or automount triggers):
-    /// shown as empty stubs, never descended into. This is the boundary
-    /// check that still works when `st_dev` cannot tell volumes apart —
-    /// on newer macOS the volume group, the booted volume's `/Volumes`
-    /// alias and Time Machine local snapshot mounts can all share one
-    /// device ID, so a device allowlist alone would wander into them and
-    /// count the disk several times over.
     var mountPointNames: [String] = []
 }
 
-/// The outcome of attempting to read one directory.
 enum DirectoryReadResult {
     case contents(DirectoryContents, device: dev_t)
-    /// The directory lives on a device outside the scan's allowlist (mount
-    /// point or firmlink boundary) and must not be descended into.
     case crossesDeviceBoundary
-    /// The directory could not be opened or read.
     case unreadable
 }
 
-/// Reads directories with `getattrlistbulk(2)`, the bulk enumeration API
-/// that returns hundreds of entries (with attributes) per syscall.
-///
-/// - Important: Thread-safety: not `Sendable`. Each scan worker owns its
-///   own instance; the reusable read buffer is only touched inside
-///   `read(directoryAt:allowedDevices:)`, which is never called
-///   concurrently on one instance.
 final class BulkDirectoryReader {
 
-    /// 256 KB holds thousands of entries per syscall; both 128 KB and
-    /// 256 KB measure near-optimal in published getattrlistbulk tuning.
     private static let bufferSize = 256 * 1024
 
     private let buffer: UnsafeMutableRawPointer
@@ -58,20 +34,6 @@ final class BulkDirectoryReader {
         buffer.deallocate()
     }
 
-    /// Reads every entry of the directory at `path`.
-    ///
-    /// If the opened directory's `st_dev` is not in `allowedDevices`, the
-    /// read is abandoned with `.crossesDeviceBoundary`. Checking the device
-    /// on the *opened* descriptor is what keeps a scan on its volumes:
-    /// opening a firmlink or mount point yields the target volume's device,
-    /// so external volumes and virtual filesystems are cut off by the same
-    /// rule with no hardcoded path lists (a scan of a System-volume subtree
-    /// allowlists the Data volume too, so firmlinks compose as they do in
-    /// the live namespace).
-    ///
-    /// Known limitation (shared with the previous engine): an unresponsive
-    /// network mount point can block `open` in the kernel indefinitely;
-    /// there is no portable timeout for that.
     func read(directoryAt path: String, allowedDevices: Set<dev_t>) -> DirectoryReadResult {
         let fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard fd >= 0 else { return .unreadable }
@@ -89,10 +51,7 @@ final class BulkDirectoryReader {
             UInt32(ATTR_CMN_OBJTYPE) |
             UInt32(ATTR_CMN_FILEID)
         )
-        // The kernel flags each child directory that is a mount point, so
-        // volume boundaries are detected during the parent's read — no
-        // extra syscall, and no reliance on st_dev differing across
-        // volumes (it often does not; see DirectoryContents).
+        // st_dev often matches across APFS volume-group/snapshot mounts; MOUNTSTATUS is the reliable boundary check.
         request.dirattr = attrgroup_t(UInt32(ATTR_DIR_MOUNTSTATUS))
         request.fileattr = attrgroup_t(
             UInt32(ATTR_FILE_LINKCOUNT) | UInt32(ATTR_FILE_ALLOCSIZE)
@@ -104,14 +63,10 @@ final class BulkDirectoryReader {
 
         while true {
             let count = getattrlistbulk(fd, &request, buffer, Self.bufferSize, 0)
-            // A mid-stream error keeps whatever was already parsed rather
-            // than discarding the directory.
             if count <= 0 { break }
 
             var offset = 0
             for _ in 0..<count {
-                // The length prefix drives the walk; validate it so a
-                // malformed record can never push reads past the buffer.
                 guard offset + 4 <= Self.bufferSize else { break }
                 let record = buffer.advanced(by: offset)
                 let length = Int(record.loadUnaligned(as: UInt32.self))
@@ -124,20 +79,6 @@ final class BulkDirectoryReader {
         return .contents(contents, device: info.st_dev)
     }
 
-    /// Parses one variable-length attribute record.
-    ///
-    /// Layout with our request set (all offsets from the record start):
-    ///   0   u32              record length
-    ///   4   attribute_set_t  returned attributes (5 x u32)
-    ///   24  attrreference    name (dataoffset relative to offset 24)
-    ///   32  u32              objtype        - if returned
-    ///   ..  u64              fileid         - if returned
-    ///   ..  u32              mountstatus    - directories, if returned
-    ///   ..  u32              linkcount      - files, if returned
-    ///   ..  s64              allocsize      - files, if returned
-    /// Fields after the attribute set only exist when the corresponding
-    /// bit is set in the returned-attributes bitmap, so the parse walks a
-    /// running offset gated on those bits.
     private func parseRecord(
         _ record: UnsafeMutableRawPointer,
         length: Int,
@@ -150,7 +91,6 @@ final class BulkDirectoryReader {
         let returnedFile = record.loadUnaligned(fromByteOffset: 16, as: UInt32.self)
 
         let nameDataOffset = Int(record.loadUnaligned(fromByteOffset: 24, as: Int32.self))
-        // Name length includes the trailing NUL.
         let nameLength = Int(record.loadUnaligned(fromByteOffset: 28, as: UInt32.self)) - 1
         let nameStart = 24 + nameDataOffset
         guard nameLength > 0, nameLength < 1_024, nameStart + nameLength <= length else {
@@ -158,7 +98,6 @@ final class BulkDirectoryReader {
         }
         let namePointer = record.advanced(by: nameStart)
 
-        // Skip "." and "..".
         if nameLength <= 2 {
             let firstByte = namePointer.load(as: UInt8.self)
             if firstByte == UInt8(ascii: ".") {
@@ -173,7 +112,7 @@ final class BulkDirectoryReader {
         var isDirectory = false
         if returnedCommon & UInt32(ATTR_CMN_OBJTYPE) != 0 {
             guard offset + 4 <= length else { return }
-            isDirectory = record.loadUnaligned(fromByteOffset: offset, as: UInt32.self) == 2 // VDIR
+            isDirectory = record.loadUnaligned(fromByteOffset: offset, as: UInt32.self) == 2
             offset += 4
         }
 
@@ -190,9 +129,6 @@ final class BulkDirectoryReader {
         )
 
         if isDirectory {
-            // Nonzero mount status means a mount point or an automount
-            // trigger (descending into a trigger could mount and hang on a
-            // network share); both are volume boundaries.
             var mountStatus: UInt32 = 0
             if returnedDir & UInt32(ATTR_DIR_MOUNTSTATUS) != 0 {
                 guard offset + 4 <= length else { return }

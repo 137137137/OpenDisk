@@ -1,31 +1,16 @@
 import SwiftUI
 
-/// Scan results list. Shown from the first moments of a scan: rows appear
-/// and re-sort live as sizes stream in. The status footer is provided by
-/// the containing view (shared with the chart modes).
 struct ScanResultsView: View {
     let items: [FolderItem]
-    /// Bumped by the analyzer whenever `items` is replaced — a cheap
-    /// animation trigger that avoids diffing the whole row array.
     let displayVersion: Int
-    /// Paths of the multi-selected rows, and the same selection as
-    /// collector payloads for group drags.
     var selectedPaths: Set<String> = []
     var selectionFiles: [CollectedFile] = []
-    /// Passed through to each row's "Quick Look" context-menu item.
     var onQuickLook: ((FolderItem) -> Void)? = nil
     let onFolderTap: (FolderItem) -> Void
 
     var body: some View {
-        // Largest visible item, so each row's proportional bar reads
-        // relative to it. Hoisted to one computation per body evaluation —
-        // as a property referenced inside the ForEach closure it would be
-        // recomputed O(items) for every materialized row, at streaming-
-        // snapshot rate during a live scan.
         let maxSize = items.map(\.size).max() ?? 0
-        // A ScrollView + LazyVStack rather than a List: SwiftUI's List
-        // intercepts row drag gestures on macOS, which prevents dragging a
-        // row into the Collector. This keeps rows fully draggable.
+        // Not a List: on macOS List intercepts row drag gestures, breaking drags into the Collector.
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(items) { item in
@@ -42,15 +27,7 @@ struct ScanResultsView: View {
             }
             .padding(.vertical, 4)
         }
-        // Snappy, not the heavy 0.35s ease — folder navigation should feel
-        // immediate, like Finder, while still animating live-scan re-sorts.
         .animation(.snappy(duration: 0.18), value: displayVersion)
-        // Icons resolve in display order before their rows scroll into
-        // view, so scrolling blits cached bitmaps instead of racing
-        // per-row loads. Keyed on displayVersion — the analyzer bumps it
-        // exactly when the rows are replaced, so this re-fires precisely
-        // then, without allocating and comparing every path string on
-        // every body evaluation.
         .task(id: displayVersion) {
             await FileIcon.prewarm(items.map(\.path))
         }

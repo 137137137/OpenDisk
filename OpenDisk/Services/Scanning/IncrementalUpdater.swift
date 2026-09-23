@@ -2,18 +2,7 @@ import Darwin
 import Foundation
 import Synchronization
 
-/// Splices FSEvents-reported changes into a cached scan tree: changed
-/// directories are re-listed shallowly (files replaced, surviving
-/// subdirectories re-linked, vanished ones unlinked, new ones scanned as
-/// fresh subtrees), and coalesced "must scan subdirs" paths are rescanned
-/// whole.
-///
-/// The tree is expected with directory sizes not rolled up; the caller
-/// rolls up once after splicing.
 enum IncrementalUpdater {
-
-    /// Applies `changes` to `tree`. Returns false when the update cannot
-    /// be applied cleanly (callers fall back to a full scan).
     static func apply(
         _ changes: FSEventsChangeJournal.Changes,
         to tree: borrowing Mutex<FileTree>,
@@ -44,19 +33,7 @@ enum IncrementalUpdater {
         return !isCancelled()
     }
 
-    // MARK: - Splicing
-
-    /// Resolves a changed path to its directory node, or nil when the
-    /// path must not or cannot be spliced.
-    ///
-    /// Never touches a mount root other than the scan root: FSEvents on
-    /// "/" also reports paths under /Volumes aliases and snapshot mounts,
-    /// which can share the boot volume's device ID — reading into one
-    /// would drag another whole volume into this tree.
-    ///
-    /// A directory created after the cached scan has no node yet — its
-    /// nearest cached ancestor also got an event and adopts it there
-    /// (changed paths are processed parents-first).
+    // FSEvents on "/" reports /Volumes aliases and snapshot mounts sharing the boot device ID; never splice into another mount root.
     private static func resolveTarget(
         at path: String, rootPath: String, in tree: borrowing Mutex<FileTree>
     ) -> FileTree.NodeID? {
@@ -68,9 +45,6 @@ enum IncrementalUpdater {
         }
     }
 
-    /// Shallow reconciliation of one changed directory: files are
-    /// replaced from a fresh listing; subdirectories that survived keep
-    /// their whole subtrees; new subdirectories are scanned fresh.
     private static func updateDirectory(
         at path: String,
         rootPath: String,
@@ -85,7 +59,6 @@ enum IncrementalUpdater {
         guard case .contents(let contents, _) = reader.read(
             directoryAt: path, allowedDevices: allowedDevices
         ) else {
-            // Vanished or unreadable now: drop its contents.
             tree.withLock { $0.removeAllChildren(of: node) }
             return
         }
@@ -94,7 +67,6 @@ enum IncrementalUpdater {
         var updatedBytes: Int64 = 0
 
         tree.withLock { current in
-            // Survivors keep their subtrees; everything else re-enters.
             var survivingDirectories: [String: FileTree.NodeID] = [:]
             for child in current.children(of: node) where current.isDirectory(child) {
                 survivingDirectories[current.name(of: child)] = child
@@ -127,7 +99,6 @@ enum IncrementalUpdater {
             items: contents.files.count + contents.subdirectoryNames.count
         )
 
-        // Brand-new directories get full subtree scans, spliced in.
         let prefix = path.directoryPrefix
         for (name, id) in newSubdirectories {
             if isCancelled() { return }
@@ -138,8 +109,6 @@ enum IncrementalUpdater {
         }
     }
 
-    /// Rescans a whole subtree (FSEvents coalesced its events) and
-    /// replaces the node's contents with the fresh scan.
     private static func rescanSubtree(
         at path: String,
         rootPath: String,

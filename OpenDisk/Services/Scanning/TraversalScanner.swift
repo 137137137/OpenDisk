@@ -2,36 +2,9 @@ import Darwin
 import Foundation
 import Synchronization
 
-/// Recursive-descent scanner built on `getattrlistbulk(2)`.
-///
-/// Used for subtree scans and for volumes that cannot be catalog-scanned
-/// (network mounts, exFAT, or any `searchfs` failure).
-///
-/// Architecture: a fixed pool of blocking workers on a dedicated concurrent
-/// dispatch queue, pulling directories from one shared LIFO work stack.
-/// Compared to spawning a Swift concurrency child task per directory this
-/// removes millions of task allocations and actor hops per scan, and it
-/// keeps blocking syscalls off the cooperative thread pool entirely (which
-/// otherwise starves the whole app's async work — the cooperative pool
-/// never grows to cover blocked threads).
-///
-/// The scan never leaves its allowlisted devices: every opened directory's
-/// `st_dev` is checked, which uniformly cuts off mount points and virtual
-/// filesystems with no hardcoded path lists. Scans rooted on the System
-/// volume also allowlist the Data volume, so firmlinks compose exactly as
-/// the live namespace does.
 enum TraversalScanner {
 
-    /// In-flight directory reads. APFS serializes directory metadata reads
-    /// on kernel locks, so throughput peaks at a handful of readers and
-    /// then falls off a cliff — but the peak moves with scan size
-    /// (benchmarked on a 16-core machine):
-    /// - Warm subtree rescans peak at 4-5 readers: ~/Library (900k items)
-    ///   scans in 2.1s with 4 workers, 3.1s with 8, 11.8s with 32.
-    /// - Whole-volume scans peak near 8: the Data volume (4M items) scans
-    ///   in ~12.6s with 8 workers vs ~16s with 4 — colder metadata leaves
-    ///   more latency for extra in-flight reads to hide. It degrades again
-    ///   from ~10 up (19.8s at 16).
+    // APFS dir reads serialize on kernel locks: measured peak ~4-5 workers for subtrees, ~8 for whole volumes, then a steep cliff.
     static var subtreeWorkerCount: Int {
         min(5, max(3, ProcessInfo.processInfo.activeProcessorCount / 4))
     }
@@ -45,14 +18,9 @@ enum TraversalScanner {
         let path: String
     }
 
-    /// Shared scan state. A blocked `pop` parks on the semaphore; the
-    /// mutex only guards short push/pop critical sections, so contention
-    /// stays negligible next to the ~10-100 us directory syscalls.
     private final class WorkState: Sendable {
         private struct Guarded {
             var stack: [WorkItem] = []
-            /// Directories discovered but not yet fully processed. The scan
-            /// is complete exactly when this returns to zero.
             var pendingDirectories = 0
             var isDrained = false
         }
@@ -77,8 +45,6 @@ enum TraversalScanner {
             for _ in items { itemsAvailable.signal() }
         }
 
-        /// Blocks until an item is available. Returns nil once the scan has
-        /// drained; the drain signal cascades so every worker wakes.
         func pop() -> WorkItem? {
             itemsAvailable.wait()
             let item: WorkItem? = guarded.withLock {
@@ -88,8 +54,6 @@ enum TraversalScanner {
             return item
         }
 
-        /// Marks one directory fully processed; the last one out flips the
-        /// drained flag and starts the wake-up cascade.
         func completeDirectory() {
             let drained = guarded.withLock {
                 $0.pendingDirectories -= 1
@@ -103,23 +67,11 @@ enum TraversalScanner {
         }
     }
 
-    /// Hard links never span volumes, but a multi-device scan must not let
-    /// equal file IDs from different volumes collide.
     private struct HardLinkKey: Hashable {
         let device: dev_t
         let fileID: UInt64
     }
 
-    /// Scans the subtree rooted at `path`, descending only into directories
-    /// on `allowedDevices` (default: the root path's own device).
-    ///
-    /// Blocking: call from a background queue, never the main thread or the
-    /// cooperative pool. The returned tree has not had directory sizes
-    /// rolled up yet (callers merge trees first, then roll up once).
-    ///
-    /// `onPartialTreeAvailable` is called once, before scanning begins,
-    /// with a thread-safe provider that snapshots the tree built so far
-    /// (value-semantics copy; like the final tree, not yet rolled up).
     static func scan(
         path: String,
         rootName: String,
@@ -130,8 +82,6 @@ enum TraversalScanner {
         onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
     ) -> FileTree {
         guard let rootDevice = VolumeAttributes.deviceID(ofPath: path) else {
-            // The root itself can't be statted (revoked grant, ejected
-            // volume): an empty tree, but flagged so the UI can say why.
             metrics.addUnreadable()
             return FileTree(rootName: rootName)
         }
@@ -150,11 +100,6 @@ enum TraversalScanner {
         )
         let group = DispatchGroup()
 
-        // Seed the stack from the worker queue, not the caller's thread:
-        // every signal of the pool's semaphore then originates at the
-        // queue's .userInitiated floor, so a caller running at a lower (or
-        // unspecified) QoS can never priority-invert a parked worker.
-        // Workers that start first simply park until this lands.
         queue.async {
             state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))
         }
@@ -194,15 +139,10 @@ enum TraversalScanner {
                 directoryAt: item.path, allowedDevices: allowedDevices
             )
             guard case .contents(var contents, let device) = outcome else {
-                // Unopenable directories are counted (not silently skipped)
-                // so an empty result can say "couldn't read" instead of
-                // looking like a genuinely empty folder.
                 if case .unreadable = outcome { metrics.addUnreadable() }
                 continue
             }
 
-            // Hard-linked files (nlink > 1) are the only entries that can be
-            // double-counted, so only those pay for dedup tracking.
             var directoryBytes: Int64 = 0
             for index in contents.files.indices {
                 let file = contents.files[index]
@@ -240,8 +180,6 @@ enum TraversalScanner {
                     )
                     discovered.append(WorkItem(directoryID: id, path: directoryPrefix + name))
                 }
-                // Mount points stay visible as empty stubs but are never
-                // descended into — other volumes are scanned separately.
                 for name in contents.mountPointNames {
                     tree.addNode(
                         name: name, parent: item.directoryID,

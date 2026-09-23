@@ -4,10 +4,6 @@ import Testing
 
 @Suite("Search index")
 struct SearchIndexTests {
-
-    /// A small tree with files and folders at several depths:
-    /// /Volumes/T/{Documents/{Report Final.pdf, drafts/{report-old.PDF}},
-    ///             Caches/, movie.mov}
     private func makeTree() -> FileTree {
         var tree = FileTree(rootName: "/Volumes/T")
         let docs = tree.addNode(name: "Documents", parent: FileTree.rootID, size: 0, isDirectory: true)
@@ -54,7 +50,6 @@ struct SearchIndexTests {
     @Test("decomposed (NFD) names match precomposed (NFC) queries")
     func unicodeNormalization() async {
         var tree = FileTree(rootName: "/")
-        // "café" with a decomposed é, as APFS stores names typed elsewhere.
         tree.addNode(
             name: "cafe\u{0301}.txt", parent: FileTree.rootID, size: 10, isDirectory: false
         )
@@ -97,7 +92,6 @@ struct SearchIndexTests {
         let results = await index.search(query: "chunk", scope: .all)
         #expect(results.totalMatches == SearchIndex.resultLimit + 50)
         #expect(results.items.count == SearchIndex.resultLimit)
-        // Largest first: the cap keeps the biggest matches.
         #expect(results.items.first?.size == Int64(SearchIndex.resultLimit + 49))
     }
 }

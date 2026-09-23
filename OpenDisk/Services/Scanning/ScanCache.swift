@@ -1,42 +1,25 @@
 import Darwin
 import Foundation
 
-/// On-disk cache of finished scan trees, keyed by scan root, together
-/// with the FSEvents event ID captured when the scan started. A later
-/// scan of the same root can replay the volume's FSEvents journal from
-/// that ID and re-read only the directories that changed since.
 enum ScanCache {
 
     struct Entry {
-        /// The cached tree, with directory sizes NOT rolled up (ready for
-        /// splicing and a fresh roll-up).
         let tree: FileTree
-        /// FSEvents ID from just before the cached scan began.
         let eventID: UInt64
     }
 
     private static let formatVersion: UInt32 = 1
 
-    // MARK: - Public API
-
     static func load(forRoot rootPath: String) -> Entry? {
-        // Mapping keeps the decode reading straight from the page cache
-        // instead of copying the whole file up front.
         guard let url = cacheFileURL(forRoot: rootPath),
               let data = try? Data(contentsOf: url, options: .mappedIfSafe),
               let header = parseHeader(data, forRoot: rootPath),
-              // The tree decodes from a no-copy slice of the mapped file.
               let tree = FileTree(serializedData: data[header.treeStart...]) else {
             return nil
         }
         return Entry(tree: tree, eventID: header.eventID)
     }
 
-    /// The cached scan's FSEvents ID and the cache file's size, validated
-    /// for this exact root — without decoding the tree (the expensive part
-    /// of `load`). Lets a journal replay start while the tree deserializes
-    /// in parallel; the byte count is a cheap proxy for how big the cached
-    /// scan was, which sizes the replay's time budget.
     static func peek(forRoot rootPath: String) -> (eventID: UInt64, fileBytes: Int)? {
         guard let url = cacheFileURL(forRoot: rootPath),
               let data = try? Data(contentsOf: url, options: .mappedIfSafe),
@@ -44,9 +27,6 @@ enum ScanCache {
         return (header.eventID, data.count)
     }
 
-    /// Parses and validates the fixed header: the cache must describe this
-    /// exact root on this exact volume — a re-formatted or different disk
-    /// mounted at the same place must not resurrect a stale tree.
     private static func parseHeader(
         _ data: Data, forRoot rootPath: String
     ) -> (eventID: UInt64, treeStart: Data.Index)? {
@@ -77,8 +57,6 @@ enum ScanCache {
         return (eventID, offset)
     }
 
-    /// Blocking (~hundreds of ms for multi-million-node trees): call from
-    /// a background queue.
     static func save(tree: FileTree, forRoot rootPath: String, eventID: UInt64) {
         guard let url = cacheFileURL(forRoot: rootPath),
               let device = VolumeAttributes.deviceID(ofPath: rootPath) else { return }
@@ -94,9 +72,6 @@ enum ScanCache {
         append(UInt32(pathBytes.count))
         header.append(pathBytes)
 
-        // Header and tree blob are written sequentially (to a temp file
-        // swapped in whole) so the big blob is never copied into a second
-        // combined Data just to prepend a few bytes.
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true
@@ -119,14 +94,8 @@ enum ScanCache {
         }
     }
 
-    // MARK: - Eviction
-
-    /// Caches accumulate one file per scanned root, and a multi-million-node
-    /// tree serializes to hundreds of MB — scanning several disks would grow
-    /// Caches without bound. Keep the newest few within a byte budget (the
-    /// file just written always survives) and sweep stale temp files.
     private static let maxCacheFiles = 8
-    private static let maxCacheBytes: Int64 = 4 << 30   // 4 GB
+    private static let maxCacheBytes: Int64 = 4 << 30
 
     private static func prune(directory: URL, keeping justWritten: URL) {
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
@@ -138,8 +107,6 @@ enum ScanCache {
         for url in entries {
             let values = try? url.resourceValues(forKeys: keys)
             let modified = values?.contentModificationDate ?? .distantPast
-            // A crash between create and replace can strand temp files;
-            // sweep any old enough that no save can still be writing them.
             if url.pathExtension == "tmp" {
                 if modified < Date(timeIntervalSinceNow: -3600) {
                     try? FileManager.default.removeItem(at: url)
@@ -150,7 +117,7 @@ enum ScanCache {
             caches.append((url, modified, Int64(values?.fileSize ?? 0)))
         }
 
-        caches.sort { $0.modified > $1.modified }   // newest first
+        caches.sort { $0.modified > $1.modified }
         var kept = 0
         var bytes: Int64 = 0
         for entry in caches {
@@ -163,8 +130,6 @@ enum ScanCache {
         }
     }
 
-    // MARK: - Location
-
     private static func cacheFileURL(forRoot rootPath: String) -> URL? {
         guard let caches = FileManager.default.urls(
             for: .cachesDirectory, in: .userDomainMask
@@ -176,9 +141,6 @@ enum ScanCache {
             .appendingPathComponent("\(stableHash(rootPath)).dmscan")
     }
 
-    /// FNV-1a: stable across launches (unlike `Hasher`) and collision-safe
-    /// enough for a handful of scan roots; the root path stored inside the
-    /// file is the authoritative check.
     private static func stableHash(_ string: String) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in string.utf8 {

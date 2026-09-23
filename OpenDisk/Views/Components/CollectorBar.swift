@@ -2,17 +2,9 @@ import SwiftUI
 import AppKit
 import Quartz
 
-/// DaisyDisk-style deletion tray in the Liquid Glass functional layer. A
-/// compact footer (total + Delete) sits in the layout below the chart;
-/// hovering reveals the collected-file list, which floats *upward* over the
-/// chart — anchored just above the footer so it never covers the controls or
-/// resizes the graph.
 struct CollectorBar: View {
     let collector: Collector
-    /// True while a drag is hovering the drop target — drives the highlight.
     var isTargeted: Bool = false
-    /// Called after a deletion with the freed byte count, so the host can
-    /// rescan and bring the updated usage back to the top.
     var onDeleted: (Int64) -> Void
 
     @State private var phase: Phase = .idle
@@ -31,23 +23,14 @@ struct CollectorBar: View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
     }
 
-    /// Whether the pointer (or an active drag) currently wants the list open.
-    /// Drives `listVisible` through a short close delay so crossing the small
-    /// gap between the footer and the floating list doesn't collapse it.
     private var wantsList: Bool {
         phase == .idle && !collector.isEmpty && (footerHovered || listHovered || isTargeted)
     }
 
-    /// A macOS-protected item is being dragged: the tray refuses it and says so
-    /// immediately (the moment it's picked up — not only once it's over the
-    /// tray), so the user never even gets to drop it.
     private var rejecting: Bool {
         phase == .idle && collector.draggedProtectedReason != nil
     }
 
-    /// Content height for the floating list: ~one row per item (plus the
-    /// panel's own padding), capped so it never overruns the window — only
-    /// as tall as it needs to be, then scrolls.
     private var listHeight: CGFloat {
         min(600, CGFloat(collector.count) * 30 + 16)
     }
@@ -56,9 +39,6 @@ struct CollectorBar: View {
         footerBar
             .onHover { footerHovered = $0 }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
-            // Floating layers are anchored to the footer's bottom, then pushed
-            // up by the footer's own height so they sit fully above it (over
-            // the graph) without covering the Delete button.
             .overlay(alignment: .bottom) {
                 if listVisible {
                     listPanel
@@ -74,10 +54,7 @@ struct CollectorBar: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
-            // Open immediately, close after a short delay: moving the pointer
-            // from the footer up to the list (or back) crosses an 8pt gap that
-            // belongs to neither hover region. Without the delay the list would
-            // flash shut mid-transit; a re-entry cancels the pending close.
+            // Delayed close bridges the 8pt gap between the footer and list hover regions.
             .onChange(of: wantsList) { _, want in
                 collapseTask?.cancel()
                 if want {
@@ -101,7 +78,6 @@ struct CollectorBar: View {
             .sheet(item: $previewItem) { item in
                 QuickLookSheet(url: item.url)
             }
-            // Native double-confirmation instead of a countdown.
             .confirmationDialog(
                 "Delete \(collector.count) item\(collector.count == 1 ? "" : "s")?",
                 isPresented: $showConfirm,
@@ -115,8 +91,6 @@ struct CollectorBar: View {
                 Text("This permanently deletes the collected items and can’t be undone.")
             }
     }
-
-    // MARK: - Footer (always in layout)
 
     private var footerBar: some View {
         PanelContainer {
@@ -151,8 +125,6 @@ struct CollectorBar: View {
         }
     }
 
-    /// Replaces the footer while a protected item is being dragged: a clear,
-    /// immediate "you can't collect this" with the specific reason.
     private var rejectionView: some View {
         HStack(spacing: 8) {
             Image(systemName: "nosign")
@@ -193,8 +165,6 @@ struct CollectorBar: View {
         }
     }
 
-    /// Shown when nothing is collected yet: the persistent drop-target hint,
-    /// which lights up while a drag is hovering.
     private var hintView: some View {
         HStack(spacing: 8) {
             Image(systemName: isTargeted ? "arrow.down.circle.fill" : "arrow.down.circle.dotted")
@@ -241,7 +211,6 @@ struct CollectorBar: View {
         }
     }
 
-    /// Names the item currently being removed, e.g. "Deleting npm Cache…".
     private var deletingTitle: String {
         if let name = collector.deletionProgress?.currentName, !name.isEmpty {
             return "Deleting \(name)…"
@@ -269,8 +238,6 @@ struct CollectorBar: View {
         .font(.callout)
     }
 
-    // MARK: - Floating layers (overlay, over the chart)
-
     private var listPanel: some View {
         PanelContainer {
             ScrollView {
@@ -285,10 +252,6 @@ struct CollectorBar: View {
                 }
                 .padding(6)
             }
-            // Explicit content-based height: the list is an overlay on the
-            // short footer, so a plain maxHeight gets squeezed to the footer's
-            // height. Force a height that grows with the item count (only as
-            // tall as needed) up to a generous cap, then scroll.
             .frame(height: listHeight)
             .scrollBounceBehavior(.basedOnSize)
             .panelBackground(in: shape)
@@ -308,8 +271,6 @@ struct CollectorBar: View {
         .panelBackground(tint: .orange, in: shape)
     }
 
-    // MARK: - Actions
-
     private func performDeletion() async {
         phase = .deleting
         let result = await collector.deleteAll()
@@ -321,21 +282,16 @@ struct CollectorBar: View {
     }
 }
 
-/// Identifiable wrapper so a URL can drive a `.sheet(item:)`.
 private struct PreviewItem: Identifiable {
     let id = UUID()
     let url: URL
 }
 
-/// A single collected file inside the tray: native icon, name, size, and the
-/// Preview / Show in Finder / Open in Terminal / Remove context menu.
 private struct CollectedRow: View {
     let file: CollectedFile
     let onRemove: () -> Void
     let onPreview: () -> Void
 
-    /// The row's real Finder icon once resolved off-main; until then the
-    /// row draws a type icon so the tray never blocks on IconServices.
     @State private var resolvedIcon: NSImage?
 
     var body: some View {
@@ -348,8 +304,6 @@ private struct CollectedRow: View {
             .buttonStyle(.plain)
             .help("Remove from Collector")
 
-            // Cache, then the freshly resolved icon, then a no-I/O type
-            // icon — never a blocking per-path IconServices lookup in body.
             Image(nsImage: resolvedIcon
                 ?? FileIcon.cached(for: file.path)
                 ?? FileIcon.typeIcon(
@@ -372,8 +326,6 @@ private struct CollectedRow: View {
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
         .hoverHighlight(cornerRadius: 6)
-        // Resolve the real Finder icon off the main thread; the row shows
-        // a type icon meanwhile (same pattern as the folder rows).
         .task(id: file.path) {
             guard FileIcon.cached(for: file.path) == nil else { return }
             await FileIcon.warm(file.path)
@@ -419,8 +371,6 @@ private struct CollectedRow: View {
     }
 }
 
-/// Native Quick Look preview shown in a sheet, wrapping AppKit's
-/// `QLPreviewView` (SwiftUI's `quickLookPreview` modifier is iOS-only).
 private struct QuickLookSheet: View {
     let url: URL
     @Environment(\.dismiss) private var dismiss
@@ -472,10 +422,6 @@ private struct QuickLookView: NSViewRepresentable {
     }
 }
 
-// MARK: - macOS 15 / 26 panel styling
-
-/// Liquid Glass on macOS 26, where nearby panels merge as they move;
-/// a plain group on macOS 15, where there is nothing to merge.
 private struct PanelContainer<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -489,9 +435,6 @@ private struct PanelContainer<Content: View>: View {
 }
 
 private extension View {
-    /// The floating-panel surface: Liquid Glass on macOS 26, the standard
-    /// regular material (the look of Sequoia's own floating panels) before
-    /// it. `tint` washes the surface with a status color either way.
     @ViewBuilder
     func panelBackground(tint: Color? = nil, in shape: RoundedRectangle) -> some View {
         if #available(macOS 26, *) {

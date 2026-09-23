@@ -2,11 +2,7 @@ import AppKit
 import Foundation
 import OSLog
 
-/// Full Disk Access helpers: probe, prompt, and a jump to System Settings.
-///
-/// Derived from the open-source `FullDiskAccess` helper by Mahdi Bchatnia
-/// (github.com/inket/FullDiskAccess, MIT), trimmed to the API this app
-/// uses and to its deployment target.
+// Derived from github.com/inket/FullDiskAccess by Mahdi Bchatnia (MIT).
 enum FullDiskAccess {
 
     private static let log = Logger(
@@ -14,14 +10,7 @@ enum FullDiskAccess {
         category: "FullDiskAccess"
     )
 
-    /// Whether Full Disk Access is currently granted.
-    ///
-    /// Probes several TCC-protected locations that require FDA to read (and
-    /// reading them also registers the app in the FDA list of System Settings).
-    /// The first probe that *exists* settles it — readable means granted,
-    /// unreadable means denied — and a path that isn't present on this Mac is
-    /// skipped rather than counted as a denial. (A world-readable path like
-    /// `/Library/Application Support` must NOT be used — it succeeds without FDA.)
+    // Only probe FDA-gated paths; a world-readable one like /Library/Application Support succeeds without FDA.
     static var isGranted: Bool {
         let home = NSHomeDirectory()
         let probes = [
@@ -41,8 +30,6 @@ enum FullDiskAccess {
         return false
     }
 
-    /// Relaunches the app — Full Disk Access only reaches a *freshly launched*
-    /// process, so after the user turns it on we offer to quit and reopen.
     @MainActor
     static func relaunch() {
         let config = NSWorkspace.OpenConfiguration()
@@ -52,7 +39,6 @@ enum FullDiskAccess {
         }
     }
 
-    /// Opens System Settings on Privacy & Security > Full Disk Access.
     static func openSystemSettings() {
         let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
@@ -60,9 +46,6 @@ enum FullDiskAccess {
         NSWorkspace.shared.open(url)
     }
 
-    /// Shows a one-time alert offering to open System Settings when Full
-    /// Disk Access is missing. Honors the user's "do not ask again" choice.
-    /// Main-actor isolated: it builds and runs an `NSAlert` and reads `NSApp`.
     @MainActor
     static func promptIfNotGranted(title: String, message: String) {
         guard !promptSuppressed, !isGranted else { return }
@@ -84,7 +67,6 @@ enum FullDiskAccess {
         }
     }
 
-    /// Undoes a "do not ask again" choice.
     static func resetPromptSuppression() {
         promptSuppressed = false
     }

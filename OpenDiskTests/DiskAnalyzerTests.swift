@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import OpenDisk
 
-/// Returns a canned tree without touching the filesystem.
 private struct FakeScanner: DiskScanning {
     let result: ScanResult
 
@@ -18,8 +17,6 @@ private struct FakeScanner: DiskScanning {
     }
 }
 
-/// Optionally emits one partial snapshot, then blocks until the test calls
-/// `release()`, so mid-scan UI state can be asserted deterministically.
 private final class GatedScanner: DiskScanning, Sendable {
     private let partialTree: FileTree?
     private let finalResult: ScanResult
@@ -63,9 +60,6 @@ struct DiskAnalyzerTests {
         return ScanResult(rootPath: rootPath, tree: tree)
     }
 
-    /// Polls the main actor until `condition` holds (the analyzer applies
-    /// streamed events via main-actor tasks, so a suspension point is
-    /// needed for them to land).
     private func waitUntil(
         _ condition: @MainActor () -> Bool, timeout: Duration = .seconds(5)
     ) async {
@@ -130,8 +124,6 @@ struct DiskAnalyzerTests {
         async let scanCompleted: Void = analyzer.scanDirectory("/Volumes/Test")
         await waitUntil { !analyzer.rootItems.isEmpty }
 
-        // Mid-scan: the partial snapshot is on screen, zero-size
-        // directories included (their sizes are still arriving).
         #expect(analyzer.isScanning)
         #expect(analyzer.rootItems.map(\.name) == ["movie.mov", "Documents"])
         #expect(analyzer.rootItems.first?.size == 900_000)
@@ -166,7 +158,6 @@ struct DiskAnalyzerTests {
 
         #expect(analyzer.isScanning)
         #expect(analyzer.rootItems.map(\.name) == ["Stuff", "file.bin"])
-        // Directory sizes are pending in the skeleton; file sizes are real.
         #expect(analyzer.rootItems.first?.sizeIsKnown == false)
         #expect(analyzer.rootItems.last?.sizeIsKnown == true)
 
@@ -190,13 +181,10 @@ struct DiskAnalyzerTests {
         #expect(analyzer.searchResultsArePartial == false)
         #expect(analyzer.isSearchRunning == false)
 
-        // Unlike the browsing list, search has no sub-1KB noise floor —
-        // a by-name lookup must find small files too.
         analyzer.updateSearch(query: "tiny", scope: .all)
         await waitUntil { analyzer.searchResults.first?.name == "tiny.txt" }
         #expect(analyzer.searchTotalMatches == 1)
 
-        // Clearing the query clears results synchronously.
         analyzer.updateSearch(query: "", scope: .all)
         #expect(analyzer.searchResults.isEmpty)
         #expect(analyzer.searchTotalMatches == 0)
@@ -221,7 +209,6 @@ struct DiskAnalyzerTests {
         #expect(analyzer.searchResultsArePartial)
         #expect(analyzer.searchResults.first?.size == 900_000)
 
-        // report.pdf is not in the partial snapshot yet.
         analyzer.updateSearch(query: "report", scope: .files)
         await waitUntil { analyzer.isSearchRunning == false }
         #expect(analyzer.searchResults.isEmpty)
@@ -229,7 +216,6 @@ struct DiskAnalyzerTests {
         scanner.release()
         await scanCompleted
 
-        // The finished tree re-indexes and the active query re-resolves.
         await waitUntil { !analyzer.searchResults.isEmpty }
         #expect(analyzer.searchResults.map(\.name) == ["report.pdf"])
         #expect(analyzer.searchResultsArePartial == false)

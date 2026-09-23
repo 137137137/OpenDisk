@@ -1,25 +1,15 @@
 import SwiftUI
 
-/// Bottom bar under the analysis split view:
-/// live progress + throughput while a scan runs, totals and duration once
-/// it finishes, and the volume's capacity throughout ("X available of Y",
-/// the phrasing System Settings › Storage uses).
 struct ScanStatusBar: View {
     let isScanning: Bool
-    /// What the scan is doing; words the stretch before any item has been
-    /// counted (cache + change-journal work reads as a stall otherwise).
     var phase: ScanPhase = .scanning
-    /// Fraction of the volume's used bytes scanned so far; nil shows an
-    /// indeterminate bar.
     let progressFraction: Double?
-    /// Raw scan counters; this view owns their formatting.
     let scannedBytes: Int64
     let itemsScanned: Int
     let scanStartDate: Date?
     let scanDuration: TimeInterval
     let totalBytes: Int64
     let itemCount: Int
-    /// Capacity of the volume being analyzed; nil hides the readout.
     var volumeCapacity: VolumeCapacity?
 
     private var scanStatus: String {
@@ -86,9 +76,6 @@ struct ScanStatusBar: View {
         .background(.bar)
     }
 
-    /// Capacity bar plus "X available of Y". The tooltip and accessibility
-    /// value carry the full used / available / total breakdown so the bar
-    /// text can stay short.
     private func capacityReadout(_ capacity: VolumeCapacity) -> some View {
         let available = ByteFormatter.formatFileSize(capacity.available)
         let used = ByteFormatter.formatFileSize(capacity.used)

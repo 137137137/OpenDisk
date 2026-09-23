@@ -38,17 +38,13 @@ struct FileTreeSerializationTests {
         var tree = FileTree(rootName: "/")
         tree.addNode(name: "a", parent: FileTree.rootID, size: 1, isDirectory: false)
         var blob = tree.serializedData()
-        blob.removeLast(8)  // Truncated name blob.
+        blob.removeLast(8)
         #expect(FileTree(serializedData: blob) == nil)
     }
 }
 
 @Suite("FileTree")
 struct FileTreeTests {
-
-    /// Builds:  /  ├─ Users/ ├─ a.txt(100)
-    ///              │   ├─ alice/ ─ big.bin(4096)
-    ///              │   └─ b.txt(50)
     private func makeSampleTree() -> FileTree {
         var tree = FileTree(rootName: "/")
         let users = tree.addNode(name: "Users", parent: FileTree.rootID, size: 0, isDirectory: true)
@@ -103,13 +99,11 @@ struct FileTreeTests {
 
     @Test("merge combines same-named directories recursively")
     func mergeCombinesFirmlinkStyleTrees() {
-        // System-style tree: /usr/bin/ls
         var system = FileTree(rootName: "/")
         let sysUsr = system.addNode(name: "usr", parent: FileTree.rootID, size: 0, isDirectory: true)
         let sysBin = system.addNode(name: "bin", parent: sysUsr, size: 0, isDirectory: true)
         system.addNode(name: "ls", parent: sysBin, size: 200, isDirectory: false)
 
-        // Data-style tree: /usr/local/tool + /Users/alice/file
         var data = FileTree(rootName: "/")
         let dataUsr = data.addNode(name: "usr", parent: FileTree.rootID, size: 0, isDirectory: true)
         let local = data.addNode(name: "local", parent: dataUsr, size: 0, isDirectory: true)
@@ -121,7 +115,6 @@ struct FileTreeTests {
         system.rollUpDirectorySizes()
 
         #expect(system.size(of: FileTree.rootID) == 1_200)
-        // "usr" merged, not duplicated.
         #expect(system.children(of: FileTree.rootID).count == 2)
         let mergedUsr = system.child(of: FileTree.rootID, named: "usr")!
         #expect(system.size(of: mergedUsr) == 500)
@@ -153,8 +146,6 @@ struct FileTreeTests {
         let b = tree.appendUnlinked(name: "b", size: 0, isDirectory: true)
         let file = tree.appendUnlinked(name: "f", size: 10, isDirectory: false)
         tree.link(file, under: FileTree.rootID)
-        // A mutual parent cycle detached from the root, as corrupt catalog
-        // data could produce: roll-up must terminate and ignore it.
         tree.link(a, under: b)
         tree.link(b, under: a)
         tree.rollUpDirectorySizes()

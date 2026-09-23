@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import OpenDisk
 
-/// Integration tests: run the real traversal scanner against a real
-/// temporary directory tree.
 @Suite("TraversalScanner integration", .serialized)
 struct TraversalScannerTests {
 
@@ -32,7 +30,6 @@ struct TraversalScannerTests {
             )
             tree.rollUpDirectorySizes()
 
-            // Allocated size is at least the logical size (block-rounded).
             #expect(tree.size(of: FileTree.rootID) >= 12_288)
             let subNode = tree.child(of: FileTree.rootID, named: "sub")
             #expect(subNode != nil)
@@ -81,7 +78,6 @@ struct TraversalScannerTests {
             )
             tree.rollUpDirectorySizes()
 
-            // The provider outlives the scan and yields the same content.
             let capturedProvider = try #require(provider)
             var snapshot = capturedProvider()
             snapshot.rollUpDirectorySizes()
@@ -104,7 +100,6 @@ struct TraversalScannerTests {
                 path: root.path, rootName: root.path,
                 metrics: metrics, isCancelled: { true }
             )
-            // Cancelled before any directory was read: only the root node.
             #expect(tree.nodeCount == 1)
         }
     }

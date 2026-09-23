@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// The app's shared hover treatment for clickable rows: a quaternary
-/// rounded-rectangle wash faded in and out. Owns its own hover state so
-/// hovering never invalidates the containing view.
 private struct HoverHighlight: ViewModifier {
     var cornerRadius: CGFloat
     var isEnabled: Bool
@@ -26,7 +23,6 @@ private struct HoverHighlight: ViewModifier {
 }
 
 extension View {
-    /// Applies the standard hover-highlight row treatment.
     func hoverHighlight(cornerRadius: CGFloat = 8, isEnabled: Bool = true) -> some View {
         modifier(HoverHighlight(cornerRadius: cornerRadius, isEnabled: isEnabled))
     }

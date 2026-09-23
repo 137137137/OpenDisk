@@ -1,19 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// Pure geometry for the rings chart (baobab-style sunburst): concentric
-/// rings, one per depth level, each item an annular sector whose sweep is
-/// proportional to its share of the whole.
-///
-/// Angles are in radians, measured with `atan2(dy, dx)` semantics in a
-/// y-down coordinate space: 0 points east and angles grow toward the
-/// visually clockwise direction. Drawing and hit-testing share this
-/// convention.
 enum RingsChartLayout {
-
-    /// Sectors sweeping less than this are not drawn (≈1.7°).
     static let itemMinAngle = 0.03
-    /// Stroke marking items whose children were cut off by the depth limit.
     static let continuedEdgeWidth: CGFloat = 3
     static let continuedEdgeGap: CGFloat = 4
     static let borderWidth: CGFloat = 1
@@ -27,22 +16,18 @@ enum RingsChartLayout {
         let depth: Int
         let fractionOfRoot: Double
         let hasHiddenChildren: Bool
-        /// Radians; see the coordinate convention above.
         let startAngle: Double
         let sweep: Double
         let innerRadius: CGFloat
         let outerRadius: CGFloat
-        /// 0..200 input to `ChartPalette.fill`.
         let colorPosition: Double
     }
 
     struct Layout: Equatable {
         let center: CGPoint
         let ringThickness: CGFloat
-        /// Root first, then outer rings in traversal order.
         let segments: [Segment]
 
-        /// The segment under `point`, or nil over empty space.
         func segment(at point: CGPoint) -> Segment? {
             let dx = point.x - center.x
             let dy = point.y - center.y

@@ -1,37 +1,17 @@
 #if canImport(Sparkle)
 import AppKit
 
-// Website (direct-download) build only, like SoftwareUpdater.swift: the Mac App
-// Store installs into /Applications itself, so this file compiles out of the
-// MAS target along with Sparkle.
-//
-// Why this exists: when a notarized app is launched straight from ~/Downloads,
-// Gatekeeper "translocates" it — runs it from a randomized read-only mount.
-// Sparkle cannot update a translocated app, so auto-update silently breaks for
-// every user who skips the drag-to-Applications step. Offering the move on
-// first launch fixes that.
 enum MoveToApplications {
     private static let suppressionKey = "move_to_applications_suppressed"
 
-    /// Offers to move the app into an Applications folder when it's running
-    /// from somewhere else (typically ~/Downloads). Returns `true` when the
-    /// move was performed and a relaunch is underway — the caller should skip
-    /// any further startup prompts.
     @MainActor
     static func promptIfNeeded() -> Bool {
         #if DEBUG
-        // Development runs live in DerivedData under Xcode's control —
-        // moving the app out from under it would break the debugger and
-        // the next build.
         return false
         #else
         let bundleURL = Bundle.main.bundleURL
-        // The on-disk location to move: if we're translocated, Bundle.main
-        // points inside the read-only mount, not at the real app in Downloads.
         let sourceURL = translocationOriginal(of: bundleURL) ?? bundleURL
 
-        // A Release build run from Xcode (Profile, or a Debug scheme set to
-        // Release) is still a development run.
         guard !sourceURL.path.contains("/DerivedData/") else { return false }
         guard !isInApplicationsFolder(sourceURL) else { return false }
         guard !UserDefaults.standard.bool(forKey: suppressionKey) else { return false }
@@ -64,15 +44,11 @@ enum MoveToApplications {
     }
 
     private static func isInApplicationsFolder(_ url: URL) -> Bool {
-        // Covers /Applications, ~/Applications, and subfolders of either.
         url.deletingLastPathComponent().path.range(
             of: #"(^|/)Applications(/|$)"#, options: .regularExpression
         ) != nil
     }
 
-    /// Moves (or, when the volume differs, copies) the app bundle into
-    /// /Applications, falling back to ~/Applications when /Applications isn't
-    /// writable (non-admin user). Returns the destination on success.
     private static func performMove(from sourceURL: URL) -> URL? {
         let fm = FileManager.default
         var applicationsDirs = [URL(fileURLWithPath: "/Applications")]
@@ -91,8 +67,6 @@ enum MoveToApplications {
                 do {
                     try fm.moveItem(at: sourceURL, to: destination)
                 } catch {
-                    // Cross-volume, or the source is read-only (translocation
-                    // edge cases): copy instead and trash the original.
                     try fm.copyItem(at: sourceURL, to: destination)
                     try? fm.trashItem(at: sourceURL, resultingItemURL: nil)
                 }
@@ -105,9 +79,7 @@ enum MoveToApplications {
         return nil
     }
 
-    /// A programmatic move does not clear Gatekeeper's translocation trigger
-    /// the way a user's Finder drag does — the quarantine attribute must go,
-    /// or the freshly moved copy can be translocated right back.
+    // A programmatic move keeps the quarantine xattr, so the moved copy would be translocated again.
     private static func stripQuarantine(at url: URL) {
         let xattr = Process()
         xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
@@ -117,8 +89,6 @@ enum MoveToApplications {
     }
 
     private static func relaunch(at url: URL) {
-        // `open` from a detached shell outlives this process, so the new copy
-        // starts cleanly after we exit.
         let relauncher = Process()
         relauncher.executableURL = URL(fileURLWithPath: "/bin/sh")
         relauncher.arguments = ["-c", "sleep 0.3; /usr/bin/open \"$0\"", url.path]
@@ -126,9 +96,6 @@ enum MoveToApplications {
         NSApp.terminate(nil)
     }
 
-    /// Resolves the real on-disk app URL when running translocated. Uses the
-    /// SecTranslocate* functions (present since 10.12 but not in the public
-    /// headers, hence dlsym — the same approach LetsMove uses).
     private static func translocationOriginal(of url: URL) -> URL? {
         guard let handle = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY) else {
             return nil
