@@ -93,4 +93,4 @@ To report a security problem, please follow the [security policy](SECURITY.md) i
 
 ## License
 
-[MIT](LICENSE). The Full Disk Access check is adapted from [inket/FullDiskAccess](https://github.com/inket/FullDiskAccess), and updates use [Sparkle](https://sparkle-project.org).
+[MIT](LICENSE). Updates use [Sparkle](https://sparkle-project.org). Thanks to [inket/FullDiskAccess](https://github.com/inket/FullDiskAccess).
