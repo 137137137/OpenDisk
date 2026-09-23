@@ -8,7 +8,7 @@
 <p>See what's filling up your Mac and clear it out. Free and open source.</p>
 
 [![release](https://img.shields.io/github/release/137137137/OpenDisk.svg?style=flat)](https://github.com/137137137/OpenDisk/releases/latest)
-[![license](https://img.shields.io/github/license/137137137/OpenDisk.svg?style=flat)](LICENSE)
+[![license](https://img.shields.io/github/license/137137137/OpenDisk.svg)](LICENSE)
 [![platform](https://img.shields.io/badge/macOS-15%2B-blue.svg?style=flat)](#install)
 
 <a href="https://opendisk.app"><b>Download</b></a> &nbsp;·&nbsp;
