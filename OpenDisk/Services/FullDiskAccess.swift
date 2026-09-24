@@ -10,21 +10,36 @@ enum FullDiskAccess {
 
     static var isGranted: Bool {
         let home = NSHomeDirectory()
-        let probes = [
-            "/Library/Containers/com.apple.stocks",
-            "/Library/Safari",
-            "/Library/Mail",
-            "/Library/Messages",
-        ].map { home + $0 }
+        let directories = [
+            home + "/Library/Containers/com.apple.stocks",
+            home + "/Library/Safari",
+            home + "/Library/Mail",
+            home + "/Library/Messages",
+        ]
+        let files = [
+            "/Library/Preferences/com.apple.TimeMachine.plist",
+        ]
 
-        for path in probes where FileManager.default.fileExists(atPath: path) {
+        var probed = 0
+        var readable = 0
+        for path in directories where FileManager.default.fileExists(atPath: path) {
+            probed += 1
             if (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil {
-                return true
+                readable += 1
+            } else {
+                log.debug("Full Disk Access probe failed (cannot list \(path))")
             }
-            log.debug("Full Disk Access is not granted (cannot read \(path))")
-            return false
         }
-        return false
+        for path in files where FileManager.default.fileExists(atPath: path) {
+            probed += 1
+            if let handle = FileHandle(forReadingAtPath: path) {
+                readable += 1
+                try? handle.close()
+            } else {
+                log.debug("Full Disk Access probe failed (cannot open \(path))")
+            }
+        }
+        return probed > 0 && readable == probed
     }
 
     @MainActor
@@ -37,6 +52,7 @@ enum FullDiskAccess {
     }
 
     static func openSystemSettings() {
+        _ = isGranted
         let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
         )!
