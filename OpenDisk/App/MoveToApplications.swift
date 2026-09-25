@@ -3,6 +3,7 @@ import AppKit
 
 enum MoveToApplications {
     private static let suppressionKey = "move_to_applications_suppressed"
+    private static let relaunchAttemptKey = "translocation_relaunch_attempted"
 
     @MainActor
     static func promptIfNeeded() -> Bool {
@@ -13,7 +14,17 @@ enum MoveToApplications {
         let sourceURL = translocationOriginal(of: bundleURL) ?? bundleURL
 
         guard !sourceURL.path.contains("/DerivedData/") else { return false }
-        guard !isInApplicationsFolder(sourceURL) else { return false }
+        if isInApplicationsFolder(sourceURL) {
+            guard sourceURL != bundleURL else {
+                UserDefaults.standard.removeObject(forKey: relaunchAttemptKey)
+                return false
+            }
+            guard !UserDefaults.standard.bool(forKey: relaunchAttemptKey) else { return false }
+            UserDefaults.standard.set(true, forKey: relaunchAttemptKey)
+            guard stripQuarantine(at: sourceURL) else { return false }
+            relaunch(at: sourceURL)
+            return true
+        }
         guard !UserDefaults.standard.bool(forKey: suppressionKey) else { return false }
 
         let alert = NSAlert()
@@ -70,7 +81,7 @@ enum MoveToApplications {
                     try fm.copyItem(at: sourceURL, to: destination)
                     try? fm.trashItem(at: sourceURL, resultingItemURL: nil)
                 }
-                stripQuarantine(at: destination)
+                _ = stripQuarantine(at: destination)
                 return destination
             } catch {
                 continue
@@ -79,18 +90,30 @@ enum MoveToApplications {
         return nil
     }
 
-    private static func stripQuarantine(at url: URL) {
+    @discardableResult
+    private static func stripQuarantine(at url: URL) -> Bool {
         let xattr = Process()
         xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
         xattr.arguments = ["-dr", "com.apple.quarantine", url.path]
-        try? xattr.run()
+        do {
+            try xattr.run()
+        } catch {
+            return false
+        }
         xattr.waitUntilExit()
+        return getxattr(url.path, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW) < 0
     }
 
+    @MainActor
     private static func relaunch(at url: URL) {
         let relauncher = Process()
         relauncher.executableURL = URL(fileURLWithPath: "/bin/sh")
-        relauncher.arguments = ["-c", "sleep 0.3; /usr/bin/open \"$0\"", url.path]
+        let pid = ProcessInfo.processInfo.processIdentifier
+        relauncher.arguments = [
+            "-c",
+            "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open \"$0\"",
+            url.path,
+        ]
         try? relauncher.run()
         NSApp.terminate(nil)
     }
