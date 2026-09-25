@@ -61,6 +61,7 @@ enum FullDiskAccess {
 
     @MainActor
     static func promptIfNotGranted(title: String, message: String) {
+        guard !Bundle.main.bundlePath.contains("/AppTranslocation/") else { return }
         guard !promptSuppressed, !isGranted else { return }
 
         let alert = NSAlert()

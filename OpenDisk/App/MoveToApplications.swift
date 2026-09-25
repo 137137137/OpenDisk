@@ -14,17 +14,15 @@ enum MoveToApplications {
         let sourceURL = translocationOriginal(of: bundleURL) ?? bundleURL
 
         guard !sourceURL.path.contains("/DerivedData/") else { return false }
-        if isInApplicationsFolder(sourceURL) {
-            guard sourceURL != bundleURL else {
-                UserDefaults.standard.removeObject(forKey: relaunchAttemptKey)
-                return false
-            }
+        if sourceURL != bundleURL {
             guard !UserDefaults.standard.bool(forKey: relaunchAttemptKey) else { return false }
             UserDefaults.standard.set(true, forKey: relaunchAttemptKey)
             guard stripQuarantine(at: sourceURL) else { return false }
             relaunch(at: sourceURL)
             return true
         }
+        UserDefaults.standard.removeObject(forKey: relaunchAttemptKey)
+        guard !isInApplicationsFolder(sourceURL) else { return false }
         guard !UserDefaults.standard.bool(forKey: suppressionKey) else { return false }
 
         let alert = NSAlert()
