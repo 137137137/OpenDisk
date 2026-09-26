@@ -19,49 +19,52 @@ enum TraversalScanner {
     private final class WorkState: Sendable {
         private struct Guarded {
             var stack: [WorkItem] = []
-            var pendingDirectories = 0
-            var isDrained = false
+            var activeWorkers = 0
+            var launched: [DispatchWorkItem] = []
         }
 
         private let guarded = Mutex(Guarded())
-        private let itemsAvailable = DispatchSemaphore(value: 0)
+        private let maxWorkers: Int
 
-        func start(with item: WorkItem) {
+        init(root: WorkItem, maxWorkers: Int) {
+            self.maxWorkers = max(1, maxWorkers)
             guarded.withLock {
-                $0.stack.append(item)
-                $0.pendingDirectories = 1
+                $0.stack = [root]
+                $0.activeWorkers = 1
             }
-            itemsAvailable.signal()
-        }
-
-        func push(_ items: [WorkItem]) {
-            guard !items.isEmpty else { return }
-            guarded.withLock {
-                $0.pendingDirectories += items.count
-                $0.stack.append(contentsOf: items)
-            }
-            for _ in items { itemsAvailable.signal() }
         }
 
         func pop() -> WorkItem? {
-            itemsAvailable.wait()
-            let item: WorkItem? = guarded.withLock {
-                $0.isDrained ? nil : $0.stack.removeLast()
+            guarded.withLock {
+                guard let item = $0.stack.popLast() else {
+                    $0.activeWorkers -= 1
+                    return nil
+                }
+                return item
             }
-            if item == nil { itemsAvailable.signal() }
-            return item
         }
 
-        func completeDirectory() {
-            let drained = guarded.withLock {
-                $0.pendingDirectories -= 1
-                if $0.pendingDirectories == 0 {
-                    $0.isDrained = true
-                    return true
-                }
-                return false
+        func push(_ items: [WorkItem]) -> Int {
+            guard !items.isEmpty else { return 0 }
+            return guarded.withLock {
+                $0.stack.append(contentsOf: items)
+                let extra = min(maxWorkers - $0.activeWorkers, $0.stack.count - 1)
+                guard extra > 0 else { return 0 }
+                $0.activeWorkers += extra
+                return extra
             }
-            if drained { itemsAvailable.signal() }
+        }
+
+        func launch(on queue: DispatchQueue, _ body: @escaping @Sendable () -> Void) {
+            guarded.withLock {
+                let worker = DispatchWorkItem(block: body)
+                $0.launched.append(worker)
+                queue.async(execute: worker)
+            }
+        }
+
+        func nextLaunched() -> DispatchWorkItem? {
+            guarded.withLock { $0.launched.popLast() }
         }
     }
 
@@ -84,32 +87,45 @@ enum TraversalScanner {
         let tree = Mutex(FileTree(rootName: rootName))
         onPartialTreeAvailable { tree.withLock { $0 } }
         let seenMultiLinkFiles = Mutex(Set<FileTree.HardLinkKey>())
-        let state = WorkState()
+        let state = WorkState(
+            root: WorkItem(directoryID: FileTree.rootID, path: path),
+            maxWorkers: workerCount
+        )
 
         let queue = DispatchQueue(
             label: "OpenDisk.TraversalScanner",
             qos: .userInitiated,
             attributes: .concurrent
         )
-        let group = DispatchGroup()
 
-        queue.async {
-            state.start(with: WorkItem(directoryID: FileTree.rootID, path: path))
-        }
-
-        for _ in 0..<workerCount {
-            queue.async(group: group) {
-                runWorker(
-                    state: state,
-                    tree: tree,
-                    seenMultiLinkFiles: seenMultiLinkFiles,
-                    allowedDevices: devices,
-                    metrics: metrics,
-                    isCancelled: isCancelled
-                )
+        @Sendable func launch(_ count: Int) {
+            for _ in 0..<count {
+                state.launch(on: queue) {
+                    runWorker(
+                        state: state,
+                        tree: tree,
+                        seenMultiLinkFiles: seenMultiLinkFiles,
+                        allowedDevices: devices,
+                        metrics: metrics,
+                        isCancelled: isCancelled,
+                        launch: launch
+                    )
+                }
             }
         }
-        group.wait()
+
+        runWorker(
+            state: state,
+            tree: tree,
+            seenMultiLinkFiles: seenMultiLinkFiles,
+            allowedDevices: devices,
+            metrics: metrics,
+            isCancelled: isCancelled,
+            launch: launch
+        )
+        while let worker = state.nextLaunched() {
+            worker.wait()
+        }
 
         return tree.withLock { $0 }
     }
@@ -120,12 +136,12 @@ enum TraversalScanner {
         seenMultiLinkFiles: borrowing Mutex<Set<FileTree.HardLinkKey>>,
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
-        isCancelled: @escaping @Sendable () -> Bool
+        isCancelled: @escaping @Sendable () -> Bool,
+        launch: (Int) -> Void
     ) {
         let reader = BulkDirectoryReader()
 
         while let item = state.pop() {
-            defer { state.completeDirectory() }
             if isCancelled() { continue }
 
             let outcome = reader.read(
@@ -190,7 +206,7 @@ enum TraversalScanner {
                 items: contents.files.count + contents.subdirectoryNames.count
                     + contents.mountPointNames.count
             )
-            state.push(discovered)
+            launch(state.push(discovered))
         }
     }
 }
