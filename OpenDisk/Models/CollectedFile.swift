@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct CollectedFile: Codable, Transferable, Identifiable, Hashable, Sendable {
+struct CollectedFile: Codable, Identifiable, Hashable, Sendable {
     let path: String
     let name: String
     let size: Int64
@@ -21,9 +21,5 @@ struct CollectedFile: Codable, Transferable, Identifiable, Hashable, Sendable {
 
     init(_ item: FolderItem) {
         self.init(path: item.path, name: item.name, size: item.size, isDirectory: item.isDirectory)
-    }
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .collectedFile)
     }
 }

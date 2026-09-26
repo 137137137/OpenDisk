@@ -24,28 +24,29 @@ final class FileDragItem: NSObject, NSPasteboardWriting {
     }
 
     func writableTypes(for pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType] {
-        (fileURL?.writableTypes(for: pasteboard) ?? []) + [.collectedFile]
+        fileURL?.writableTypes(for: pasteboard) ?? [.collectedFile]
     }
 
     func writingOptions(
         forType type: NSPasteboard.PasteboardType, pasteboard: NSPasteboard
     ) -> NSPasteboard.WritingOptions {
-        guard type != .collectedFile, let fileURL else { return [] }
-        return fileURL.writingOptions(forType: type, pasteboard: pasteboard)
+        fileURL?.writingOptions(forType: type, pasteboard: pasteboard) ?? []
     }
 
     func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
-        if type == .collectedFile { return try? JSONEncoder().encode(file) }
-        return fileURL?.pasteboardPropertyList(forType: type)
+        guard let fileURL else { return try? JSONEncoder().encode(file) }
+        return fileURL.pasteboardPropertyList(forType: type)
     }
 }
 
 @MainActor
 final class FileDragSource: NSObject, NSDraggingSource {
     static let shared = FileDragSource()
+    static let filesMovedNotification = Notification.Name("OpenDisk.FileDragSource.filesMoved")
 
     private static let maxPreviewImages = 12
     private var onEnd: ((NSDragOperation) -> Void)?
+    private(set) var activeFiles: [CollectedFile]?
 
     @discardableResult
     func begin(
@@ -77,19 +78,10 @@ final class FileDragSource: NSObject, NSDraggingSource {
 
         finish()
         self.onEnd = onEnd
+        activeFiles = files
         let session = view.beginDraggingSession(with: items, event: event, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = exportsFileURLs
-        Self.cancelActiveGestures(in: view)
         return true
-    }
-
-    private static func cancelActiveGestures(in view: NSView) {
-        for recognizer in view.gestureRecognizers
-        where recognizer.state == .began || recognizer.state == .changed {
-            recognizer.isEnabled = false
-            recognizer.isEnabled = true
-        }
-        view.subviews.forEach(cancelActiveGestures)
     }
 
     func draggingSession(
@@ -99,18 +91,24 @@ final class FileDragSource: NSObject, NSDraggingSource {
     }
 
     nonisolated static func operationMask(for context: NSDraggingContext) -> NSDragOperation {
-        context == .withinApplication ? [.copy, .generic] : .copy
+        context == .withinApplication ? [.copy, .generic] : [.copy, .move, .generic]
     }
 
     func draggingSession(
         _ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation
     ) {
+        let files = activeFiles ?? []
         finish(operation)
+        if !operation.isDisjoint(with: [.move, .generic]),
+           files.contains(where: { !$0.path.hasPrefix("::") && !FileManager.default.fileExists(atPath: $0.path) }) {
+            NotificationCenter.default.post(name: Self.filesMovedNotification, object: nil)
+        }
     }
 
     private func finish(_ operation: NSDragOperation = []) {
         let pending = onEnd
         onEnd = nil
+        activeFiles = nil
         pending?(operation)
     }
 
@@ -187,5 +185,32 @@ extension View {
         modifier(FileDragModifier(
             files: files, exportsFileURLs: exportsFileURLs, onBegin: onBegin, onEnd: onEnd
         ))
+    }
+}
+
+struct InAppFileDropDelegate: DropDelegate {
+    let onTargetChange: (Bool) -> Void
+    let perform: ([CollectedFile], CGPoint) -> Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        FileDragSource.shared.activeFiles != nil
+    }
+
+    func dropEntered(info: DropInfo) {
+        onTargetChange(true)
+    }
+
+    func dropExited(info: DropInfo) {
+        onTargetChange(false)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .copy)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onTargetChange(false)
+        guard let files = FileDragSource.shared.activeFiles else { return false }
+        return perform(files, info.location)
     }
 }

@@ -115,13 +115,7 @@ struct DiskAnalysisView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    Task {
-                        await analyzer.scanDirectory(
-                            currentPath.hasPrefix("::") ? rootPath : currentPath
-                        )
-                    }
-                }
+                Button("Refresh", systemImage: "arrow.clockwise", action: refresh)
                 .keyboardShortcut("r", modifiers: .command)
                 .help("Rescan the current folder")
             }
@@ -169,6 +163,9 @@ struct DiskAnalysisView: View {
         .onChange(of: currentPath) {
             selectedPaths.removeAll()
             selectionAnchor = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: FileDragSource.filesMovedNotification)) { _ in
+            refresh()
         }
         .onChange(of: analyzer.currentPath) { _, newPath in
             guard !newPath.isEmpty, newPath != currentPath else { return }
@@ -451,23 +448,37 @@ struct DiskAnalysisView: View {
             }
         }
         .coordinateSpace(.named(Collector.dropSpace))
-        .dropDestination(for: CollectedFile.self) { files, location in
-            if collector.draggingOut != nil {
-                collector.resolveDragOut(droppedAt: location)
-                return true
-            }
-            let expanded = files.flatMap { file in
-                file.path == HiddenSpaceInfo.sentinelPath
-                    ? analyzer.collectablePurgeableFiles()
-                    : [file]
-            }
-            collector.flagDraggedProtected(nil)
-            let allowed = expanded.filter { ProtectedPaths.reason(for: $0.path) == nil }
-            guard !allowed.isEmpty else { return false }
-            collector.add(allowed)
-            selectedPaths.subtract(allowed.map(\.path))
+        .onDrop(
+            of: [.fileURL, .collectedFile],
+            delegate: InAppFileDropDelegate(
+                onTargetChange: { isCollectorTargeted = $0 },
+                perform: handleCollectorDrop
+            )
+        )
+    }
+
+    private func handleCollectorDrop(_ files: [CollectedFile], at location: CGPoint) -> Bool {
+        if collector.draggingOut != nil {
+            collector.resolveDragOut(droppedAt: location)
             return true
-        } isTargeted: { isCollectorTargeted = $0 }
+        }
+        let expanded = files.flatMap { file in
+            file.path == HiddenSpaceInfo.sentinelPath
+                ? analyzer.collectablePurgeableFiles()
+                : [file]
+        }
+        collector.flagDraggedProtected(nil)
+        let allowed = expanded.filter { ProtectedPaths.reason(for: $0.path) == nil }
+        guard !allowed.isEmpty else { return false }
+        collector.add(allowed)
+        selectedPaths.subtract(allowed.map(\.path))
+        return true
+    }
+
+    private func refresh() {
+        Task {
+            await analyzer.scanDirectory(currentPath.hasPrefix("::") ? rootPath : currentPath)
+        }
     }
 
     private var progressFraction: Double? {

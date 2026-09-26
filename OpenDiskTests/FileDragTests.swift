@@ -48,7 +48,7 @@ struct FileDragTests {
         for (item, file) in zip(items, files) {
             let raw = try #require(item.string(forType: .fileURL))
             #expect(URL(string: raw)?.path == file.path)
-            #expect(item.types.first == .fileURL)
+            #expect(item.types == [.fileURL])
         }
     }
 
@@ -82,29 +82,23 @@ struct FileDragTests {
         #expect(legacy == files.map(\.path))
     }
 
-    @Test("the collector drop decodes every dragged item back to its metadata")
-    func collectorDecodesItems() async throws {
+    @Test("exported items carry nothing but the file URL, exactly like a Finder drag")
+    func exportedItemsMatchFinder() throws {
         let (root, files) = try makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
-        let pasteboard = write(files)
-        defer { pasteboard.releaseGlobally() }
+        let ours = write(files)
+        defer { ours.releaseGlobally() }
+        let reference = NSPasteboard(name: NSPasteboard.Name("FileDragTests-ref-\(UUID().uuidString)"))
+        defer { reference.releaseGlobally() }
+        reference.clearContents()
+        #expect(reference.writeObjects(files.map { $0.url as NSURL }))
 
-        var decoded: [CollectedFile] = []
-        for item in pasteboard.pasteboardItems ?? [] {
-            let data = try #require(item.data(forType: .collectedFile))
-            let provider = NSItemProvider()
-            provider.registerDataRepresentation(
-                forTypeIdentifier: UTType.collectedFile.identifier, visibility: .all
-            ) { completion in
-                completion(data, nil)
-                return nil
-            }
-            let file = try await withCheckedThrowingContinuation { continuation in
-                _ = provider.loadTransferable(type: CollectedFile.self) { continuation.resume(with: $0) }
-            }
-            decoded.append(file)
-        }
-        #expect(decoded == files)
+        let ourTypes = (ours.pasteboardItems ?? []).map(\.types)
+        let referenceTypes = (reference.pasteboardItems ?? []).map(\.types)
+        #expect(ourTypes == referenceTypes)
+        let ourURLs = (ours.pasteboardItems ?? []).compactMap { $0.string(forType: .fileURL) }
+        let referenceURLs = (reference.pasteboardItems ?? []).compactMap { $0.string(forType: .fileURL) }
+        #expect(ourURLs == referenceURLs)
     }
 
     @Test("hidden-space sentinel carries no file URL but still reaches the collector")
@@ -142,10 +136,12 @@ struct FileDragTests {
         #expect(pasteboard.pasteboardItems?.count == 3)
     }
 
-    @Test("other apps are offered copy only, never move, alias or delete")
+    @Test("other apps get Finder's normal move or copy, never alias or delete")
     func operationMask() {
         let outside = FileDragSource.operationMask(for: .outsideApplication)
-        #expect(outside == .copy)
+        #expect(outside == [.copy, .move, .generic])
+        #expect(!outside.contains(.link))
+        #expect(!outside.contains(.delete))
         #expect(FileDragSource.operationMask(for: .withinApplication).contains(.copy))
     }
 
