@@ -62,18 +62,20 @@ final class DeviceMonitor {
     nonisolated static func volumeCapacity(ofPath path: String) -> VolumeCapacity? {
         let url = URL(fileURLWithPath: path)
         if let values = try? url.resourceValues(forKeys: [
-            .volumeTotalCapacityKey, .volumeAvailableCapacityKey
+            .volumeTotalCapacityKey, .volumeAvailableCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
         ]), let total = values.volumeTotalCapacity {
             return VolumeCapacity(
                 total: Int64(total),
-                available: Int64(values.volumeAvailableCapacity ?? 0)
+                free: Int64(values.volumeAvailableCapacity ?? 0),
+                availableForImportantUsage: values.volumeAvailableCapacityForImportantUsage
             )
         }
 
         if let attributes = try? FileManager.default.attributesOfFileSystem(forPath: path),
            let total = attributes[.systemSize] as? Int64,
            let free = attributes[.systemFreeSize] as? Int64 {
-            return VolumeCapacity(total: total, available: free)
+            return VolumeCapacity(total: total, free: free)
         }
         return nil
     }

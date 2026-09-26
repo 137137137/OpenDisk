@@ -92,9 +92,22 @@ struct ScanStatusBar: View {
                 .contentTransition(.numericText())
                 .lineLimit(1)
         }
-        .help("Used: \(used)\nAvailable: \(available)\nTotal: \(total)")
+        .help(capacityHelp(capacity, used: used, available: available, total: total))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Disk space")
         .accessibilityValue("\(used) used, \(available) available of \(total)")
+    }
+
+    private func capacityHelp(
+        _ capacity: VolumeCapacity, used: String, available: String, total: String
+    ) -> String {
+        var lines = ["Used: \(used)", "Available: \(available)", "Total: \(total)"]
+        if capacity.purgeable > 0 {
+            let purgeable = ByteFormatter.formatFileSize(capacity.purgeable)
+            lines.append(
+                "Available includes \(purgeable) of purgeable space, such as local Time Machine snapshots, that macOS frees automatically when needed."
+            )
+        }
+        return lines.joined(separator: "\n")
     }
 }
