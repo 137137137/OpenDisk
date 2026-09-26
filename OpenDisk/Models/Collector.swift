@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -11,6 +12,11 @@ final class Collector {
     private var dragNoticeTask: Task<Void, Never>?
 
     private(set) var deletionProgress: DeletionProgress?
+
+    static let dropSpace = "collectorDropSpace"
+    private(set) var draggingOut: [CollectedFile]?
+    @ObservationIgnored var keepZones: [String: CGRect] = [:]
+    private var dragOutTask: Task<Void, Never>?
 
     struct DeletionProgress: Equatable {
         var currentName: String
@@ -67,6 +73,34 @@ final class Collector {
             guard !Task.isCancelled else { return }
             self?.draggedProtectedReason = nil
         }
+    }
+
+    func beginDragOut(_ files: [CollectedFile]) {
+        dragOutTask?.cancel()
+        draggingOut = files.filter { contains(path: $0.path) }
+    }
+
+    func endDragOut(operation: NSDragOperation) {
+        guard draggingOut != nil else { return }
+        guard operation.isEmpty else {
+            let pending = draggingOut
+            dragOutTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self, self.draggingOut == pending else { return }
+                self.draggingOut = nil
+            }
+            return
+        }
+        resolveDragOut(droppedAt: nil)
+    }
+
+    func resolveDragOut(droppedAt location: CGPoint?) {
+        dragOutTask?.cancel()
+        guard let files = draggingOut else { return }
+        draggingOut = nil
+        if let location, keepZones.values.contains(where: { $0.contains(location) }) { return }
+        let paths = Set(files.map(\.path))
+        recordingUndo { items.removeAll { paths.contains($0.path) } }
     }
 
     func remove(_ file: CollectedFile) { recordingUndo { items.removeAll { $0.path == file.path } } }

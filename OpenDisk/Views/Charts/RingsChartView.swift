@@ -42,10 +42,12 @@ struct RingsChartView: View {
                     }
                 }
             )
-            .draggable(draggableGroup) {
-                segmentDragPreview
-                    .onAppear { collector.flagDraggedProtected(draggedProtectedReason) }
-                    .onDisappear { collector.flagDraggedProtected(nil) }
+            .fileDrag { location in
+                draggableSegment(at: location).map { [collectedFile(for: $0)] } ?? []
+            } onBegin: { files in
+                collector.flagDraggedProtected(protectedReason(for: files))
+            } onEnd: { _ in
+                collector.flagDraggedProtected(nil)
             }
             .contextMenu {
                 if let segment = draggableSegment {
@@ -93,16 +95,18 @@ struct RingsChartView: View {
 
     private var draggableSegment: RingsChartLayout.Segment? {
         guard let hoveredPath,
-              let segment = layout?.segments.first(where: { $0.path == hoveredPath }),
-              segment.depth >= 1,
-              segment.kind == .directory || segment.kind == .file
+              let segment = layout?.segments.first(where: { $0.path == hoveredPath })
         else { return nil }
+        return isDraggable(segment) ? segment : nil
+    }
+
+    private func draggableSegment(at location: CGPoint) -> RingsChartLayout.Segment? {
+        guard let segment = layout?.segment(at: location), isDraggable(segment) else { return nil }
         return segment
     }
 
-    private var draggableGroup: CollectedFileGroup {
-        guard let segment = draggableSegment else { return CollectedFileGroup(files: []) }
-        return CollectedFileGroup(files: [collectedFile(for: segment)])
+    private func isDraggable(_ segment: RingsChartLayout.Segment) -> Bool {
+        segment.depth >= 1 && (segment.kind == .directory || segment.kind == .file)
     }
 
     private func collectedFile(for segment: RingsChartLayout.Segment) -> CollectedFile {
@@ -112,27 +116,13 @@ struct RingsChartView: View {
         )
     }
 
-    private var draggedProtectedReason: String? {
-        guard let segment = draggableSegment,
-              let reason = ProtectedPaths.reason(for: segment.path) else { return nil }
-        return "“\(segment.name)” \(reason)"
-    }
-
-    @ViewBuilder
-    private var segmentDragPreview: some View {
-        if let segment = draggableSegment {
-            HStack(spacing: 6) {
-                Image(nsImage: FileIcon.icon(for: segment.path))
-                    .resizable()
-                    .frame(width: 16, height: 16)
-                Text(segment.name).lineLimit(1)
-                Text(ByteFormatter.formatFileSize(segment.size))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+    private func protectedReason(for files: [CollectedFile]) -> String? {
+        for file in files {
+            if let reason = ProtectedPaths.reason(for: file.path) {
+                return "“\(file.name)” \(reason)"
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
         }
+        return nil
     }
 
     private func drawHoverOverlay(

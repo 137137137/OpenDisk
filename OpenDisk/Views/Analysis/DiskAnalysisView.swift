@@ -450,8 +450,13 @@ struct DiskAnalysisView: View {
                 Task { await analyzer.scanDirectory(rootPath) }
             }
         }
-        .dropDestination(for: CollectedFileGroup.self) { groups, _ in
-            let expanded = groups.flatMap(\.files).flatMap { file in
+        .coordinateSpace(.named(Collector.dropSpace))
+        .dropDestination(for: CollectedFile.self) { files, location in
+            if collector.draggingOut != nil {
+                collector.resolveDragOut(droppedAt: location)
+                return true
+            }
+            let expanded = files.flatMap { file in
                 file.path == HiddenSpaceInfo.sentinelPath
                     ? analyzer.collectablePurgeableFiles()
                     : [file]

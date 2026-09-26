@@ -24,7 +24,12 @@ struct CollectorBar: View {
     }
 
     private var wantsList: Bool {
-        phase == .idle && !collector.isEmpty && (footerHovered || listHovered || isTargeted)
+        phase == .idle && !collector.isEmpty && collector.draggingOut == nil
+            && (footerHovered || listHovered || isTargeted)
+    }
+
+    private var collecting: Bool {
+        isTargeted && collector.draggingOut == nil
     }
 
     private var rejecting: Bool {
@@ -37,11 +42,18 @@ struct CollectorBar: View {
 
     var body: some View {
         footerBar
+            .onGeometryChange(for: CGRect.self) {
+                $0.frame(in: .named(Collector.dropSpace))
+            } action: { collector.keepZones["footer"] = $0 }
             .onHover { footerHovered = $0 }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
             .overlay(alignment: .bottom) {
                 if listVisible {
                     listPanel
+                        .onGeometryChange(for: CGRect.self) {
+                            $0.frame(in: .named(Collector.dropSpace))
+                        } action: { collector.keepZones["list"] = $0 }
+                        .onDisappear { collector.keepZones["list"] = nil }
                         .onHover { listHovered = $0 }
                         .offset(y: -(footerHeight + 8))
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -53,6 +65,9 @@ struct CollectorBar: View {
                         .offset(y: -(footerHeight + 8))
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
+            }
+            .onChange(of: collector.draggingOut == nil) { _, idle in
+                if !idle { listHovered = false; footerHovered = false }
             }
             .onChange(of: wantsList) { _, want in
                 collapseTask?.cancel()
@@ -68,7 +83,7 @@ struct CollectorBar: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
             .animation(.spring(duration: 0.3), value: listVisible)
-            .animation(.easeInOut(duration: 0.15), value: isTargeted)
+            .animation(.easeInOut(duration: 0.15), value: collecting)
             .animation(.spring(duration: 0.3), value: collector.count)
             .animation(.spring(duration: 0.3), value: phase)
             .animation(.spring(duration: 0.3), value: collector.blockedNotice)
@@ -98,12 +113,12 @@ struct CollectorBar: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .panelBackground(
-                    tint: rejecting ? .red : (isTargeted ? .accentColor : nil),
+                    tint: rejecting ? .red : (collecting ? .accentColor : nil),
                     in: shape
                 )
                 .overlay {
                     shape.strokeBorder(
-                        rejecting ? Color.red : (isTargeted ? Color.accentColor : .clear),
+                        rejecting ? Color.red : (collecting ? Color.accentColor : .clear),
                         lineWidth: 1.5
                     )
                 }
@@ -148,6 +163,12 @@ struct CollectorBar: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .contentShape(Rectangle())
+            .fileDrag({ _ in collector.items }, exportsFileURLs: false) { files in
+                collector.beginDragOut(files)
+            } onEnd: { operation in
+                collector.endDragOut(operation: operation)
+            }
             Spacer()
             Button {
                 showConfirm = true
@@ -166,12 +187,12 @@ struct CollectorBar: View {
 
     private var hintView: some View {
         HStack(spacing: 8) {
-            Image(systemName: isTargeted ? "arrow.down.circle.fill" : "arrow.down.circle.dotted")
-            Text(isTargeted ? "Release to collect" : "Drag files here to collect them for deletion")
+            Image(systemName: collecting ? "arrow.down.circle.fill" : "arrow.down.circle.dotted")
+            Text(collecting ? "Release to collect" : "Drag files here to collect them for deletion")
         }
         .font(.callout)
-        .fontWeight(isTargeted ? .semibold : .regular)
-        .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
+        .fontWeight(collecting ? .semibold : .regular)
+        .foregroundStyle(collecting ? Color.accentColor : Color.secondary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
     }
@@ -244,6 +265,7 @@ struct CollectorBar: View {
                     ForEach(collector.items) { file in
                         CollectedRow(
                             file: file,
+                            collector: collector,
                             onRemove: { collector.remove(file) },
                             onPreview: { previewItem = PreviewItem(url: file.url) }
                         )
@@ -288,6 +310,7 @@ private struct PreviewItem: Identifiable {
 
 private struct CollectedRow: View {
     let file: CollectedFile
+    let collector: Collector
     let onRemove: () -> Void
     let onPreview: () -> Void
 
@@ -324,6 +347,11 @@ private struct CollectedRow: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .contentShape(Rectangle())
+        .fileDrag({ _ in [file] }, exportsFileURLs: false) { files in
+            collector.beginDragOut(files)
+        } onEnd: { operation in
+            collector.endDragOut(operation: operation)
+        }
         .hoverHighlight(cornerRadius: 6)
         .task(id: file.path) {
             guard FileIcon.cached(for: file.path) == nil else { return }

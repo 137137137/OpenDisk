@@ -245,4 +245,61 @@ struct CollectorTests {
         #expect(collector.contains(path: doomed.path))
         #expect(!collector.contains(path: a.path))
     }
+
+    @Test("dropping a dragged-out item where nothing accepts it removes it from the collector")
+    func dragOutToNowhereRemoves() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try makeFile("a.txt", in: root)
+        let b = try makeFile("b.txt", in: root)
+        let collector = Collector()
+        collector.add([a, b])
+
+        collector.beginDragOut([a])
+        collector.endDragOut(operation: [])
+
+        #expect(collector.items == [b])
+        #expect(collector.draggingOut == nil)
+        #expect(FileManager.default.fileExists(atPath: a.path))
+        collector.undo()
+        #expect(collector.items == [a, b])
+    }
+
+    @Test("dropping back on the collector keeps the item, elsewhere in the window removes it")
+    func dragOutRespectsKeepZones() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try makeFile("a.txt", in: root)
+        let b = try makeFile("b.txt", in: root)
+        let collector = Collector()
+        collector.add([a, b])
+        collector.keepZones["footer"] = CGRect(x: 0, y: 400, width: 400, height: 60)
+
+        collector.beginDragOut([a])
+        collector.endDragOut(operation: .copy)
+        collector.resolveDragOut(droppedAt: CGPoint(x: 100, y: 420))
+        #expect(collector.items == [a, b])
+        #expect(collector.draggingOut == nil)
+
+        collector.beginDragOut([a])
+        collector.resolveDragOut(droppedAt: CGPoint(x: 100, y: 100))
+        collector.endDragOut(operation: .copy)
+        #expect(collector.items == [b])
+    }
+
+    @Test("dragging out everything clears the collector and the files stay on disk")
+    func dragOutAll() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let files = try ["a", "b", "c"].map { try makeFile("\($0).txt", in: root) }
+        let collector = Collector()
+        collector.add(files)
+
+        collector.beginDragOut(collector.items)
+        collector.endDragOut(operation: [])
+
+        #expect(collector.isEmpty)
+        let allExist = files.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
+        #expect(allExist)
+    }
 }

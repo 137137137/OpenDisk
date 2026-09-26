@@ -24,15 +24,6 @@ struct CollectedFile: Codable, Transferable, Identifiable, Hashable, Sendable {
     }
 
     static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .json)
-        ProxyRepresentation(exporting: \.url)
-    }
-}
-
-struct CollectedFileGroup: Codable, Transferable, Sendable {
-    let files: [CollectedFile]
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .json)
+        CodableRepresentation(contentType: .collectedFile)
     }
 }

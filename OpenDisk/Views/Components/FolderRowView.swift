@@ -21,12 +21,12 @@ struct FolderRowView: View {
         if isSynthetic && item.path != HiddenSpaceInfo.sentinelPath {
             row
         } else {
-            row.draggable(CollectedFileGroup(files: dragFiles)) {
-                dragPreview
-                    .onAppear {
-                        collector.flagDraggedProtected(draggedProtectedReason)
-                    }
-                    .onDisappear { collector.flagDraggedProtected(nil) }
+            row.fileDrag { _ in
+                dragFiles
+            } onBegin: { _ in
+                collector.flagDraggedProtected(draggedProtectedReason)
+            } onEnd: { _ in
+                collector.flagDraggedProtected(nil)
             }
         }
     }
@@ -145,27 +145,6 @@ struct FolderRowView: View {
                 .interpolation(.high)
                 .frame(width: 22, height: 22)
         }
-    }
-
-    private var dragPreview: some View {
-        HStack(spacing: 6) {
-            Image(nsImage: isSynthetic ? FileIcon.folder : FileIcon.icon(for: item.path))
-                .resizable()
-                .frame(width: 16, height: 16)
-            if dragFiles.count > 1 {
-                Text("\(dragFiles.count) items").lineLimit(1)
-                Text(ByteFormatter.formatFileSize(dragFiles.reduce(0) { $0 + $1.size }))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            } else {
-                Text(item.name).lineLimit(1)
-                Text(item.formattedSize)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
     }
 
     @ViewBuilder
