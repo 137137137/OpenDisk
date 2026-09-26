@@ -8,18 +8,21 @@ enum IncrementalUpdater {
         to tree: borrowing Mutex<FileTree>,
         rootPath: String,
         allowedDevices: Set<dev_t>,
+        newInodesSince capturedAt: Date,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) async -> Bool {
         let reader = BulkDirectoryReader()
-        let knownHardLinks = tree.withLock { $0.hardLinkKeys }
+        let hardLinks = HardLinkPolicy(
+            known: tree.withLock { $0.hardLinkKeys }, capturedAt: capturedAt
+        )
 
         for directoryPath in changes.changedDirectories {
             if isCancelled() { return false }
             let consistent = await updateDirectory(
                 at: directoryPath, rootPath: rootPath,
                 tree: tree, reader: reader, allowedDevices: allowedDevices,
-                knownHardLinks: knownHardLinks,
+                hardLinks: hardLinks,
                 metrics: metrics, isCancelled: isCancelled
             )
             guard consistent else { return false }
@@ -30,15 +33,39 @@ enum IncrementalUpdater {
             let consistent = await rescanSubtree(
                 at: subtreePath, rootPath: rootPath,
                 tree: tree, allowedDevices: allowedDevices,
-                knownHardLinks: knownHardLinks,
+                hardLinks: hardLinks,
                 metrics: metrics, isCancelled: isCancelled
             )
             guard consistent else { return false }
         }
 
         guard !isCancelled() else { return false }
+        refreshLargeFileSizes(in: tree)
         tree.withLock { $0.normalizeHardLinks() }
         return true
+    }
+
+    private static let driftCheckMinimumBytes: Int64 = 64 << 20
+
+    private static func refreshLargeFileSizes(in tree: borrowing Mutex<FileTree>) {
+        let candidates = tree.withLock { current in
+            current.reachableFiles(allocatedAtLeast: driftCheckMinimumBytes).map {
+                (id: $0, path: current.path(of: $0))
+            }
+        }
+        var updates: [(id: FileTree.NodeID, size: Int64)] = []
+        for candidate in candidates {
+            var info = stat()
+            guard lstat(candidate.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+                continue
+            }
+            updates.append((candidate.id, Int64(info.st_blocks) * 512))
+        }
+        tree.withLock { current in
+            for update in updates {
+                current.updateAllocatedSize(of: update.id, to: update.size)
+            }
+        }
     }
 
     private static func resolveTarget(
@@ -58,7 +85,7 @@ enum IncrementalUpdater {
         tree: borrowing Mutex<FileTree>,
         reader: BulkDirectoryReader,
         allowedDevices: Set<dev_t>,
-        knownHardLinks: Set<FileTree.HardLinkKey>,
+        hardLinks: HardLinkPolicy,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) async -> Bool {
@@ -71,9 +98,10 @@ enum IncrementalUpdater {
             return true
         }
 
+        let prefix = path.directoryPrefix
         for file in contents.files where file.linkCount > 1 && file.fileID > 0 {
             let key = FileTree.HardLinkKey(device: device, fileID: file.fileID)
-            if !knownHardLinks.contains(key) { return false }
+            guard hardLinks.allows(key, at: prefix + file.name) else { return false }
         }
 
         var newSubdirectories: [(name: String, id: FileTree.NodeID)] = []
@@ -119,12 +147,11 @@ enum IncrementalUpdater {
             items: contents.files.count + contents.subdirectoryNames.count
         )
 
-        let prefix = path.directoryPrefix
         for (name, id) in newSubdirectories {
             if isCancelled() { return true }
             let consistent = await adoptScannedSubtree(
                 ofPath: prefix + name, under: id, tree: tree,
-                allowedDevices: allowedDevices, knownHardLinks: knownHardLinks,
+                allowedDevices: allowedDevices, hardLinks: hardLinks,
                 metrics: metrics, isCancelled: isCancelled
             )
             guard consistent else { return false }
@@ -137,7 +164,7 @@ enum IncrementalUpdater {
         rootPath: String,
         tree: borrowing Mutex<FileTree>,
         allowedDevices: Set<dev_t>,
-        knownHardLinks: Set<FileTree.HardLinkKey>,
+        hardLinks: HardLinkPolicy,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) async -> Bool {
@@ -145,7 +172,7 @@ enum IncrementalUpdater {
         tree.withLock { $0.removeAllChildren(of: node) }
         return await adoptScannedSubtree(
             ofPath: path, under: node, tree: tree,
-            allowedDevices: allowedDevices, knownHardLinks: knownHardLinks,
+            allowedDevices: allowedDevices, hardLinks: hardLinks,
             metrics: metrics, isCancelled: isCancelled
         )
     }
@@ -155,7 +182,7 @@ enum IncrementalUpdater {
         under node: FileTree.NodeID,
         tree: borrowing Mutex<FileTree>,
         allowedDevices: Set<dev_t>,
-        knownHardLinks: Set<FileTree.HardLinkKey>,
+        hardLinks: HardLinkPolicy,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
     ) async -> Bool {
@@ -163,12 +190,31 @@ enum IncrementalUpdater {
             path: path, rootName: path, allowedDevices: allowedDevices,
             metrics: metrics, isCancelled: isCancelled
         )
-        guard scanned.hardLinkKeys.isSubset(of: knownHardLinks) else { return false }
+        for (id, key) in scanned.hardLinkedNodes {
+            guard hardLinks.allows(key, at: scanned.path(of: id)) else { return false }
+        }
         tree.withLock { current in
             for child in scanned.children(of: FileTree.rootID) {
                 current.adoptSubtree(from: scanned, otherNode: child, under: node)
             }
         }
         return true
+    }
+
+    private struct HardLinkPolicy {
+        let known: Set<FileTree.HardLinkKey>
+        let capturedAt: Date
+
+        func allows(_ key: FileTree.HardLinkKey, at path: String) -> Bool {
+            known.contains(key) || isCreated(afterCapture: path)
+        }
+
+        private func isCreated(afterCapture path: String) -> Bool {
+            var info = stat()
+            guard lstat(path, &info) == 0 else { return false }
+            let birth = Double(info.st_birthtimespec.tv_sec)
+                + Double(info.st_birthtimespec.tv_nsec) / 1_000_000_000
+            return birth > capturedAt.timeIntervalSince1970
+        }
     }
 }

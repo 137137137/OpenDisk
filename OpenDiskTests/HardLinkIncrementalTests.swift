@@ -40,7 +40,8 @@ struct HardLinkIncrementalTests {
         changedDirectories: [URL] = [],
         subtreesToRescan: [URL] = [],
         to tree: FileTree,
-        root: URL
+        root: URL,
+        capturedAt: Date = .distantFuture
     ) async throws -> (applied: Bool, tree: FileTree) {
         let device = try #require(VolumeAttributes.deviceID(ofPath: root.path))
         let live = Mutex(tree)
@@ -52,6 +53,7 @@ struct HardLinkIncrementalTests {
             to: live,
             rootPath: root.path,
             allowedDevices: [device],
+            newInodesSince: capturedAt,
             metrics: ScanMetrics(),
             isCancelled: { false }
         )
@@ -147,6 +149,72 @@ struct HardLinkIncrementalTests {
             let rescanned = await scan(root)
             #expect(total(updated) == total(rescanned))
             #expect(total(updated) >= 40_000)
+        }
+    }
+
+    @Test("a large file that grows in place without a change event is re-measured")
+    func largeFileGrowthWithoutEventIsCaught() async throws {
+        try await withTemporaryTree { root in
+            let disk = root.appendingPathComponent("vm.raw")
+            try writeFile(disk, bytes: 70 << 20)
+            let initial = await scan(root)
+
+            let handle = try FileHandle(forWritingTo: disk)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(repeating: 0x5A, count: 30 << 20))
+            try handle.close()
+
+            let (applied, updated) = try await applyChanges(to: initial, root: root)
+            #expect(applied)
+            let rescanned = await scan(root)
+            #expect(total(updated) == total(rescanned))
+            #expect(total(updated) >= 100 << 20)
+        }
+    }
+
+    @Test("an old single-link file that gains a link still falls back even with a capture time")
+    func oldFileGainingLinkStillBails() async throws {
+        try await withTemporaryTree { root in
+            let sub = root.appendingPathComponent("sub", isDirectory: true)
+            try makeDirectory(sub)
+            let original = root.appendingPathComponent("original.bin")
+            try writeFile(original, bytes: 40_000)
+            try await Task.sleep(for: .milliseconds(20))
+            let capturedAt = Date()
+
+            let initial = await scan(root)
+            try fileManager.linkItem(at: original, to: sub.appendingPathComponent("late-link.bin"))
+
+            let (applied, _) = try await applyChanges(
+                changedDirectories: [sub], to: initial, root: root, capturedAt: capturedAt
+            )
+            #expect(!applied)
+        }
+    }
+
+    @Test("hard-linked files created after the capture are applied and counted once")
+    func newHardLinkedFilesAreApplied() async throws {
+        try await withTemporaryTree { root in
+            let first = root.appendingPathComponent("first", isDirectory: true)
+            let second = root.appendingPathComponent("second", isDirectory: true)
+            try makeDirectory(first)
+            try makeDirectory(second)
+            let capturedAt = Date()
+            let initial = await scan(root)
+            try await Task.sleep(for: .milliseconds(20))
+
+            let journal = first.appendingPathComponent("journal.bin")
+            try writeFile(journal, bytes: 60_000)
+            try fileManager.linkItem(at: journal, to: first.appendingPathComponent("journal-link.bin"))
+            try fileManager.linkItem(at: journal, to: second.appendingPathComponent("journal-copy.bin"))
+
+            let (applied, updated) = try await applyChanges(
+                changedDirectories: [first, second], to: initial, root: root, capturedAt: capturedAt
+            )
+            #expect(applied)
+            let rescanned = await scan(root)
+            #expect(total(updated) == total(rescanned))
+            #expect(total(updated) < 120_000)
         }
     }
 

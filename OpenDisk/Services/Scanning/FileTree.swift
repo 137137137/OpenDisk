@@ -82,6 +82,31 @@ struct FileTree: Sendable {
         Set(hardLinks.values.map(\.key))
     }
 
+    var hardLinkedNodes: [(id: NodeID, key: HardLinkKey)] {
+        hardLinks.map { ($0.key, $0.value.key) }
+    }
+
+    func reachableFiles(allocatedAtLeast minimum: Int64) -> [NodeID] {
+        let reachable = reachabilityBitmap()
+        var result: [NodeID] = []
+        for index in nodes.indices where reachable[index] && !nodes[index].isDirectory {
+            let size = nodes[index].size
+            let id = NodeID(index)
+            if size >= minimum || (size == 0 && (hardLinks[id]?.allocatedSize ?? 0) >= minimum) {
+                result.append(id)
+            }
+        }
+        return result
+    }
+
+    mutating func updateAllocatedSize(of id: NodeID, to size: Int64) {
+        if let link = hardLinks[id] {
+            hardLinks[id] = HardLink(key: link.key, allocatedSize: size)
+        } else {
+            nodes[Int(id)].size = size
+        }
+    }
+
     mutating func normalizeHardLinks() {
         guard !hardLinks.isEmpty else { return }
         let reachable = reachabilityBitmap()

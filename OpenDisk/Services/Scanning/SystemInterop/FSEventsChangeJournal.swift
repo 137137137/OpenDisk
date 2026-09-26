@@ -13,10 +13,13 @@ enum FSEventsChangeJournal {
     private static let maxUsefulChanges = 40_000
 
     private final class Collector: @unchecked Sendable {
-        var changes = Changes()
+        var changedDirectories = Set<String>()
+        var subtreesToRescan = Set<String>()
         var unreliable = false
         let rootPrefix: String
-        let earlyBailChangeCount = maxUsefulChanges * 4
+        let changeLimit = maxUsefulChanges
+
+        var distinctCount: Int { changedDirectories.count + subtreesToRescan.count }
 
         private struct Waiter {
             var continuation: CheckedContinuation<Bool, Never>?
@@ -95,12 +98,12 @@ enum FSEventsChangeJournal {
                 let normalized = path.hasSuffix("/") && path.count > 1
                     ? String(path.dropLast()) : path
                 if flags & UInt32(kFSEventStreamEventFlagMustScanSubDirs) != 0 {
-                    collector.changes.subtreesToRescan.append(normalized)
+                    collector.subtreesToRescan.insert(normalized)
                 } else {
-                    collector.changes.changedDirectories.append(normalized)
+                    collector.changedDirectories.insert(normalized)
                 }
             }
-            if collector.changes.totalCount > collector.earlyBailChangeCount {
+            if collector.distinctCount > collector.changeLimit {
                 collector.finish(completed: false)
             }
         }
@@ -140,20 +143,20 @@ enum FSEventsChangeJournal {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
 
-        let (accumulated, unreliable) = queue.sync {
-            (collector.changes, collector.unreliable)
+        let (directories, subtrees, unreliable) = queue.sync {
+            (collector.changedDirectories, collector.subtreesToRescan, collector.unreliable)
         }
 
         guard completed, !unreliable,
-              accumulated.totalCount <= maxUsefulChanges else {
+              directories.count + subtrees.count <= maxUsefulChanges else {
             return nil
         }
-        var changes = accumulated
-        changes.changedDirectories = Array(Set(changes.changedDirectories)).sorted {
-            $0.components(separatedBy: "/").count < $1.components(separatedBy: "/").count
-        }
-        changes.subtreesToRescan = Array(Set(changes.subtreesToRescan))
-        return changes
+        return Changes(
+            changedDirectories: directories.sorted {
+                $0.components(separatedBy: "/").count < $1.components(separatedBy: "/").count
+            },
+            subtreesToRescan: Array(subtrees)
+        )
     }
 
     static var currentEventID: UInt64 {

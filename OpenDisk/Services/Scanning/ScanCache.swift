@@ -2,33 +2,39 @@ import Darwin
 import Foundation
 
 enum ScanCache {
-    struct Entry {
-        let tree: FileTree
+    struct Header: Sendable {
         let eventID: UInt64
+        let capturedAt: Date
+        let fullScanSeconds: TimeInterval
     }
 
-    private static let formatVersion: UInt32 = 2
+    struct Entry {
+        let tree: FileTree
+        let header: Header
+    }
+
+    private static let formatVersion: UInt32 = 3
 
     static func load(forRoot rootPath: String) -> Entry? {
         guard let url = cacheFileURL(forRoot: rootPath),
               let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-              let header = parseHeader(data, forRoot: rootPath),
-              let tree = FileTree(serializedData: data[header.treeStart...]) else {
+              let parsed = parseHeader(data, forRoot: rootPath),
+              let tree = FileTree(serializedData: data[parsed.treeStart...]) else {
             return nil
         }
-        return Entry(tree: tree, eventID: header.eventID)
+        return Entry(tree: tree, header: parsed.header)
     }
 
-    static func peek(forRoot rootPath: String) -> (eventID: UInt64, fileBytes: Int)? {
+    static func peek(forRoot rootPath: String) -> (header: Header, fileBytes: Int)? {
         guard let url = cacheFileURL(forRoot: rootPath),
               let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-              let header = parseHeader(data, forRoot: rootPath) else { return nil }
-        return (header.eventID, data.count)
+              let parsed = parseHeader(data, forRoot: rootPath) else { return nil }
+        return (parsed.header, data.count)
     }
 
     private static func parseHeader(
         _ data: Data, forRoot rootPath: String
-    ) -> (eventID: UInt64, treeStart: Data.Index)? {
+    ) -> (header: Header, treeStart: Data.Index)? {
         var offset = data.startIndex
         func read<T>(_ type: T.Type) -> T? {
             let size = MemoryLayout<T>.size
@@ -41,6 +47,8 @@ enum ScanCache {
 
         guard read(UInt32.self) == formatVersion,
               let eventID = read(UInt64.self),
+              let capturedAt = read(Double.self),
+              let fullScanSeconds = read(Double.self),
               let savedDevice = read(UInt64.self),
               let pathLength = read(UInt32.self),
               offset + Int(pathLength) <= data.endIndex else { return nil }
@@ -53,10 +61,15 @@ enum ScanCache {
               UInt64(bitPattern: Int64(device)) == savedDevice else {
             return nil
         }
-        return (eventID, offset)
+        let header = Header(
+            eventID: eventID,
+            capturedAt: Date(timeIntervalSince1970: capturedAt),
+            fullScanSeconds: fullScanSeconds
+        )
+        return (header, offset)
     }
 
-    static func save(tree: FileTree, forRoot rootPath: String, eventID: UInt64) {
+    static func save(tree: FileTree, forRoot rootPath: String, header cacheHeader: Header) {
         guard let url = cacheFileURL(forRoot: rootPath),
               let device = VolumeAttributes.deviceID(ofPath: rootPath) else { return }
 
@@ -65,7 +78,9 @@ enum ScanCache {
             withUnsafeBytes(of: value) { header.append(contentsOf: $0) }
         }
         append(formatVersion)
-        append(eventID)
+        append(cacheHeader.eventID)
+        append(cacheHeader.capturedAt.timeIntervalSince1970)
+        append(cacheHeader.fullScanSeconds)
         append(UInt64(bitPattern: Int64(device)))
         let pathBytes = Data(rootPath.utf8)
         append(UInt32(pathBytes.count))
