@@ -79,7 +79,17 @@ final class FileDragSource: NSObject, NSDraggingSource {
         self.onEnd = onEnd
         let session = view.beginDraggingSession(with: items, event: event, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = exportsFileURLs
+        Self.cancelActiveGestures(in: view)
         return true
+    }
+
+    private static func cancelActiveGestures(in view: NSView) {
+        for recognizer in view.gestureRecognizers
+        where recognizer.state == .began || recognizer.state == .changed {
+            recognizer.isEnabled = false
+            recognizer.isEnabled = true
+        }
+        view.subviews.forEach(cancelActiveGestures)
     }
 
     func draggingSession(
