@@ -20,28 +20,34 @@ enum TraversalScanner {
         private struct Guarded {
             var stack: [WorkItem] = []
             var activeWorkers = 0
-            var launched: [DispatchWorkItem] = []
+            var completion: CheckedContinuation<Void, Never>?
         }
 
         private let guarded = Mutex(Guarded())
         private let maxWorkers: Int
 
-        init(root: WorkItem, maxWorkers: Int) {
+        init(maxWorkers: Int) {
             self.maxWorkers = max(1, maxWorkers)
+        }
+
+        func start(with root: WorkItem, completion: CheckedContinuation<Void, Never>) {
             guarded.withLock {
                 $0.stack = [root]
                 $0.activeWorkers = 1
+                $0.completion = completion
             }
         }
 
         func pop() -> WorkItem? {
-            guarded.withLock {
-                guard let item = $0.stack.popLast() else {
-                    $0.activeWorkers -= 1
-                    return nil
-                }
-                return item
+            let (item, finished) = guarded.withLock { state -> (WorkItem?, CheckedContinuation<Void, Never>?) in
+                if let item = state.stack.popLast() { return (item, nil) }
+                state.activeWorkers -= 1
+                guard state.activeWorkers == 0 else { return (nil, nil) }
+                defer { state.completion = nil }
+                return (nil, state.completion)
             }
+            finished?.resume()
+            return item
         }
 
         func push(_ items: [WorkItem]) -> Int {
@@ -54,18 +60,6 @@ enum TraversalScanner {
                 return extra
             }
         }
-
-        func launch(on queue: DispatchQueue, _ body: @escaping @Sendable () -> Void) {
-            guarded.withLock {
-                let worker = DispatchWorkItem(block: body)
-                $0.launched.append(worker)
-                queue.async(execute: worker)
-            }
-        }
-
-        func nextLaunched() -> DispatchWorkItem? {
-            guarded.withLock { $0.launched.popLast() }
-        }
     }
 
     static func scan(
@@ -76,21 +70,17 @@ enum TraversalScanner {
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
-    ) -> FileTree {
+    ) async -> FileTree {
         guard let rootDevice = VolumeAttributes.deviceID(ofPath: path) else {
             metrics.addUnreadable()
             return FileTree(rootName: rootName)
         }
         let devices = (allowedDevices ?? []).union([rootDevice])
-        let workerCount = workerCount ?? subtreeWorkerCount
+        let state = WorkState(maxWorkers: workerCount ?? subtreeWorkerCount)
 
         let tree = Mutex(FileTree(rootName: rootName))
         onPartialTreeAvailable { tree.withLock { $0 } }
         let seenMultiLinkFiles = Mutex(Set<FileTree.HardLinkKey>())
-        let state = WorkState(
-            root: WorkItem(directoryID: FileTree.rootID, path: path),
-            maxWorkers: workerCount
-        )
 
         let queue = DispatchQueue(
             label: "OpenDisk.TraversalScanner",
@@ -100,7 +90,7 @@ enum TraversalScanner {
 
         @Sendable func launch(_ count: Int) {
             for _ in 0..<count {
-                state.launch(on: queue) {
+                queue.async {
                     runWorker(
                         state: state,
                         tree: tree,
@@ -114,17 +104,12 @@ enum TraversalScanner {
             }
         }
 
-        runWorker(
-            state: state,
-            tree: tree,
-            seenMultiLinkFiles: seenMultiLinkFiles,
-            allowedDevices: devices,
-            metrics: metrics,
-            isCancelled: isCancelled,
-            launch: launch
-        )
-        while let worker = state.nextLaunched() {
-            worker.wait()
+        await withCheckedContinuation { completion in
+            state.start(
+                with: WorkItem(directoryID: FileTree.rootID, path: path),
+                completion: completion
+            )
+            launch(1)
         }
 
         return tree.withLock { $0 }

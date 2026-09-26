@@ -2,6 +2,10 @@ import SwiftUI
 import AppKit
 import Quartz
 
+extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
+    static var collectorDrop: Self { .named("collectorDrop") }
+}
+
 struct CollectorBar: View {
     let collector: Collector
     var isTargeted: Bool = false
@@ -43,7 +47,7 @@ struct CollectorBar: View {
     var body: some View {
         footerBar
             .onGeometryChange(for: CGRect.self) {
-                $0.frame(in: .named(Collector.dropSpace))
+                $0.frame(in: .collectorDrop)
             } action: { collector.keepZones["footer"] = $0 }
             .onHover { footerHovered = $0 }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { footerHeight = $0 }
@@ -51,7 +55,7 @@ struct CollectorBar: View {
                 if listVisible {
                     listPanel
                         .onGeometryChange(for: CGRect.self) {
-                            $0.frame(in: .named(Collector.dropSpace))
+                            $0.frame(in: .collectorDrop)
                         } action: { collector.keepZones["list"] = $0 }
                         .onDisappear { collector.keepZones["list"] = nil }
                         .onHover { listHovered = $0 }

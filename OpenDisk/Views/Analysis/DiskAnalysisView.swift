@@ -447,7 +447,7 @@ struct DiskAnalysisView: View {
                 Task { await analyzer.scanDirectory(rootPath) }
             }
         }
-        .coordinateSpace(.named(Collector.dropSpace))
+        .coordinateSpace(.collectorDrop)
         .onDrop(
             of: [.fileURL, .collectedFile],
             delegate: InAppFileDropDelegate(

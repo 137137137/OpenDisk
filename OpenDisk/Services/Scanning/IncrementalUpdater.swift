@@ -10,13 +10,13 @@ enum IncrementalUpdater {
         allowedDevices: Set<dev_t>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
-    ) -> Bool {
+    ) async -> Bool {
         let reader = BulkDirectoryReader()
         let knownHardLinks = tree.withLock { $0.hardLinkKeys }
 
         for directoryPath in changes.changedDirectories {
             if isCancelled() { return false }
-            let consistent = updateDirectory(
+            let consistent = await updateDirectory(
                 at: directoryPath, rootPath: rootPath,
                 tree: tree, reader: reader, allowedDevices: allowedDevices,
                 knownHardLinks: knownHardLinks,
@@ -27,7 +27,7 @@ enum IncrementalUpdater {
 
         for subtreePath in changes.subtreesToRescan {
             if isCancelled() { return false }
-            let consistent = rescanSubtree(
+            let consistent = await rescanSubtree(
                 at: subtreePath, rootPath: rootPath,
                 tree: tree, allowedDevices: allowedDevices,
                 knownHardLinks: knownHardLinks,
@@ -61,7 +61,7 @@ enum IncrementalUpdater {
         knownHardLinks: Set<FileTree.HardLinkKey>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
-    ) -> Bool {
+    ) async -> Bool {
         guard let node = resolveTarget(at: path, rootPath: rootPath, in: tree) else { return true }
 
         guard case .contents(let contents, let device) = reader.read(
@@ -122,7 +122,7 @@ enum IncrementalUpdater {
         let prefix = path.directoryPrefix
         for (name, id) in newSubdirectories {
             if isCancelled() { return true }
-            let consistent = adoptScannedSubtree(
+            let consistent = await adoptScannedSubtree(
                 ofPath: prefix + name, under: id, tree: tree,
                 allowedDevices: allowedDevices, knownHardLinks: knownHardLinks,
                 metrics: metrics, isCancelled: isCancelled
@@ -140,10 +140,10 @@ enum IncrementalUpdater {
         knownHardLinks: Set<FileTree.HardLinkKey>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
-    ) -> Bool {
+    ) async -> Bool {
         guard let node = resolveTarget(at: path, rootPath: rootPath, in: tree) else { return true }
         tree.withLock { $0.removeAllChildren(of: node) }
-        return adoptScannedSubtree(
+        return await adoptScannedSubtree(
             ofPath: path, under: node, tree: tree,
             allowedDevices: allowedDevices, knownHardLinks: knownHardLinks,
             metrics: metrics, isCancelled: isCancelled
@@ -158,8 +158,8 @@ enum IncrementalUpdater {
         knownHardLinks: Set<FileTree.HardLinkKey>,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool
-    ) -> Bool {
-        let scanned = TraversalScanner.scan(
+    ) async -> Bool {
+        let scanned = await TraversalScanner.scan(
             path: path, rootName: path, allowedDevices: allowedDevices,
             metrics: metrics, isCancelled: isCancelled
         )

@@ -199,13 +199,11 @@ final class ScanEngine: DiskScanning {
                 let changes = await pendingChanges
                 metrics.setPhase(.scanning)
                 if let changes {
-                    let applied = await offload {
-                        IncrementalUpdater.apply(
-                            changes, to: live, rootPath: path,
-                            allowedDevices: allowedDevices,
-                            metrics: metrics, isCancelled: isCancelled
-                        )
-                    }
+                    let applied = await IncrementalUpdater.apply(
+                        changes, to: live, rootPath: path,
+                        allowedDevices: allowedDevices,
+                        metrics: metrics, isCancelled: isCancelled
+                    )
                     if applied {
                         let tree = live.withLock { $0 }
                         saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
@@ -218,13 +216,11 @@ final class ScanEngine: DiskScanning {
             }
         }
 
-        let tree = await offload {
-            traverse(
-                path: path, rootName: rootName, allowedDevices: allowedDevices,
-                metrics: metrics, isCancelled: isCancelled,
-                registerPartial: registerPartial
-            )
-        }
+        let tree = await traverse(
+            path: path, rootName: rootName, allowedDevices: allowedDevices,
+            metrics: metrics, isCancelled: isCancelled,
+            registerPartial: registerPartial
+        )
         if !isCancelled() {
             saveCacheInBackground(tree: tree, rootPath: path, eventID: startEventID)
         }
@@ -262,8 +258,8 @@ final class ScanEngine: DiskScanning {
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         registerPartial: @escaping @Sendable (@escaping PartialTreeProvider) -> Void = { _ in }
-    ) -> FileTree {
-        TraversalScanner.scan(
+    ) async -> FileTree {
+        await TraversalScanner.scan(
             path: path, rootName: rootName, allowedDevices: allowedDevices,
             workerCount: VolumeAttributes.isVolumeRoot(path)
                 ? TraversalScanner.volumeWorkerCount
@@ -299,13 +295,11 @@ final class ScanEngine: DiskScanning {
         for name in siblingNames {
             if isCancelled() { break }
             let mountPoint = systemVolumesDirectory + "/" + name
-            let tree = await offload {
-                traverse(
-                    path: mountPoint, rootName: mountPoint,
-                    metrics: metrics, isCancelled: isCancelled,
-                    registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
-                )
-            }
+            let tree = await traverse(
+                path: mountPoint, rootName: mountPoint,
+                metrics: metrics, isCancelled: isCancelled,
+                registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
+            )
             results.withLock { $0[siblingTreeKey(name)] = tree }
         }
 

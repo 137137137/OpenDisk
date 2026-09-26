@@ -13,7 +13,6 @@ final class Collector {
 
     private(set) var deletionProgress: DeletionProgress?
 
-    static let dropSpace = "collectorDropSpace"
     private(set) var draggingOut: [CollectedFile]?
     @ObservationIgnored var keepZones: [String: CGRect] = [:]
     private var dragOutTask: Task<Void, Never>?
