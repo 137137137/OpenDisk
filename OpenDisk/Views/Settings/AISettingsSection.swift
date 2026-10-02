@@ -21,7 +21,7 @@ struct AISettingsSection: View {
 
     var body: some View {
         Section {
-            Picker("Find More uses", selection: $provider) {
+            Picker("Find More with AI uses", selection: $provider) {
                 ForEach(AIProvider.allCases) { Text($0.title).tag($0) }
             }
 

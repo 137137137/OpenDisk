@@ -121,9 +121,9 @@ struct DiskAnalysisView: View {
                     .help("Compare with earlier scans")
             }
             ToolbarItem(placement: .primaryAction) {
-                Button("Free Up Space", systemImage: "externaldrive.badge.minus") { suggestionsScan = analyzer.completedScan }
+                Button("Free Up Space", systemImage: "sparkles") { suggestionsScan = analyzer.completedScan }
                     .disabled(analyzer.completedScan == nil)
-                    .help("Find space you can safely reclaim")
+                    .help("Find space you can free up, with or without AI")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise", action: refresh)

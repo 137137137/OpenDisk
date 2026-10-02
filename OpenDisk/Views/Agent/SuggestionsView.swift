@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// "Free Up Space": OpenDisk's known caches show immediately, and Find More optionally asks a
-/// model to look through the rest of the scan. Every suggestion is checked by
+/// "Free Up Space": OpenDisk's known caches show immediately, and Find More with AI optionally
+/// asks a model to look through the rest of the scan. Every suggestion is checked by
 /// `SuggestionValidator` and only reaches the disk through the Collector.
 struct SuggestionsView: View {
     let scan: ScanResult
@@ -44,21 +44,14 @@ struct SuggestionsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            CapacityHeader(
-                summary: summary,
-                volume: volume,
-                scannedBytes: scan.tree.size(of: FileTree.rootID),
-                suggestedBytes: suggestedBytes,
-                selectedBytes: selectedBytes
-            )
-            .padding(20)
+            header
             Divider()
             suggestionList
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             footer
         }
-        .frame(minWidth: 700, idealWidth: 760, minHeight: 560, idealHeight: 640)
+        .frame(minWidth: 720, idealWidth: 780, minHeight: 600, idealHeight: 700)
         .task { await loadKnownCaches() }
         .onChange(of: activity.aiSuggestions) { rebuildReport() }
         .onDisappear { runTask?.cancel() }
@@ -67,6 +60,52 @@ struct SuggestionsView: View {
                 AISettings.grantConsent(for: aiProvider)
                 showConsent = false
                 run()
+            }
+        }
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Free Up Space").font(.title3.weight(.semibold))
+                    Text("Things you can likely delete to get space back. Nothing is deleted from here: items you add to the Collector go to the Trash when you delete them.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                aiControls
+            }
+            SourcesExplanation()
+            CapacityBar(
+                summary: summary,
+                volume: volume,
+                scannedBytes: scan.tree.size(of: FileTree.rootID),
+                suggestedBytes: suggestedBytes,
+                selectedBytes: selectedBytes
+            )
+        }
+        .padding(20)
+    }
+
+    @ViewBuilder
+    private var aiControls: some View {
+        if isRunning {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Button("Stop", action: stop)
+            }
+        } else {
+            Button { showFindMore = true } label: {
+                Label("Find More with AI…", systemImage: "sparkles")
+            }
+            .popover(isPresented: $showFindMore, arrowEdge: .bottom) {
+                FindMorePopover(provider: $aiProvider, focus: $focus) {
+                    showFindMore = false
+                    start()
+                }
             }
         }
     }
@@ -100,7 +139,7 @@ struct SuggestionsView: View {
             return "About \(format(suggestedBytes)) \(place) can likely be removed. Select items to see what you'd get back."
         }
         if isRunning { return "Looking for space you can reclaim \(place)…" }
-        return "No known caches were found \(place). Find More can look through everything else."
+        return "No known caches were found \(place). Find More with AI can look through everything else."
     }
 
     // MARK: List
@@ -133,9 +172,9 @@ struct SuggestionsView: View {
             ContentUnavailableView {
                 Label("No Known Caches Found", systemImage: "internaldrive")
             } description: {
-                Text("Find More can look through the rest of this scan for space you can reclaim.")
+                Text("Find More with AI can look through the rest of this scan for space you can reclaim.")
             } actions: {
-                Button("Find More…") { showFindMore = true }
+                Button("Find More with AI…") { showFindMore = true }
             }
         }
     }
@@ -147,9 +186,7 @@ struct SuggestionsView: View {
                 ForEach(items) { item in
                     SuggestionRow(
                         item: item,
-                        source: aiPaths.contains(item.path)
-                            ? "Suggested by \(aiSourceName) and checked by OpenDisk."
-                            : "From OpenDisk's list of known caches.",
+                        suggestedBy: aiPaths.contains(item.path) ? aiSourceName : nil,
                         isSelected: Binding(
                             get: { selected.contains(item.path) },
                             set: { if $0 { selected.insert(item.path) } else { selected.remove(item.path) } }
@@ -201,11 +238,11 @@ struct SuggestionsView: View {
         }
     }
 
+    /// Progress of a Find More with AI run; empty until one starts.
     @ViewBuilder
     private var runStatus: some View {
         HStack(spacing: 8) {
             if isRunning {
-                ProgressView().controlSize(.small)
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(activity.events.last?.text ?? "Starting…")
@@ -218,17 +255,9 @@ struct SuggestionsView: View {
                     .lineLimit(1)
                 }
                 detailsButton
-                Button("Stop", action: stop)
-            } else {
-                Button("Find More…") { showFindMore = true }
-                    .popover(isPresented: $showFindMore, arrowEdge: .top) {
-                        FindMorePopover(provider: $aiProvider, focus: $focus) {
-                            showFindMore = false
-                            start()
-                        }
-                    }
+            } else if runState != .idle {
                 statusText.lineLimit(1)
-                if runState != .idle { detailsButton }
+                detailsButton
             }
         }
     }
@@ -248,7 +277,7 @@ struct SuggestionsView: View {
             }
             .help(message)
         case .idle, .running:
-            Text("Showing known caches.").foregroundStyle(.secondary)
+            EmptyView()
         }
     }
 

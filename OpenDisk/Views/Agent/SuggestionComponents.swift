@@ -24,7 +24,7 @@ extension Risk {
 /// The disk as it would look after removing the selection, in the style of
 /// System Settings › Storage: selected items sit at the end of the used space,
 /// next to the space they would become.
-struct CapacityHeader: View {
+struct CapacityBar: View {
     let summary: String
     let volume: VolumeCapacity?
     let scannedBytes: Int64
@@ -57,19 +57,12 @@ struct CapacityHeader: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Free Up Space").font(.title3.weight(.semibold))
-                Text(summary)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                bar
-                legend
-            }
-            .accessibilityElement(children: .combine)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(summary).fixedSize(horizontal: false, vertical: true)
+            bar
+            legend
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var bar: some View {
@@ -106,6 +99,30 @@ struct CapacityHeader: View {
     }
 }
 
+/// What the sheet is for, and the two places suggestions come from.
+struct SourcesExplanation: View {
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
+            row("checkmark.shield", "Known caches",
+                Text("Found by OpenDisk on its own, without AI. Nothing leaves your Mac."))
+            row("sparkles", "AI suggestions",
+                Text("Optional. A model you choose looks through the rest of the scan. Marked with \(Image(systemName: "sparkles")) and checked by OpenDisk's safety rules."))
+        }
+        .font(.callout)
+    }
+
+    private func row(_ symbol: String, _ title: String, _ text: Text) -> some View {
+        GridRow {
+            Image(systemName: symbol).foregroundStyle(.secondary)
+            Text(title).fontWeight(.medium)
+            text
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct RiskHeader: View {
     let risk: Risk
     let total: Int64
@@ -133,8 +150,8 @@ struct RiskHeader: View {
 
 struct SuggestionRow: View {
     let item: ValidatedSuggestion
-    /// Where the suggestion came from, shown with the details.
-    let source: String
+    /// The model that suggested it, or nil for OpenDisk's known caches.
+    let suggestedBy: String?
     @Binding var isSelected: Bool
     let isExpanded: Bool
     let toggleExpanded: () -> Void
@@ -149,7 +166,16 @@ struct SuggestionRow: View {
                     .resizable()
                     .frame(width: 24, height: 24)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.suggestion.category)
+                    HStack(spacing: 5) {
+                        Text(item.suggestion.category)
+                        if let suggestedBy {
+                            Image(systemName: "sparkles")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .help("Suggested by \(suggestedBy)")
+                                .accessibilityLabel("AI suggestion")
+                        }
+                    }
                     Text(item.path.abbreviatingHome()).font(.subheadline).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
@@ -187,7 +213,9 @@ struct SuggestionRow: View {
                     .foregroundStyle(.secondary)
             }
             HStack(spacing: 8) {
-                Text(source).foregroundStyle(.secondary)
+                Text(suggestedBy.map { "Suggested by \($0) and checked by OpenDisk's safety rules." }
+                     ?? "From OpenDisk's list of known caches. No AI was used.")
+                    .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Button("Show in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)])
@@ -216,8 +244,8 @@ struct FindMorePopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Find more space").font(.headline)
-            Text("Looks beyond the known caches for things like old installers, build folders and app data you may not need.")
+            Text("Find more with AI").font(.headline)
+            Text("A model looks beyond the known caches for things like old installers, build folders and app data you may not need.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Form {
@@ -234,7 +262,7 @@ struct FindMorePopover: View {
             HStack {
                 SettingsLink { Text("AI Settings…") }
                 Spacer()
-                Button("Find More", action: onFind)
+                Button("Find More with AI", action: onFind)
                     .keyboardShortcut(.defaultAction)
                     .disabled(unavailableReason != nil)
             }
