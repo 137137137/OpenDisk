@@ -131,7 +131,12 @@ struct DiskAnalysisView: View {
             scanAccess.beginAccess(toPath: rootPath)
             Task { await analyzer.scanDirectory(rootPath) }
         }
-        .task(id: rootPath) { await refreshVolumeCapacity() }
+        .task(id: rootPath) {
+            while !Task.isCancelled {
+                await refreshVolumeCapacity()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .onChange(of: analyzer.isScanning) { _, isScanning in
             if !isScanning { Task { await refreshVolumeCapacity() } }
         }
@@ -488,9 +493,10 @@ struct DiskAnalysisView: View {
 
     private func refreshVolumeCapacity() async {
         let path = rootPath
-        volumeCapacity = await Task.detached(priority: .utility) {
+        let capacity = await Task.detached(priority: .utility) {
             DeviceMonitor.volumeCapacity(ofPath: path)
         }.value
+        if capacity != volumeCapacity { volumeCapacity = capacity }
     }
 
     private var windowTitle: String {
