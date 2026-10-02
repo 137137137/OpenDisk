@@ -4,7 +4,7 @@ import Foundation
 /// other MCP clients. Serves the saved scan history through the same read-only `AgentTools`
 /// the in-app agent uses. There is no tool that changes the disk.
 ///
-/// ponytail: hand-rolled JSON-RPC covering initialize/ping/tools only. Switch to the official
+/// Hand-rolled JSON-RPC covering initialize/ping/tools only. Switch to the official
 /// modelcontextprotocol/swift-sdk if resources, prompts or other transports are needed.
 struct MCPServer {
     var historyBase: URL? = nil

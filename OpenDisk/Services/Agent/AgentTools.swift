@@ -162,7 +162,7 @@ struct AgentTools: Sendable {
         let regenerates: Bool
     }
 
-    /// Dependency and build folders recognised by name anywhere in the scan.
+    /// Dependency and build folders recognized by name anywhere in the scan.
     static let regenerableFolderNames: [String: String] = [
         "node_modules": "npm dependencies",
         ".venv": "Python virtual environment",
@@ -172,7 +172,6 @@ struct AgentTools: Sendable {
         ".next": "Next.js build cache",
         ".turbo": "Turborepo cache",
         ".parcel-cache": "Parcel cache",
-        ".gradle": "Gradle cache",
     ]
 
     func knownReclaimable() -> [Reclaimable] {
@@ -187,7 +186,8 @@ struct AgentTools: Sendable {
         for entry in tree.digest(rootPath: scan.rootPath).entries where entry.isDir {
             let name = (entry.path as NSString).lastPathComponent
             guard let kind = Self.regenerableFolderNames[name],
-                  !catalogPaths.contains(where: { entry.path == $0 || entry.path.hasPrefix($0 + "/") }),
+                  // Skip anything inside, or containing, a catalog location.
+                  !catalogPaths.contains(where: { entry.path == $0 || entry.path.hasPrefix($0 + "/") || $0.hasPrefix(entry.path + "/") }),
                   !found.contains(where: { entry.path.hasPrefix($0.path + "/") }) else { continue }
             found.append(Reclaimable(name: kind, path: entry.path, size: entry.size, regenerates: true))
         }

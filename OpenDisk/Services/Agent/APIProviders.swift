@@ -15,7 +15,7 @@ private let modelTimeout: TimeInterval = 300
 
 /// POSTs `body` as JSON, or GETs when `body` is nil. Model calls (`tools` set) are retried
 /// once on timeouts, dropped connections, rate limits and transient server errors.
-// ponytail: non-streaming; switch to SSE streaming if replies regularly exceed `modelTimeout`.
+// Non-streaming: switch to SSE streaming if replies regularly exceed `modelTimeout`.
 private func requestJSON(
     _ url: URL, body: [String: Any]?, headers: [String: String],
     timeout: TimeInterval = 60, tools: AgentTools? = nil, isRetry: Bool = false
@@ -250,7 +250,6 @@ extension AIProvider {
     /// Returns a short success message or throws a user-readable error.
     func testConnection() async throws -> String {
         do {
-            guard self != .rules else { return "No connection needed." }
             return try await makeProvider().ping()
         } catch SuggestionError.http(let status, let body) {
             switch status {

@@ -46,8 +46,6 @@ enum SuggestionError: LocalizedError {
 extension AIProvider {
     func makeProvider() throws -> any SuggestionProvider {
         switch self {
-        case .rules:
-            throw SuggestionError.unavailable("Built-in rules don't use a model.")
         case .anthropic:
             guard let key = Keychain.read(account: rawValue) else { throw SuggestionError.missingAPIKey }
             return AnthropicProvider(apiKey: key, model: AISettings.anthropicModel)

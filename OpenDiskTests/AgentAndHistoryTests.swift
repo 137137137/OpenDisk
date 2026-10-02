@@ -21,6 +21,9 @@ private func homeScan() -> ScanResult {
     let app = dir("app", dir("Projects", FileTree.rootID))
     file("HEAD", dir(".git", app), 1 * MB)
     file("lib.js", dir("node_modules", app), 300 * MB)
+    let gradle = dir(".gradle", FileTree.rootID)
+    file("modules.bin", dir("caches", gradle), 200 * MB)
+    file("gradle.properties", gradle, 1_000)
     let downloads = dir("Downloads", FileTree.rootID)
     file("Installer.dmg", downloads, 800 * MB)
     file("tiny.txt", downloads, 1_000)
@@ -190,6 +193,13 @@ struct SuggestionValidatorTests {
         #expect(report.accepted.contains { $0.path.hasSuffix("DerivedData") && $0.risk == .low })
         // node_modules is found by name but sits in a Git repo, so the validator raises it.
         #expect(report.accepted.contains { $0.path.hasSuffix("node_modules") && $0.risk == .high })
+    }
+
+    @Test("known caches never include a folder that holds a catalog location, like ~/.gradle")
+    func knownCachesStayNarrow() {
+        let paths = AgentTools(scan: homeScan()).knownReclaimable().map(\.path)
+        #expect(paths.contains(UserHome.path + "/.gradle/caches"))
+        #expect(!paths.contains(UserHome.path + "/.gradle"))
     }
 
     @Test("tool calls return JSON and redact the home folder")

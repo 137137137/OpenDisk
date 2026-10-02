@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct AISettingsSection: View {
-    @AppStorage(AISettings.providerKey) private var providerRaw = AIProvider.rules.rawValue
+    @AppStorage(AISettings.providerKey) private var provider = AIProvider.apple
     @AppStorage(AISettings.redactKey) private var redactHome = true
     @AppStorage(AISettings.anthropicModelKey) private var anthropicModel = AISettings.defaultAnthropicModel
     @AppStorage(AISettings.openAIModelKey) private var openAIModel = AISettings.defaultOpenAIModel
@@ -19,17 +19,13 @@ struct AISettingsSection: View {
         case failure(String)
     }
 
-    private var provider: AIProvider { AIProvider(rawValue: providerRaw) ?? .rules }
-
     var body: some View {
         Section {
-            Picker("Suggestions from", selection: $providerRaw) {
-                ForEach(AIProvider.allCases) { Text($0.title).tag($0.rawValue) }
+            Picker("Find More uses", selection: $provider) {
+                ForEach(AIProvider.allCases) { Text($0.title).tag($0) }
             }
 
             switch provider {
-            case .rules:
-                EmptyView()
             case .apple:
                 if let reason = AIProvider.appleUnavailableReason {
                     Text(reason).font(.caption).foregroundStyle(.orange)
@@ -43,13 +39,11 @@ struct AISettingsSection: View {
                 modelPicker
             }
 
-            if provider != .rules {
-                LabeledContent {
-                    Button("Test Connection", action: testConnection)
-                        .disabled(connection == .testing)
-                } label: {
-                    connectionStatus
-                }
+            LabeledContent {
+                Button("Test Connection", action: testConnection)
+                    .disabled(connection == .testing)
+            } label: {
+                connectionStatus
             }
 
             Text(provider.disclaimer).font(.caption).foregroundStyle(.secondary)
@@ -74,12 +68,12 @@ struct AISettingsSection: View {
             Label("AI Suggestions", systemImage: "sparkles")
         }
         .onAppear(perform: loadKey)
-        .onChange(of: providerRaw) { loadKey() }
+        .onChange(of: provider) { loadKey() }
         .onChange(of: apiKey) { saveKey() }
         // Any change to what would be tested makes the last result stale.
-        .onChange(of: [providerRaw, apiKey, anthropicModel, openAIModel, openAIBaseURL]) { connection = .idle }
+        .onChange(of: [provider.rawValue, apiKey, anthropicModel, openAIModel, openAIBaseURL]) { connection = .idle }
         // Refetch when the provider, server or key changes, after typing pauses.
-        .task(id: "\(providerRaw)|\(openAIBaseURL)|\(apiKey)") {
+        .task(id: "\(provider.rawValue)|\(openAIBaseURL)|\(apiKey)") {
             guard provider == .openAICompatible else { return }
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled else { return }

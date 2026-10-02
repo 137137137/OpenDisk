@@ -1,41 +1,31 @@
 import Foundation
 
+/// The model Find More uses. OpenDisk's known caches are always shown without one.
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
-    case rules, apple, anthropic, openAICompatible
+    case apple, anthropic, openAICompatible
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .rules: "Built-in rules (no AI)"
         case .apple: "Apple Intelligence (on-device)"
         case .anthropic: "Anthropic (your API key)"
         case .openAICompatible: "OpenAI-compatible (your API key)"
         }
     }
 
+    /// What actually does the work: the configured model, or Apple Intelligence.
     var shortTitle: String {
         switch self {
-        case .rules: "Built-in Rules"
         case .apple: "Apple Intelligence"
-        case .anthropic: "Claude · \(AISettings.anthropicModel)"
+        case .anthropic: AISettings.anthropicModel
         case .openAICompatible: AISettings.openAIModel
         }
     }
-    var symbol: String {
-        switch self {
-        case .rules: "list.bullet.rectangle.portrait"
-        case .apple: "apple.logo"
-        case .anthropic: "sparkle"
-        case .openAICompatible: "network"
-        }
-    }
 
-    var sendsDataOffDevice: Bool { self == .anthropic || self == .openAICompatible }
+    var sendsDataOffDevice: Bool { self != .apple }
 
     var disclaimer: String {
         switch self {
-        case .rules:
-            "Suggestions come from OpenDisk's list of known caches. Review before deleting."
         case .apple:
             "On-device model: small and may be wrong. Review every suggestion. Risk ratings are enforced by OpenDisk rules, not the model."
         case .anthropic, .openAICompatible:

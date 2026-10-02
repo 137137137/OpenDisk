@@ -84,10 +84,10 @@ enum SuggestionValidator {
 
         if CleanableCacheCatalog.locations.contains(where: { inside($0.path) }) { return (.low, nil) }
         if inside("/Library") || inside("/opt") { return (.high, "It's in a shared system location.") }
-        return (.medium, "OpenDisk doesn't recognise it as a known cache.")
+        return (.medium, "It isn't a known cache.")
     }
 
-    // ponytail: checks the item and its ancestors only; a folder containing repos deeper down
+    // Checks the item and its ancestors only; a folder containing repos deeper down
     // stays medium. Walk descendants if that turns out to matter.
     private static func insideGitRepository(_ node: FileTree.NodeID, in tree: FileTree) -> Bool {
         var current = node
