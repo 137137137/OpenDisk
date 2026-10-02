@@ -83,7 +83,7 @@ struct MCPServer {
         let scans = availableScans()
         if name == "list_scans" {
             let list = scans.map {
-                ["root": $0.rootPath, "scannedAt": $0.date.formatted(.iso8601), "sizeText": ByteFormatter.formatFileSize($0.item.totalBytes)]
+                ["root": $0.rootPath, "scannedAt": $0.date.formatted(.iso8601), "size": ByteFormatter.formatFileSize($0.item.totalBytes)]
             }
             return (json(list.isEmpty ? ["error": "No saved scans yet. Scan a location in OpenDisk first."] : list), false)
         }
@@ -107,7 +107,7 @@ struct MCPServer {
             return (json([
                 "scannedAt": scan.date.formatted(.iso8601),
                 "accepted": report.accepted.map { [
-                    "path": $0.path, "sizeText": ByteFormatter.formatFileSize($0.size), "risk": $0.risk.rawValue,
+                    "path": $0.path, "size": ByteFormatter.formatFileSize($0.size), "risk": $0.risk.rawValue,
                     "riskRaisedReason": $0.riskRaisedReason ?? "", "category": $0.suggestion.category,
                     "rationale": $0.suggestion.rationale,
                 ] },

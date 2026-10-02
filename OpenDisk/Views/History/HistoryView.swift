@@ -63,7 +63,7 @@ struct HistoryView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Since \(comparison.from.date.formatted(date: .abbreviated, time: .shortened))")
                         .font(.headline)
-                    Text("\(signed(comparison.totalDelta)) · \(ByteFormatter.formatFileSize(comparison.from.totalBytes)) → \(ByteFormatter.formatFileSize(comparison.to.totalBytes))")
+                    Text("\(ByteFormatter.formatSignedFileSize(comparison.totalDelta)) · \(ByteFormatter.formatFileSize(comparison.from.totalBytes)) → \(ByteFormatter.formatFileSize(comparison.to.totalBytes))")
                         .foregroundStyle(comparison.totalDelta > 0 ? .orange : .green)
                     Text("Folders under \(ByteFormatter.formatFileSize(ScanDigest.defaultMinSize)) aren't tracked, so small changes are not listed.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -92,7 +92,7 @@ struct HistoryView: View {
             Spacer()
             if change.oldSize == nil { badge("New") }
             if change.newSize == nil { badge("Gone") }
-            Text(signed(change.delta))
+            Text(ByteFormatter.formatSignedFileSize(change.delta))
                 .monospacedDigit()
                 .foregroundStyle(change.delta > 0 ? .orange : .green)
         }
@@ -102,10 +102,6 @@ struct HistoryView: View {
     private func badge(_ text: String) -> some View {
         Text(text).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
             .background(.quaternary, in: Capsule())
-    }
-
-    private func signed(_ delta: Int64) -> String {
-        (delta >= 0 ? "+" : "−") + ByteFormatter.formatFileSize(abs(delta))
     }
 
     private func open(_ change: ScanDigest.Change) {

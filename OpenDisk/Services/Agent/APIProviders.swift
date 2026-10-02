@@ -13,12 +13,12 @@ private func userPrompt(_ focus: String?, tools: AgentTools) -> String {
 /// non-streaming API sends nothing until the reply is complete, so the idle timeout must be long.
 private let modelTimeout: TimeInterval = 300
 
-/// POSTs `body` as JSON, or GETs when `body` is nil. Model calls (`tools` set) retry once on
-/// timeouts, dropped connections, rate limits and transient server errors.
+/// POSTs `body` as JSON, or GETs when `body` is nil. Model calls (`tools` set) are retried
+/// once on timeouts, dropped connections, rate limits and transient server errors.
 // ponytail: non-streaming; switch to SSE streaming if replies regularly exceed `modelTimeout`.
 private func requestJSON(
     _ url: URL, body: [String: Any]?, headers: [String: String],
-    timeout: TimeInterval = 60, tools: AgentTools? = nil
+    timeout: TimeInterval = 60, tools: AgentTools? = nil, isRetry: Bool = false
 ) async throws -> [String: Any] {
     var request = URLRequest(url: url, timeoutInterval: timeout)
     for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
@@ -27,34 +27,38 @@ private func requestJSON(
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
     }
-
-    let attempts = tools == nil ? 1 : 2
-    for attempt in 1...attempts {
-        let isLast = attempt == attempts
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let http = response as? HTTPURLResponse
-            let status = http?.statusCode ?? 0
-            if (200..<300).contains(status) {
-                return (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-            }
-            let error = SuggestionError.http(status, String(decoding: data, as: UTF8.self))
-            guard !isLast, [408, 429, 500, 502, 503, 504, 529].contains(status) else { throw error }
-            let wait = http?.value(forHTTPHeaderField: "retry-after").flatMap(Double.init).map { min($0, 30) } ?? 3
-            tools?.log(.status, "Server returned \(status). Retrying in \(Int(wait)) s…")
-            try await Task.sleep(for: .seconds(wait))
-        } catch let error as URLError where [.timedOut, .networkConnectionLost].contains(error.code) {
-            guard !isLast else {
-                throw SuggestionError.unavailable(error.code == .timedOut
-                    ? "The model didn't reply within \(Int(timeout / 60)) minutes, even after a retry. Try a faster model, or a narrower focus."
-                    : "The connection to the server was lost. Check the server and try again.")
-            }
-            tools?.log(.status, error.code == .timedOut
-                ? "No reply after \(Int(timeout / 60)) minutes. Retrying once…"
-                : "Connection lost. Retrying once…")
-        }
+    let canRetry = tools != nil && !isRetry
+    func retry(after wait: Double, _ message: String) async throws -> [String: Any] {
+        tools?.log(.status, message)
+        try await Task.sleep(for: .seconds(wait))
+        return try await requestJSON(url, body: body, headers: headers, timeout: timeout, tools: tools, isRetry: true)
     }
-    throw SuggestionError.noProposal // unreachable: the last attempt always returns or throws
+
+    let data: Data, response: URLResponse
+    do {
+        (data, response) = try await URLSession.shared.data(for: request)
+    } catch let error as URLError where error.code == .timedOut || error.code == .networkConnectionLost {
+        let timedOut = error.code == .timedOut
+        guard canRetry else {
+            throw SuggestionError.unavailable(timedOut
+                ? "The model didn't reply within \(Int(timeout / 60)) minutes\(isRetry ? ", even after a retry" : ""). Try a faster model, or a narrower focus."
+                : "The connection to the server was lost. Check the server and try again.")
+        }
+        return try await retry(after: 1, timedOut
+            ? "No reply after \(Int(timeout / 60)) minutes. Retrying once…"
+            : "Connection lost. Retrying once…")
+    }
+
+    let http = response as? HTTPURLResponse
+    let status = http?.statusCode ?? 0
+    if (200..<300).contains(status) {
+        return (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+    guard canRetry, [408, 429, 500, 502, 503, 504, 529].contains(status) else {
+        throw SuggestionError.http(status, String(decoding: data, as: UTF8.self))
+    }
+    let wait = http?.value(forHTTPHeaderField: "retry-after").flatMap(Double.init).map { min($0, 30) } ?? 3
+    return try await retry(after: wait, "Server returned \(status). Retrying in \(Int(wait)) s…")
 }
 
 private func requestText(model: String, round: Int) -> String {

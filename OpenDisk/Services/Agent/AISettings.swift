@@ -13,13 +13,20 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Model the provider is set to use, for display and duration estimates.
-    var modelName: String? {
+    var shortTitle: String {
         switch self {
-        case .rules: nil
-        case .apple: "the on-device model"
-        case .anthropic: AISettings.anthropicModel
+        case .rules: "Built-in Rules"
+        case .apple: "Apple Intelligence"
+        case .anthropic: "Claude · \(AISettings.anthropicModel)"
         case .openAICompatible: AISettings.openAIModel
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .rules: "list.bullet.rectangle.portrait"
+        case .apple: "apple.logo"
+        case .anthropic: "sparkle"
+        case .openAICompatible: "network"
         }
     }
 
@@ -72,7 +79,7 @@ enum AISettings {
 /// Learns how long an analysis usually takes per provider and model, for the ETA.
 enum AIDurationEstimate {
     private static func key(_ provider: AIProvider) -> String {
-        "ai_duration_\(provider.rawValue)_\(provider.modelName ?? "")"
+        "ai_duration_\(provider.rawValue)_\(provider.shortTitle)"
     }
 
     static func expected(for provider: AIProvider) -> TimeInterval? {

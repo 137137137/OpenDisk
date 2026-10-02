@@ -66,7 +66,7 @@ struct AgentTools: Sendable {
         case "list_children": value = listChildren(args["path"] as? String ?? "", limit: int("limit", 30))
         case "largest_files": value = largestFiles(under: args["under"] as? String, limit: int("limit", 30))
         case "known_reclaimable": value = knownReclaimable().map { [
-            "path": show($0.path), "size": $0.size, "sizeText": format($0.size),
+            "path": show($0.path), "size": format($0.size),
             "kind": $0.name, "regenerates": $0.regenerates,
         ] }
         case "growth_since": value = growthSince(days: int("days", 30, max: 3_650))
@@ -108,16 +108,15 @@ struct AgentTools: Sendable {
         let digest = tree.digest(rootPath: scan.rootPath, maxDepth: 3)
         let top = digest.entries.filter { $0.depth > 0 && $0.isDir }
             .sorted { $0.size > $1.size }.prefix(25)
-            .map { ["path": show($0.path), "size": $0.size, "sizeText": format($0.size)] as [String: Any] }
+            .map { ["path": show($0.path), "size": format($0.size)] }
         var result: [String: Any] = [
             "root": show(scan.rootPath),
-            "totalBytes": tree.size(of: FileTree.rootID),
-            "totalText": format(tree.size(of: FileTree.rootID)),
+            "total": format(tree.size(of: FileTree.rootID)),
             "largestFolders": Array(top),
         ]
         if let volume = DeviceMonitor.volumeCapacity(ofPath: scan.rootPath) {
-            result["volumeTotalText"] = format(volume.total)
-            result["volumeAvailableText"] = format(volume.available)
+            result["volumeTotal"] = format(volume.total)
+            result["volumeAvailable"] = format(volume.available)
         }
         if let last = ScanHistory.list(root: scan.rootPath, base: historyBase).dropFirst().first {
             result["previousScan"] = last.date.formatted(.iso8601)
@@ -134,14 +133,13 @@ struct AgentTools: Sendable {
         let children = tree.childrenSortedForDisplay(of: node)
         let shown = children.prefix(limit).map { child -> [String: Any] in
             var item: [String: Any] = [
-                "name": tree.name(of: child), "size": tree.size(of: child),
-                "sizeText": format(tree.size(of: child)), "isDir": tree.isDirectory(child),
+                "name": tree.name(of: child), "size": format(tree.size(of: child)), "isDir": tree.isDirectory(child),
             ]
             if tree.isDirectory(child) { item["items"] = tree.childCount(of: child) }
             return item
         }
         return [
-            "path": show(path), "size": tree.size(of: node), "sizeText": format(tree.size(of: node)),
+            "path": show(path), "size": format(tree.size(of: node)),
             "children": Array(shown), "omitted": max(0, children.count - limit),
         ]
     }
@@ -154,7 +152,7 @@ struct AgentTools: Sendable {
             .filter { prefix == nil || $0.path.hasPrefix(prefix!) }
             .sorted { tree.size(of: $0.id) > tree.size(of: $1.id) }
             .prefix(limit)
-            .map { ["path": show($0.path), "size": tree.size(of: $0.id), "sizeText": format(tree.size(of: $0.id))] }
+            .map { ["path": show($0.path), "size": format(tree.size(of: $0.id))] }
     }
 
     struct Reclaimable: Sendable {
@@ -205,12 +203,12 @@ struct AgentTools: Sendable {
         }
         let current = scan.tree.digest(rootPath: scan.rootPath)
         let changes = ScanDigest.mostSpecific(current.diff(from: old)).prefix(30).map { change -> [String: Any] in
-            ["path": show(change.path), "delta": change.delta, "deltaText": (change.delta >= 0 ? "+" : "-") + format(abs(change.delta)),
+            ["path": show(change.path), "change": ByteFormatter.formatSignedFileSize(change.delta),
              "status": change.oldSize == nil ? "new" : change.newSize == nil ? "gone or below 10 MB" : "changed"]
         }
         return [
             "since": item.date.formatted(.iso8601),
-            "totalDeltaText": (current.totalBytes >= old.totalBytes ? "+" : "-") + format(abs(current.totalBytes - old.totalBytes)),
+            "totalChange": ByteFormatter.formatSignedFileSize(current.totalBytes - old.totalBytes),
             "changes": Array(changes),
         ]
     }
@@ -225,8 +223,7 @@ struct AgentTools: Sendable {
         }
         let (risk, why) = SuggestionValidator.ruleRisk(for: path, node: node, in: scan.tree, home: home)
         result["inScan"] = true
-        result["size"] = scan.tree.size(of: node)
-        result["sizeText"] = format(scan.tree.size(of: node))
+        result["size"] = format(scan.tree.size(of: node))
         result["isDir"] = scan.tree.isDirectory(node)
         result["minimumRisk"] = risk.rawValue
         if let why { result["riskReason"] = why }

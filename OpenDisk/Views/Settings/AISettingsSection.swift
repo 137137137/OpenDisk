@@ -74,11 +74,10 @@ struct AISettingsSection: View {
             Label("AI Suggestions", systemImage: "sparkles")
         }
         .onAppear(perform: loadKey)
-        .onChange(of: providerRaw) { loadKey(); connection = .idle }
-        .onChange(of: apiKey) { saveKey(); connection = .idle }
-        .onChange(of: anthropicModel) { connection = .idle }
-        .onChange(of: openAIModel) { connection = .idle }
-        .onChange(of: openAIBaseURL) { connection = .idle }
+        .onChange(of: providerRaw) { loadKey() }
+        .onChange(of: apiKey) { saveKey() }
+        // Any change to what would be tested makes the last result stale.
+        .onChange(of: [providerRaw, apiKey, anthropicModel, openAIModel, openAIBaseURL]) { connection = .idle }
         // Refetch when the provider, server or key changes, after typing pauses.
         .task(id: "\(providerRaw)|\(openAIBaseURL)|\(apiKey)") {
             guard provider == .openAICompatible else { return }
