@@ -26,6 +26,8 @@ struct DiskAnalysisView: View {
     @State private var sortAscending = false
     private let totalUsedDiskSpace: Int64
     @State private var volumeCapacity: VolumeCapacity?
+    @State private var isShowingHistory = false
+    @State private var suggestionsScan: ScanResult?
 
     init(
         rootPath: String,
@@ -115,6 +117,15 @@ struct DiskAnalysisView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
+                Button("History", systemImage: "clock.arrow.circlepath") { isShowingHistory = true }
+                    .help("Compare with earlier scans")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Suggest Cleanup", systemImage: "sparkles") { suggestionsScan = analyzer.completedScan }
+                    .disabled(analyzer.completedScan == nil)
+                    .help("Find space you can reclaim")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise", action: refresh)
                 .keyboardShortcut("r", modifiers: .command)
                 .help("Rescan the current folder")
@@ -176,7 +187,14 @@ struct DiskAnalysisView: View {
             }
             currentPath = newPath
         }
+        .sheet(isPresented: $isShowingHistory) {
+            HistoryView(analyzer: analyzer, rootPath: rootPath, onNavigate: navigateToPath)
+        }
+        .sheet(item: $suggestionsScan) { scan in
+            SuggestionsView(scan: scan, collector: collector)
+        }
         .environment(collector)
+        .focusedSceneValue(\.analyzer, analyzer)
         .background {
             Button("Undo Collect") { collector.undo() }
                 .keyboardShortcut("z", modifiers: .command)

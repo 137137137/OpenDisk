@@ -106,8 +106,16 @@ struct CollectorBar: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This permanently deletes the collected items and can’t be undone.")
+                Text(deletionMessage)
             }
+    }
+
+    private var deletionMessage: String {
+        switch collector.trashCount {
+        case 0: "This permanently deletes the collected items and can’t be undone."
+        case collector.count: "Suggested items are moved to the Trash, so you can restore them."
+        default: "\(collector.trashCount) suggested item\(collector.trashCount == 1 ? " is" : "s are") moved to the Trash. The rest are permanently deleted and can’t be restored."
+        }
     }
 
     private var footerBar: some View {
