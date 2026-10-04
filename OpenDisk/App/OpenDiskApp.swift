@@ -4,6 +4,17 @@ import Sparkle
 #endif
 
 @main
+enum AppEntry {
+    static func main() {
+        // `OpenDisk --mcp` serves saved scans to MCP clients over stdio instead of opening the UI.
+        if CommandLine.arguments.contains("--mcp") {
+            MCPServer().run()
+            return
+        }
+        OpenDiskApp.main()
+    }
+}
+
 struct OpenDiskApp: App {
     @AppStorage("fda_show_prompt_at_startup") private var showPromptAtStartup = true
     @State private var hasCheckedFullDiskAccess = false
@@ -28,6 +39,7 @@ struct OpenDiskApp: App {
         .windowResizability(.contentSize)
         .commands {
             ToolbarCommands()
+            ExportCommands()
             #if canImport(Sparkle)
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(

@@ -42,8 +42,12 @@ final class DiskAnalyzer {
     private var searchSequence = 0
     private var searchTask: Task<Void, Never>?
 
-    init(scanner: any DiskScanning = ScanEngine()) {
-        self.scanner = scanner
+    /// Only the real scanner records history, so injected test scanners never touch it.
+    private let recordsHistory: Bool
+
+    init(scanner: (any DiskScanning)? = nil) {
+        self.scanner = scanner ?? ScanEngine()
+        self.recordsHistory = scanner == nil
     }
 
     func scanDirectory(_ path: String) async {
@@ -125,6 +129,26 @@ final class DiskAnalyzer {
         totalDiskScannedBytes = result.tree.size(of: FileTree.rootID)
         itemsScanned = max(itemsScanned, result.tree.nodeCount - 1)
         rebuildSearchIndex()
+        if recordsHistory {
+            Task.detached(priority: .utility) { ScanHistory.save(Self.digest(of: result)) }
+        }
+    }
+
+    /// The latest complete scan; nil while scanning or showing a partial tree.
+    var completedScan: ScanResult? {
+        isScanning || resultIsPartial ? nil : scanResult
+    }
+
+    func currentDigest() async -> ScanDigest? {
+        guard let result = completedScan else { return nil }
+        return await Task.detached(priority: .userInitiated) { Self.digest(of: result) }.value
+    }
+
+    private nonisolated static func digest(of result: ScanResult) -> ScanDigest {
+        result.tree.digest(
+            rootPath: result.rootPath,
+            volume: DeviceMonitor.volumeCapacity(ofPath: result.rootPath)
+        )
     }
 
     func cancelCurrentScan() {

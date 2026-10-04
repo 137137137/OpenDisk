@@ -22,6 +22,11 @@ enum ByteFormatter {
         fileFormatter.withLock { $0.string(fromByteCount: bytes) }
     }
 
+    /// "+1.2 GB" / "−300 MB", for size changes.
+    static func formatSignedFileSize(_ delta: Int64) -> String {
+        (delta >= 0 ? "+" : "−") + formatFileSize(abs(delta))
+    }
+
     static func formatDecimalNoFraction(_ bytes: Int64) -> String {
         let formatted = decimalNoFractionFormatter.withLock { $0.string(fromByteCount: bytes) }
         if let range = formatted.range(of: "[.,]\\d+", options: .regularExpression) {

@@ -1,9 +1,11 @@
 import Foundation
 
-struct ScanResult: Sendable {
+struct ScanResult: Sendable, Identifiable {
     let rootPath: String
     let tree: FileTree
     var unreadableDirectories: Int = 0
+    /// Lets a finished scan drive `.sheet(item:)`.
+    let id = UUID()
 }
 
 struct PartialScanResult: Sendable {

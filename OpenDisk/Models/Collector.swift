@@ -30,6 +30,7 @@ final class Collector {
     var canUndo: Bool { !undoStack.isEmpty }
 
     var isEmpty: Bool { items.isEmpty }
+    var trashCount: Int { items.count { $0.viaTrash == true } }
     var count: Int { items.count }
     var totalBytes: Int64 { items.reduce(0) { $0 + $1.size } }
     var formattedTotal: String { ByteFormatter.formatFileSize(totalBytes) }
@@ -141,7 +142,14 @@ final class Collector {
                 currentName: file.name, completed: index, total: total, freedBytes: freed
             )
             let failure = await Task.detached(priority: .userInitiated) { () -> String? in
-                do { try FileManager.default.removeItem(atPath: file.path); return nil }
+                do {
+                    if file.viaTrash == true {
+                        try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
+                    } else {
+                        try FileManager.default.removeItem(atPath: file.path)
+                    }
+                    return nil
+                }
                 catch { return error.localizedDescription }
             }.value
             if let failure {

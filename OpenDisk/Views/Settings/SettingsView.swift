@@ -65,6 +65,8 @@ struct SettingsView: View {
                 Label("Startup Behavior", systemImage: "power")
             }
 
+            AISettingsSection()
+
             Section {
                 Text("""
                 Why does OpenDisk need Full Disk Access?

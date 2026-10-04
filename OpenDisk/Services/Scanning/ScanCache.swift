@@ -148,14 +148,13 @@ enum ScanCache {
         guard let caches = FileManager.default.urls(
             for: .cachesDirectory, in: .userDomainMask
         ).first else { return nil }
-        let bundle = Bundle.main.bundleIdentifier ?? "OpenDisk"
         return caches
-            .appendingPathComponent(bundle, isDirectory: true)
+            .appendingPathComponent(AppIdentity.bundleID, isDirectory: true)
             .appendingPathComponent("ScanCache", isDirectory: true)
             .appendingPathComponent("\(stableHash(rootPath)).dmscan")
     }
 
-    private static func stableHash(_ string: String) -> String {
+    static func stableHash(_ string: String) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in string.utf8 {
             hash ^= UInt64(byte)
