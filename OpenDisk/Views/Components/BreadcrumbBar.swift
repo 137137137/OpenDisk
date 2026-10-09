@@ -64,6 +64,8 @@ struct BreadcrumbBar: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -89,22 +91,21 @@ private struct BreadcrumbLink: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            Text(name)
-                .font(.callout)
-                .foregroundStyle(hovering ? .primary : .secondary)
-                .lineLimit(1)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background {
-                    if hovering {
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(.quaternary)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        Text(name)
+            .font(.callout)
+            .foregroundStyle(hovering ? .primary : .secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(.quaternary.opacity(hovering ? 1 : 0))
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
+            .onHover { hovering = $0 }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, action)
     }
 }
 
