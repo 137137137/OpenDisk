@@ -8,6 +8,7 @@ enum HiddenSpaceInfo {
 enum FreeSpaceInfo {
     static let name = "Free Space"
     static var sentinelPath: String { "::" + name }
+    static let defaultsKey = "chart_show_free_space"
 }
 
 enum CleanableCacheCatalog {

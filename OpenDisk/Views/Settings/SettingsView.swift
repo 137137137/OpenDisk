@@ -4,6 +4,7 @@ struct SettingsView: View {
     @State private var isFullDiskAccessGranted = false
     @State private var isCheckingAccess = false
     @AppStorage("fda_show_prompt_at_startup") private var showPromptAtStartup = true
+    @AppStorage(FreeSpaceInfo.defaultsKey) private var showFreeSpace = true
 
     var body: some View {
         Form {
@@ -63,6 +64,20 @@ struct SettingsView: View {
                 }
             } header: {
                 Label("Startup Behavior", systemImage: "power")
+            }
+
+            Section {
+                Toggle(isOn: $showFreeSpace) {
+                    VStack(alignment: .leading) {
+                        Text("Show free space on the chart")
+
+                        Text("Adds a gray wedge for unused space when viewing the whole disk. Turn off on large, mostly empty drives so scanned folders fill the chart.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Label("Chart", systemImage: "chart.pie")
             }
 
             Section {

@@ -26,6 +26,7 @@ struct DiskAnalysisView: View {
     @State private var sortAscending = false
     private let totalUsedDiskSpace: Int64
     @State private var volumeCapacity: VolumeCapacity?
+    @AppStorage(FreeSpaceInfo.defaultsKey) private var showFreeSpace = true
 
     init(
         rootPath: String,
@@ -470,7 +471,7 @@ struct DiskAnalysisView: View {
     }
 
     private var chartFreeBytes: Int64? {
-        guard currentPath == rootPath,
+        guard showFreeSpace, currentPath == rootPath,
               let capacity = volumeCapacity, capacity.available > 0
         else { return nil }
         return capacity.available
