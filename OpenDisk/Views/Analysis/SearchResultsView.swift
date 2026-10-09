@@ -8,6 +8,7 @@ struct SearchResultsView: View {
     let resultsArePartial: Bool
     let query: String
     var selectedPaths: Set<String> = []
+    var focusedPath: String? = nil
     var selectionFiles: [CollectedFile] = []
     var onQuickLook: ((FolderItem) -> Void)? = nil
     let onOpen: (FolderItem) -> Void
@@ -26,21 +27,28 @@ struct SearchResultsView: View {
             } else if items.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(items) { item in
-                            FolderRowView(
-                                item: item,
-                                locationDetail: location(of: item),
-                                isSelected: selectedPaths.contains(item.path),
-                                selectionFiles: selectionFiles,
-                                onQuickLook: onQuickLook
-                            ) {
-                                onOpen(item)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(items) { item in
+                                FolderRowView(
+                                    item: item,
+                                    locationDetail: location(of: item),
+                                    isSelected: selectedPaths.contains(item.path),
+                                    selectionFiles: selectionFiles,
+                                    onQuickLook: onQuickLook
+                                ) {
+                                    onOpen(item)
+                                }
+                                .id(item.path)
                             }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
+                    .onChange(of: focusedPath) { _, path in
+                        guard let path, items.contains(where: { $0.path == path }) else { return }
+                        proxy.scrollTo(path)
+                    }
                 }
                 .task(id: resultsVersion) {
                     await FileIcon.prewarm(items.map(\.path))

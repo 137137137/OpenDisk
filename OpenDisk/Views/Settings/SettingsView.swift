@@ -5,6 +5,7 @@ struct SettingsView: View {
     @State private var isCheckingAccess = false
     @AppStorage("fda_show_prompt_at_startup") private var showPromptAtStartup = true
     @AppStorage(FreeSpaceInfo.defaultsKey) private var showFreeSpace = true
+    @State private var keyBindings = KeyBindingStore.shared
 
     var body: some View {
         Form {
@@ -78,6 +79,29 @@ struct SettingsView: View {
                 }
             } header: {
                 Label("Chart", systemImage: "chart.pie")
+            }
+
+            Section {
+                ForEach(KeyAction.allCases) { action in
+                    LabeledContent {
+                        ShortcutRecorder(action: action, store: keyBindings)
+                    } label: {
+                        Text(action.title)
+                        Text(action.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack {
+                    Text("Click a shortcut, then press the keys you want. Shortcuts apply while the file list is focused and never while typing in search.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Restore All Defaults") { keyBindings.resetAll() }
+                }
+            } header: {
+                Label("Keyboard Shortcuts", systemImage: "keyboard")
             }
 
             Section {

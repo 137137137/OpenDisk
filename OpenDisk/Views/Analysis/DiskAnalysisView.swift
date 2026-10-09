@@ -21,7 +21,8 @@ struct DiskAnalysisView: View {
     @State private var selectedPaths = Set<String>()
     @State private var selectionAnchor: String?
     @State private var quickLookURL: URL?
-    @State private var quickLookKeyMonitor: Any?
+    @State private var keyMonitor: Any?
+    @State private var keyBindings = KeyBindingStore.shared
     @State private var sort: SortField = .size
     @State private var sortAscending = false
     private let totalUsedDiskSpace: Int64
@@ -128,9 +129,9 @@ struct DiskAnalysisView: View {
             }
         }
         .onAppear {
-            if quickLookKeyMonitor == nil {
-                quickLookKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                    handleQuickLookKey(event)
+            if keyMonitor == nil {
+                keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    handleKey(event)
                 }
             }
             guard !hasInitiallyScanned else { return }
@@ -148,9 +149,9 @@ struct DiskAnalysisView: View {
             if !isScanning { Task { await refreshVolumeCapacity() } }
         }
         .onDisappear {
-            if let quickLookKeyMonitor {
-                NSEvent.removeMonitor(quickLookKeyMonitor)
-                self.quickLookKeyMonitor = nil
+            if let keyMonitor {
+                NSEvent.removeMonitor(keyMonitor)
+                self.keyMonitor = nil
             }
             quickLookURL = nil
             analyzer.cancelCurrentScan()
@@ -256,6 +257,7 @@ struct DiskAnalysisView: View {
                     resultsArePartial: analyzer.searchResultsArePartial,
                     query: searchText,
                     selectedPaths: selectedPaths,
+                    focusedPath: selectionAnchor,
                     selectionFiles: selectionFiles(in: items),
                     onQuickLook: quickLook,
                     onOpen: handleRowTap
@@ -267,6 +269,7 @@ struct DiskAnalysisView: View {
                         items: items,
                         displayVersion: analyzer.displayVersion,
                         selectedPaths: selectedPaths,
+                        focusedPath: selectionAnchor,
                         selectionFiles: selectionFiles(in: items),
                         onQuickLook: quickLook,
                         onFolderTap: handleRowTap
@@ -282,19 +285,137 @@ struct DiskAnalysisView: View {
         )
     }
 
-    private func handleQuickLookKey(_ event: NSEvent) -> NSEvent? {
-        guard event.keyCode == 49, !event.isARepeat,
-              event.modifierFlags.intersection([.command, .option, .control]).isEmpty
-        else { return event }
+    private func handleKey(_ event: NSEvent) -> NSEvent? {
+        guard !event.isARepeat || isRepeatable(event) else { return event }
         if event.window?.firstResponder is NSTextView { return event }
-        if quickLookURL != nil {
-            quickLookURL = nil
+        if event.window is QLPreviewPanel, !keyMatchesQuickLook(event) { return event }
+        guard let match = keyBindings.match(event) else { return event }
+        perform(match)
+        return nil
+    }
+
+    private func isRepeatable(_ event: NSEvent) -> Bool {
+        guard let match = keyBindings.match(event) else { return false }
+        return match.action == .moveDown || match.action == .moveUp
+    }
+
+    private func keyMatchesQuickLook(_ event: NSEvent) -> Bool {
+        keyBindings.match(event)?.action == .quickLook
+    }
+
+    private func perform(_ match: KeyBindingStore.Match) {
+        switch match.action {
+        case .moveDown:
+            moveFocus(by: 1, extending: match.extendsSelection)
+        case .moveUp:
+            moveFocus(by: -1, extending: match.extendsSelection)
+        case .openSelected:
+            openFocusedItem()
+        case .enclosingFolder:
+            goToParent()
+        case .addToCollector:
+            collectSelection()
+        case .quickLook:
+            toggleQuickLook()
+        case .showInFinder:
+            showSelectionInFinder()
+        case .selectAll:
+            selectAllItems()
+        }
+    }
+
+    private var focusedItem: FolderItem? {
+        let items = visibleItems
+        if let anchor = selectionAnchor, let item = items.first(where: { $0.path == anchor }) {
+            return item
+        }
+        return items.first { selectedPaths.contains($0.path) }
+    }
+
+    private func moveFocus(by offset: Int, extending: Bool) {
+        let items = visibleItems
+        guard !items.isEmpty else { return }
+        let currentIndex = focusedItem.flatMap { item in items.firstIndex { $0.path == item.path } }
+        let nextIndex: Int
+        if let currentIndex {
+            nextIndex = min(max(currentIndex + offset, 0), items.count - 1)
+        } else {
+            nextIndex = offset > 0 ? 0 : items.count - 1
+        }
+        let next = items[nextIndex]
+        let selectable = !next.path.hasPrefix("::")
+        if extending, selectable {
+            selectedPaths.insert(next.path)
+            if let current = focusedItem, !current.path.hasPrefix("::") {
+                selectedPaths.insert(current.path)
+            }
+        } else {
+            selectedPaths = selectable ? [next.path] : []
+        }
+        selectionAnchor = next.path
+        if quickLookURL != nil, selectable {
+            quickLookURL = URL(fileURLWithPath: next.path)
+        }
+    }
+
+    private func openFocusedItem() {
+        guard let item = focusedItem else { return }
+        if isSearchActive {
+            openSearchResult(item)
+        } else if item.isDirectory {
+            navigateToFolder(item)
+        } else {
+            quickLook(item)
+        }
+    }
+
+    private func collectSelection() {
+        let items = visibleItems
+        var files = items.filter { selectedPaths.contains($0.path) }.map(CollectedFile.init)
+        if files.isEmpty, let item = focusedItem {
+            files = [CollectedFile(item)]
+        }
+        guard !files.isEmpty else { return }
+        let nextAnchor = nextFocus(after: files.map(\.path), in: items)
+        guard collect(files) else { return }
+        selectionAnchor = nextAnchor
+        if let nextAnchor, !nextAnchor.hasPrefix("::") {
+            selectedPaths = [nextAnchor]
+        }
+    }
+
+    private func nextFocus(after removed: [String], in items: [FolderItem]) -> String? {
+        let removedSet = Set(removed)
+        guard let lastIndex = items.lastIndex(where: { removedSet.contains($0.path) }) else {
             return nil
         }
-        guard let target = quickLookTarget else { return event }
+        if let after = items[lastIndex...].first(where: { !removedSet.contains($0.path) }) {
+            return after.path
+        }
+        return items[..<lastIndex].last { !removedSet.contains($0.path) }?.path
+    }
+
+    private func toggleQuickLook() {
+        if quickLookURL != nil {
+            quickLookURL = nil
+            return
+        }
+        guard let target = quickLookTarget else { return }
         quickLookURL = target
         centerQuickLookPanel()
-        return nil
+    }
+
+    private func showSelectionInFinder() {
+        var paths = visibleItems.filter { selectedPaths.contains($0.path) }.map(\.path)
+        if paths.isEmpty, let item = focusedItem, !item.path.hasPrefix("::") {
+            paths = [item.path]
+        }
+        guard !paths.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(paths.map { URL(fileURLWithPath: $0) })
+    }
+
+    private func selectAllItems() {
+        selectedPaths = Set(visibleItems.map(\.path).filter { !$0.hasPrefix("::") })
     }
 
     private func quickLook(_ item: FolderItem) {
@@ -482,6 +603,11 @@ struct DiskAnalysisView: View {
             collector.resolveDragOut(droppedAt: location)
             return true
         }
+        return collect(files)
+    }
+
+    @discardableResult
+    private func collect(_ files: [CollectedFile]) -> Bool {
         let expanded = files.flatMap { file in
             file.path == HiddenSpaceInfo.sentinelPath
                 ? analyzer.collectablePurgeableFiles()
