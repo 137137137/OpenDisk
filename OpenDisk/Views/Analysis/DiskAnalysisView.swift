@@ -441,6 +441,7 @@ struct DiskAnalysisView: View {
                 if let chartRoot = analyzer.chartRoot {
                     RingsChartView(
                         root: chartRoot,
+                        freeBytes: chartFreeBytes,
                         onSelectDirectory: navigateToPath,
                         onSelectCenter: goBack
                     )
@@ -466,6 +467,13 @@ struct DiskAnalysisView: View {
                 perform: handleCollectorDrop
             )
         )
+    }
+
+    private var chartFreeBytes: Int64? {
+        guard currentPath == rootPath,
+              let capacity = volumeCapacity, capacity.available > 0
+        else { return nil }
+        return capacity.available
     }
 
     private func handleCollectorDrop(_ files: [CollectedFile], at location: CGPoint) -> Bool {

@@ -5,6 +5,11 @@ enum HiddenSpaceInfo {
     static var sentinelPath: String { "::" + folderName }
 }
 
+enum FreeSpaceInfo {
+    static let name = "Free Space"
+    static var sentinelPath: String { "::" + name }
+}
+
 enum CleanableCacheCatalog {
     struct Location {
         let name: String

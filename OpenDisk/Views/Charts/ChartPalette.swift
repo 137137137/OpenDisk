@@ -20,6 +20,8 @@ enum ChartPalette {
 
     static let level = RGB(red: 0xD3 / 255.0, green: 0xD6 / 255.0, blue: 0xD1 / 255.0)
     static let levelHighlighted = RGB(red: 0xE0 / 255.0, green: 0xE2 / 255.0, blue: 0xDD / 255.0)
+    static let freeSpace = RGB(red: 0x5A / 255.0, green: 0x5E / 255.0, blue: 0x62 / 255.0)
+    static let freeSpaceHighlighted = RGB(red: 0x7A / 255.0, green: 0x7E / 255.0, blue: 0x82 / 255.0)
 
     private static let bandWidth = 100.0 / 3.0
 

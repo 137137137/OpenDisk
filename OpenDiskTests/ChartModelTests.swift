@@ -49,6 +49,37 @@ struct ChartModelTests {
         #expect(root.children.map(\.name) == ["huge.bin"])
     }
 
+    @Test("rings layout: free space wedge shrinks used arc")
+    func ringsFreeSpace() {
+        let tree = makeTree()
+        let root = ChartItem.build(
+            from: tree, at: FileTree.rootID, name: "/Volumes/T", path: "/Volumes/T"
+        )
+        let layout = RingsChartLayout.layout(
+            root: root, in: CGSize(width: 400, height: 400), freeBytes: 1_000
+        )
+
+        #expect(layout.freeBytes == 1_000)
+        let big = layout.segments.first { $0.name == "big" }
+        #expect(big != nil)
+        if let big {
+            #expect(abs(big.sweep - 0.3 * 2 * .pi) < 0.001)
+        }
+        let free = layout.segments.first { $0.path == FreeSpaceInfo.sentinelPath }
+        #expect(free != nil)
+        if let free {
+            #expect(free.depth == 1)
+            #expect(free.kind == .synthetic)
+            #expect(abs(free.startAngle - .pi) < 0.001)
+            #expect(abs(free.sweep - .pi) < 0.001)
+            #expect(abs(free.fractionOfRoot - 0.5) < 0.001)
+        }
+
+        let plain = RingsChartLayout.layout(root: root, in: CGSize(width: 400, height: 400))
+        #expect(plain.freeBytes == nil)
+        #expect(!plain.segments.contains { $0.path == FreeSpaceInfo.sentinelPath })
+    }
+
     @Test("rings layout: angles proportional and nested within parents")
     func ringsGeometry() {
         let tree = makeTree()

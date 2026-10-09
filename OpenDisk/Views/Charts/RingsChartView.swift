@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RingsChartView: View {
     let root: ChartItem
+    var freeBytes: Int64? = nil
     let onSelectDirectory: (String) -> Void
     let onSelectCenter: () -> Void
 
@@ -59,10 +60,13 @@ struct RingsChartView: View {
                 accessibilitySegmentList
             }
             .onChange(of: root, initial: true) {
-                layout = RingsChartLayout.layout(root: root, in: geometry.size)
+                layout = RingsChartLayout.layout(root: root, in: geometry.size, freeBytes: freeBytes)
+            }
+            .onChange(of: freeBytes) {
+                layout = RingsChartLayout.layout(root: root, in: geometry.size, freeBytes: freeBytes)
             }
             .onChange(of: geometry.size) {
-                layout = RingsChartLayout.layout(root: root, in: geometry.size)
+                layout = RingsChartLayout.layout(root: root, in: geometry.size, freeBytes: freeBytes)
             }
         }
     }
@@ -167,11 +171,14 @@ private enum ChartDrawing {
         in context: inout GraphicsContext
     ) {
         let border = GraphicsContext.Shading.color(.black.opacity(0.35))
-        let fill = ChartPalette.fill(
-            position: segment.colorPosition,
-            depth: segment.depth,
-            highlighted: highlighted
-        ).color
+        let isFreeSpace = segment.path == FreeSpaceInfo.sentinelPath
+        let fill = isFreeSpace
+            ? (highlighted ? ChartPalette.freeSpaceHighlighted : ChartPalette.freeSpace).color
+            : ChartPalette.fill(
+                position: segment.colorPosition,
+                depth: segment.depth,
+                highlighted: highlighted
+            ).color
 
         if segment.depth == 0 {
             let disk = Path(ellipseIn: CGRect(
@@ -283,22 +290,44 @@ private enum ChartDrawing {
         layout: RingsChartLayout.Layout,
         in context: inout GraphicsContext
     ) {
-        let name = context.resolve(
-            Text(segment.name).font(.caption).fontWeight(.semibold)
-                .foregroundColor(.black.opacity(0.75))
-        )
-        let size = context.resolve(
-            Text(ByteFormatter.formatFileSize(segment.size)).font(.caption2)
-                .foregroundColor(.black.opacity(0.6))
-        )
-        let maxWidth = segment.outerRadius * 1.7
-        let nameSize = name.measure(in: CGSize(width: maxWidth, height: 40))
-        let sizeSize = size.measure(in: CGSize(width: maxWidth, height: 40))
-        guard nameSize.width <= maxWidth else {
-            context.draw(size, at: layout.center)
-            return
+        var lines: [GraphicsContext.ResolvedText] = [
+            context.resolve(
+                Text(segment.name).font(.caption).fontWeight(.semibold)
+                    .foregroundColor(.black.opacity(0.75))
+            ),
+            context.resolve(
+                Text(ByteFormatter.formatFileSize(segment.size)).font(.caption2)
+                    .foregroundColor(.black.opacity(0.6))
+            ),
+        ]
+        if let free = layout.freeBytes {
+            lines.append(context.resolve(
+                Text("\(ByteFormatter.formatFileSize(free)) free").font(.caption2)
+                    .foregroundColor(.black.opacity(0.6))
+            ))
         }
-        context.draw(name, at: CGPoint(x: layout.center.x, y: layout.center.y - sizeSize.height / 2 - 1))
-        context.draw(size, at: CGPoint(x: layout.center.x, y: layout.center.y + nameSize.height / 2 + 1))
+
+        let maxWidth = segment.outerRadius * 1.5
+        let maxHeight = segment.outerRadius * 1.6
+        let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude, height: 40)
+        var sizes = lines.map { $0.measure(in: unbounded) }
+        if sizes[0].width > maxWidth {
+            lines.removeFirst()
+            sizes.removeFirst()
+        }
+        while lines.count > 1, sizes.last!.width > maxWidth
+            || sizes.reduce(0, { $0 + $1.height }) + CGFloat(sizes.count - 1) * 2 > maxHeight
+        {
+            lines.removeLast()
+            sizes.removeLast()
+        }
+        guard sizes[0].width <= maxWidth else { return }
+
+        let totalHeight = sizes.reduce(0) { $0 + $1.height } + CGFloat(sizes.count - 1) * 2
+        var y = layout.center.y - totalHeight / 2
+        for (line, size) in zip(lines, sizes) {
+            context.draw(line, at: CGPoint(x: layout.center.x, y: y + size.height / 2))
+            y += size.height + 2
+        }
     }
 }
