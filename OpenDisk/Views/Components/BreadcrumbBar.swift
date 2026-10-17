@@ -48,25 +48,51 @@ struct BreadcrumbBar: View {
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 3) {
-                ForEach(pathComponents) { component in
-                    segment(component)
+        let components = pathComponents
+        ViewThatFits(in: .horizontal) {
+            row(components)
+            ForEach(collapsedVariants(of: components), id: \.count) { variant in
+                row(variant)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-                    if !component.isLast {
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 1)
-                    }
+    private func collapsedVariants(of components: [PathComponent]) -> [[PathComponent?]] {
+        guard components.count > 2 else { return [] }
+        return (1..<(components.count - 1)).reversed().map { kept in
+            [components[0], nil] + components.suffix(kept)
+        }
+    }
+
+    private func row(_ components: [PathComponent]) -> some View {
+        row(components.map(Optional.some))
+    }
+
+    private func row(_ components: [PathComponent?]) -> some View {
+        HStack(spacing: 3) {
+            ForEach(Array(components.enumerated()), id: \.offset) { index, component in
+                if index > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 1)
+                }
+                if let component {
+                    segment(component)
+                        .layoutPriority(component.isLast ? 1 : 0)
+                } else {
+                    Text("…")
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
         }
-        .scrollBounceBehavior(.basedOnSize)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
     }
 
     @ViewBuilder
@@ -77,6 +103,7 @@ struct BreadcrumbBar: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
         } else {
@@ -95,6 +122,7 @@ private struct BreadcrumbLink: View {
             .font(.callout)
             .foregroundStyle(hovering ? .primary : .secondary)
             .lineLimit(1)
+            .truncationMode(.middle)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background {
