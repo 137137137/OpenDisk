@@ -123,9 +123,9 @@ struct DiskAnalysisView: View {
                 .help("Go to the enclosing folder (⌘↑)")
             }
             ToolbarItem(placement: .primaryAction) {
-                Button("Refresh", systemImage: "arrow.clockwise", action: refresh)
+                Button("Refresh", systemImage: "arrow.clockwise", action: rescanFromTop)
                 .keyboardShortcut("r", modifiers: .command)
-                .help("Rescan the current folder")
+                .help("Rescan from the top level")
             }
         }
         .onAppear {
@@ -625,6 +625,12 @@ struct DiskAnalysisView: View {
         Task {
             await analyzer.scanDirectory(currentPath.hasPrefix("::") ? rootPath : currentPath)
         }
+    }
+
+    private func rescanFromTop() {
+        breadcrumbs = []
+        currentPath = rootPath
+        Task { await analyzer.scanDirectory(rootPath) }
     }
 
     private var progressFraction: Double? {
