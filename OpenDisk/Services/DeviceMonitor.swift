@@ -1,13 +1,32 @@
-import Foundation
+import AppKit
 import Observation
 
 @MainActor
 @Observable
 final class DeviceMonitor {
     private(set) var devices: [DeviceInfo] = []
+    @ObservationIgnored private var volumeObservers: [NSObjectProtocol] = []
 
     init() {
         Task { await refresh() }
+        observeVolumeChanges()
+    }
+
+    private func observeVolumeChanges() {
+        let center = NSWorkspace.shared.notificationCenter
+        let names = [
+            NSWorkspace.didMountNotification,
+            NSWorkspace.didUnmountNotification,
+            NSWorkspace.didRenameVolumeNotification,
+        ]
+        volumeObservers = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    Task { await self.refresh() }
+                }
+            }
+        }
     }
 
     func refresh() async {
