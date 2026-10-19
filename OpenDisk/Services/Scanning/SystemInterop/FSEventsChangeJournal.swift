@@ -1,6 +1,5 @@
 import CoreServices
 import Foundation
-import Synchronization
 
 enum FSEventsChangeJournal {
     struct Changes {

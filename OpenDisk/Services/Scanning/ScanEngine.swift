@@ -1,12 +1,11 @@
 import Darwin
 import Foundation
-import Synchronization
 
 final class CancellationFlag: Sendable {
-    private let state = Atomic(false)
+    private let state = Mutex(false)
 
-    var isCancelled: Bool { state.load(ordering: .relaxed) }
-    func cancel() { state.store(true, ordering: .relaxed) }
+    var isCancelled: Bool { state.withLock { $0 } }
+    func cancel() { state.withLock { $0 = true } }
 }
 
 private final class PartialResultAssembler: Sendable {

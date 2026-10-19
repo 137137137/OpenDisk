@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import Synchronization
 
 enum IncrementalUpdater {
     static func apply(

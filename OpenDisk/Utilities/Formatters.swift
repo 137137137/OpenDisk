@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 enum ByteFormatter {
     private static let fileFormatter = Mutex<ByteCountFormatter>({
