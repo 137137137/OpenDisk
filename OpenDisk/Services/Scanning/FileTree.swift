@@ -344,13 +344,21 @@ struct FileTree: Sendable {
             directoryFlags[index] = node.isDirectory ? 1 : 0
         }
 
+        // Gather every name into one buffer up front. Appending each name's
+        // UTF-8 view to `Data` separately costs a bounds check and possible
+        // reallocation per name, which dominates saving a multi-million-node
+        // tree.
         var nameLengths = [UInt32](repeating: 0, count: count)
-        var blobLength = 0
+        var nameBlob = [UInt8]()
+        nameBlob.reserveCapacity(count * 16)
         for index in 0..<count {
-            let length = names[index].utf8.count
-            nameLengths[index] = UInt32(length)
-            blobLength += length
+            var name = names[index]
+            name.withUTF8 { bytes in
+                nameLengths[index] = UInt32(bytes.count)
+                nameBlob.append(contentsOf: bytes)
+            }
         }
+        let blobLength = nameBlob.count
 
         var data = Data(capacity: count * 29 + blobLength + 16)
         func append<T>(_ value: T) {
@@ -371,9 +379,7 @@ struct FileTree: Sendable {
         appendArray(directoryFlags)
         appendArray(nameLengths)
         append(UInt32(blobLength))
-        for name in names {
-            data.append(contentsOf: name.utf8)
-        }
+        appendArray(nameBlob)
 
         let linkedIDs = hardLinks.keys.sorted()
         append(UInt32(linkedIDs.count))
