@@ -119,6 +119,7 @@ struct TraversalScannerTests {
                 }
             }
 
+            let expectedDirectories: Int = 40 + (0..<40).reduce(0) { $0 + $1 % 6 + 1 }
             var firstTotal: Int64?
             for _ in 0..<25 {
                 let metrics = ScanMetrics()
@@ -128,7 +129,7 @@ struct TraversalScannerTests {
                 )
                 tree.rollUpDirectorySizes()
                 let directories = tree.nodeCount - 1 - expectedFiles
-                #expect(directories == 40 + (0..<40).reduce(0) { $0 + $1 % 6 + 1 })
+                #expect(directories == expectedDirectories)
                 let total = tree.size(of: FileTree.rootID)
                 if let firstTotal { #expect(total == firstTotal) } else { firstTotal = total }
             }
