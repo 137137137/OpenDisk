@@ -25,8 +25,6 @@ struct FileTreeCompactionTests {
         let keep = tree.addNode(name: "keep", parent: busy, size: 0, isDirectory: true)
         tree.addNode(name: "inner.bin", parent: keep, size: 7, isDirectory: false)
         for round in 0..<4 {
-            // What an incremental re-read of `busy` does: unlink every child,
-            // relink surviving directories, append fresh file nodes.
             tree.removeAllChildren(of: busy)
             for index in 0..<10 {
                 tree.addNode(name: "f\(index)", parent: busy, size: Int64(round * 10 + index), isDirectory: false)

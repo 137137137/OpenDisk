@@ -275,12 +275,6 @@ struct FileTree: Sendable {
         return visited
     }
 
-    /// Incremental rescans replace a changed directory's children by
-    /// appending fresh nodes and unlinking the old ones, which stay in the
-    /// arrays. Without compaction a busy directory adds a full copy of its
-    /// listing to the tree, and to the saved cache, on every rescan.
-    /// Rebuilds the tree without unreachable nodes once they make up at
-    /// least `minimumFraction` of it. Returns whether it compacted.
     @discardableResult
     mutating func compactIfFragmented(minimumFraction: Double = 0.25) -> Bool {
         let reachable = reachabilityBitmap()
@@ -397,10 +391,6 @@ struct FileTree: Sendable {
             directoryFlags[index] = node.isDirectory ? 1 : 0
         }
 
-        // Gather every name into one buffer up front. Appending each name's
-        // UTF-8 view to `Data` separately costs a bounds check and possible
-        // reallocation per name, which dominates saving a multi-million-node
-        // tree.
         var nameLengths = [UInt32](repeating: 0, count: count)
         var nameBlob = [UInt8]()
         nameBlob.reserveCapacity(count * 16)
