@@ -41,7 +41,10 @@ enum IncrementalUpdater {
 
         guard !isCancelled() else { return false }
         refreshLargeFileSizes(in: tree)
-        tree.withLock { $0.normalizeHardLinks() }
+        tree.withLock { current in
+            current.normalizeHardLinks()
+            current.compactIfFragmented()
+        }
         return true
     }
 

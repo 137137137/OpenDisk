@@ -275,6 +275,53 @@ struct FileTree: Sendable {
         return visited
     }
 
+    @discardableResult
+    mutating func compactIfFragmented(minimumFraction: Double = 0.25) -> Bool {
+        let reachable = reachabilityBitmap()
+        let live = reachable.reduce(0) { $0 + ($1 ? 1 : 0) }
+        let dead = nodes.count - live
+        guard dead > 0, Double(dead) >= Double(nodes.count) * minimumFraction else {
+            return false
+        }
+        compact(keeping: reachable, liveCount: live)
+        return true
+    }
+
+    private mutating func compact(keeping reachable: [Bool], liveCount: Int) {
+        let count = nodes.count
+        var newIDs = [NodeID](repeating: Self.noNode, count: count)
+        var next: NodeID = 0
+        for index in 0..<count where reachable[index] {
+            newIDs[index] = next
+            next += 1
+        }
+        func remap(_ id: NodeID) -> NodeID {
+            id == Self.noNode ? Self.noNode : newIDs[Int(id)]
+        }
+
+        var newNodes = [Node]()
+        newNodes.reserveCapacity(liveCount)
+        var newNames = [String]()
+        newNames.reserveCapacity(liveCount)
+        for index in 0..<count where reachable[index] {
+            var node = nodes[index]
+            node.parent = remap(node.parent)
+            node.firstChild = remap(node.firstChild)
+            node.nextSibling = remap(node.nextSibling)
+            newNodes.append(node)
+            newNames.append(names[index])
+        }
+
+        var newHardLinks = [NodeID: HardLink](minimumCapacity: hardLinks.count)
+        for (id, link) in hardLinks where reachable[Int(id)] {
+            newHardLinks[newIDs[Int(id)]] = link
+        }
+
+        nodes = newNodes
+        names = newNames
+        hardLinks = newHardLinks
+    }
+
     mutating func rollUpDirectorySizes() {
         let count = nodes.count
         var visited = [Bool](repeating: false, count: count)
@@ -345,12 +392,16 @@ struct FileTree: Sendable {
         }
 
         var nameLengths = [UInt32](repeating: 0, count: count)
-        var blobLength = 0
+        var nameBlob = [UInt8]()
+        nameBlob.reserveCapacity(count * 16)
         for index in 0..<count {
-            let length = names[index].utf8.count
-            nameLengths[index] = UInt32(length)
-            blobLength += length
+            var name = names[index]
+            name.withUTF8 { bytes in
+                nameLengths[index] = UInt32(bytes.count)
+                nameBlob.append(contentsOf: bytes)
+            }
         }
+        let blobLength = nameBlob.count
 
         var data = Data(capacity: count * 29 + blobLength + 16)
         func append<T>(_ value: T) {
@@ -371,9 +422,7 @@ struct FileTree: Sendable {
         appendArray(directoryFlags)
         appendArray(nameLengths)
         append(UInt32(blobLength))
-        for name in names {
-            data.append(contentsOf: name.utf8)
-        }
+        appendArray(nameBlob)
 
         let linkedIDs = hardLinks.keys.sorted()
         append(UInt32(linkedIDs.count))
