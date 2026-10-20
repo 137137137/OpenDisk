@@ -146,6 +146,12 @@ final class DiskAnalyzer {
         return true
     }
 
+    func size(ofPath path: String) -> Int64? {
+        guard !path.hasPrefix("::"), let tree = scanResult?.tree,
+              let node = nodeID(forPath: path) else { return nil }
+        return tree.size(of: node)
+    }
+
     private func displayCleanableSpace() {
         var items = cleanableCacheEntries().map {
             FolderItem(name: $0.name, path: $0.path, size: $0.size, isDirectory: true, itemCount: 0)

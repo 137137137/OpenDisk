@@ -13,6 +13,7 @@ struct BreadcrumbBar: View {
     let currentPath: String
     let rootPath: String
     let rootName: String
+    var sizeOfPath: (String) -> Int64? = { _ in nil }
     let onNavigate: (String) -> Void
 
     private var pathComponents: [PathComponent] {
@@ -97,43 +98,64 @@ struct BreadcrumbBar: View {
 
     @ViewBuilder
     private func segment(_ component: PathComponent) -> some View {
+        let size = sizeOfPath(component.path).map(ByteFormatter.formatFileSize)
         if component.isLast {
-            Text(component.name)
-                .font(.callout)
-                .fontWeight(.semibold)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+            HStack(spacing: 5) {
+                Text(component.name)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let size { BreadcrumbSize(text: size) }
+            }
+            .font(.callout)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
         } else {
-            BreadcrumbLink(name: component.name) { onNavigate(component.path) }
+            BreadcrumbLink(name: component.name, size: size) { onNavigate(component.path) }
         }
+    }
+}
+
+private struct BreadcrumbSize: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .fixedSize()
     }
 }
 
 private struct BreadcrumbLink: View {
     let name: String
+    var size: String? = nil
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Text(name)
-            .font(.callout)
-            .foregroundStyle(hovering ? .primary : .secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(.quaternary.opacity(hovering ? 1 : 0))
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: action)
-            .onHover { hovering = $0 }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction(.default, action)
+        HStack(spacing: 5) {
+            Text(name)
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let size { BreadcrumbSize(text: size) }
+        }
+        .font(.callout)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(.quaternary.opacity(hovering ? 1 : 0))
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, action)
     }
 }
 
