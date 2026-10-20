@@ -457,7 +457,6 @@ private struct PanelContainer<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        // Liquid Glass APIs exist only in the macOS 26 SDK (Swift 6.2+ toolchain).
         #if compiler(>=6.2)
         if #available(macOS 26, *) {
             GlassEffectContainer(content: content)
@@ -484,7 +483,6 @@ private extension View {
         #endif
     }
 
-    /// Pre-Liquid Glass fallback used on older systems and SDKs.
     func materialPanelBackground(tint: Color?, in shape: RoundedRectangle) -> some View {
         background {
             ZStack {

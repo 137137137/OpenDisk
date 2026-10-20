@@ -62,9 +62,6 @@ struct DiskAnalysisView: View {
                                 idealWidth: geometry.size.width * 0.6,
                                 maxWidth: .infinity, maxHeight: .infinity
                             )
-                            // Attached to a pane, not the whole view: on macOS 14 a
-                            // .searchable above an HSplitView adds the search toolbar
-                            // item twice, which breaks the toolbar layout.
                             .searchable(
                                 text: $searchText,
                                 isPresented: $searchPresented,
