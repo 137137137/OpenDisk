@@ -24,6 +24,7 @@ struct DiskAnalysisView: View {
     @State private var quickLookURL: URL?
     @State private var keyMonitor: Any?
     @State private var navigationMonitor: Any?
+    @State private var windowNumber: Int?
     @State private var keyBindings = KeyBindingStore.shared
     @State private var sort: SortField = .size
     @State private var sortAscending = false
@@ -211,6 +212,7 @@ struct DiskAnalysisView: View {
             history.didNavigate(to: newPath)
             currentPath = newPath
         }
+        .background(WindowNumberReader { windowNumber = $0 })
         .environment(collector)
         .background {
             Button("Undo Collect") { collector.undo() }
@@ -730,7 +732,6 @@ struct DiskAnalysisView: View {
         NavigationHistory.parent(of: currentPath, root: rootPath)
     }
 
-    /// Goes up one level and highlights the folder we came from.
     private func goBack() {
         guard let parentPath else { return }
         guard showContents(of: parentPath) else { return }
@@ -740,7 +741,6 @@ struct DiskAnalysisView: View {
         currentPath = parentPath
     }
 
-    /// Re-enters the folder Back just left.
     private func goForward() {
         guard let target = history.forwardTarget, target != currentPath else { return }
         guard showContents(of: target) else { return }
@@ -756,10 +756,8 @@ struct DiskAnalysisView: View {
         currentPath = path
     }
 
-    /// Mouse side buttons and trackpad swipes, the same gestures Finder and
-    /// Safari use for Back and Forward.
     private func handleNavigationEvent(_ event: NSEvent) -> NSEvent? {
-        guard !(event.window is QLPreviewPanel), !isSearchActive else { return event }
+        guard event.windowNumber == windowNumber, !isSearchActive else { return event }
         switch event.type {
         case .otherMouseUp:
             switch event.buttonNumber {
@@ -791,7 +789,6 @@ struct DiskAnalysisView: View {
         else { return false }
         let canGoBack = parentPath != nil
         let canGoForward = history.canGoForward
-        // Swiping right (positive amount) goes back, swiping left goes forward.
         if event.scrollingDeltaX > 0 ? !canGoBack : !canGoForward { return false }
         var handled = false
         event.trackSwipeEvent(
@@ -813,6 +810,32 @@ struct DiskAnalysisView: View {
         guard !analyzer.isScanning, !path.hasPrefix("::") else { return false }
         Task { await analyzer.scanDirectory(path) }
         return true
+    }
+}
+
+private struct WindowNumberReader: NSViewRepresentable {
+    let onChange: (Int?) -> Void
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ nsView: ReaderView, context: Context) {
+        nsView.onChange = onChange
+    }
+
+    final class ReaderView: NSView {
+        var onChange: ((Int?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            let number = window?.windowNumber
+            DispatchQueue.main.async { [weak self] in
+                self?.onChange?(number)
+            }
+        }
     }
 }
 

@@ -146,7 +146,6 @@ final class DiskAnalyzer {
         return true
     }
 
-    /// Total size of the scanned folder at `path`, if it's in the scan.
     func size(ofPath path: String) -> Int64? {
         guard !path.hasPrefix("::"), let tree = scanResult?.tree,
               let node = nodeID(forPath: path) else { return nil }
