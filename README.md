@@ -91,6 +91,16 @@ Bug reports and pull requests are welcome. For bigger changes, open an issue fir
 
 To report a security problem, please follow the [security policy](SECURITY.md) instead of opening a public issue.
 
+## Star history
+
+<a href="https://star-history.com/#137137137/OpenDisk&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=137137137/OpenDisk&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=137137137/OpenDisk&type=Date" />
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=137137137/OpenDisk&type=Date" />
+  </picture>
+</a>
+
 ## License
 
 [MIT](LICENSE). Updates use [Sparkle](https://sparkle-project.org). Thanks to [inket/FullDiskAccess](https://github.com/inket/FullDiskAccess).
