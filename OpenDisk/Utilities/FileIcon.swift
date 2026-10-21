@@ -8,7 +8,11 @@ enum FileIcon {
         return cache
     }()
 
+    #if compiler(>=6.2)
     static let folder = NSWorkspace.shared.icon(for: .folder)
+    #else
+    nonisolated(unsafe) static let folder = NSWorkspace.shared.icon(for: .folder)
+    #endif
 
     private static let rowPointSize: CGFloat = 22
 

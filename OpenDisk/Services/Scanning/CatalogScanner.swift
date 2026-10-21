@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import Synchronization
 
 enum CatalogScanner {
     private static let metricsBatchSize = 8_192

@@ -457,27 +457,39 @@ private struct PanelContainer<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
+        #if compiler(>=6.2)
         if #available(macOS 26, *) {
             GlassEffectContainer(content: content)
         } else {
             content()
         }
+        #else
+        content()
+        #endif
     }
 }
 
 private extension View {
     @ViewBuilder
     func panelBackground(tint: Color? = nil, in shape: RoundedRectangle) -> some View {
+        #if compiler(>=6.2)
         if #available(macOS 26, *) {
             glassEffect(tint.map { Glass.regular.tint($0) } ?? .regular, in: shape)
         } else {
-            background {
-                ZStack {
-                    shape.fill(.regularMaterial)
-                    if let tint { shape.fill(tint.opacity(0.18)) }
-                }
-                .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
+            materialPanelBackground(tint: tint, in: shape)
+        }
+        #else
+        materialPanelBackground(tint: tint, in: shape)
+        #endif
+    }
+
+    func materialPanelBackground(tint: Color?, in shape: RoundedRectangle) -> some View {
+        background {
+            ZStack {
+                shape.fill(.regularMaterial)
+                if let tint { shape.fill(tint.opacity(0.18)) }
             }
+            .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
         }
     }
 }

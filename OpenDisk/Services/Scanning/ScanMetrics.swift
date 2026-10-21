@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 final class ScanMetrics: Sendable {
     private struct Counters {

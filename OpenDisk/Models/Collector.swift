@@ -34,7 +34,7 @@ final class Collector {
     var totalBytes: Int64 { items.reduce(0) { $0 + $1.size } }
     var formattedTotal: String { ByteFormatter.formatFileSize(totalBytes) }
 
-    func add(_ files: [CollectedFile]) { recordingUndo { files.forEach(appendOne) } }
+    func add(_ files: [CollectedFile]) { recordingUndo { files.forEach { appendOne($0) } } }
 
     func add(_ file: CollectedFile) { recordingUndo { appendOne(file) } }
 
