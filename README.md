@@ -62,7 +62,7 @@ Rescanning the same drive with OpenDisk is 20 to 28 times faster than the first 
 
 **Why does it need Full Disk Access?** Without it, macOS hides parts of the disk and the totals come up short. OpenDisk asks on first launch. You can also turn it on in System Settings > Privacy & Security > Full Disk Access.
 
-**Is deleting safe?** Deleting from the Collector is permanent and skips the Trash, so check what's in it first. OpenDisk won't let you delete system folders, your home folder, or your Library.
+**Is deleting safe?** When you empty the Collector you choose between deleting permanently, which frees the space right away, and moving to the Trash, which lets you put things back later. Either way, check what's in it first. OpenDisk won't let you delete system folders, your home folder, or your Library.
 
 **Does it send any data?** No. The downloaded version checks opendisk.app for updates, and that's the only network request it makes. There are no analytics or accounts.
 
