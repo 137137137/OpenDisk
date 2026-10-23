@@ -611,13 +611,12 @@ struct DiskAnalysisView: View {
             }
         }
         .coordinateSpace(.collectorDrop)
-        .onDrop(
-            of: [.fileURL, .collectedFile],
-            delegate: InAppFileDropDelegate(
+        .overlay {
+            InAppFileDropTarget(
                 onTargetChange: { isCollectorTargeted = $0 },
                 perform: handleCollectorDrop
             )
-        )
+        }
     }
 
     private var chartFreeBytes: Int64? {
