@@ -246,6 +246,77 @@ struct CollectorTests {
         #expect(!collector.contains(path: a.path))
     }
 
+    @Test("deleteAll(.trash) hands every item to the trasher and keeps nothing behind")
+    func deleteAllMovesToTrash() async throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let trash = root.appendingPathComponent("Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        let a = try makeFile("a.bin", in: root, bytes: 4)
+        let dir = try makeDir("dir", in: root, size: 8)
+        _ = try makeFile("inner.bin", in: dir.url, bytes: 8)
+
+        let collector = Collector(trasher: { url in
+            try FileManager.default.moveItem(at: url, to: trash.appendingPathComponent(url.lastPathComponent))
+        })
+        collector.add([a, dir])
+
+        let result = await collector.deleteAll(.trash)
+
+        #expect(result.disposal == .trash)
+        #expect(result.deletedCount == 2)
+        #expect(result.failures.isEmpty)
+        #expect(result.freedBytes == 12)
+        #expect(!FileManager.default.fileExists(atPath: a.path))
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
+        #expect(FileManager.default.fileExists(atPath: trash.appendingPathComponent("a.bin").path))
+        #expect(FileManager.default.fileExists(atPath: trash.appendingPathComponent("dir/inner.bin").path))
+        #expect(collector.isEmpty)
+        #expect(collector.deletionProgress == nil)
+        #expect(!collector.canUndo)
+    }
+
+    @Test("deleteAll(.trash) keeps items the trasher refuses and reports why")
+    func deleteAllTrashReportsFailures() async throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let kept = try makeFile("kept.bin", in: root, bytes: 4)
+        let refused = try makeFile("refused.bin", in: root, bytes: 8)
+
+        let collector = Collector(trasher: { url in
+            if url.lastPathComponent == "refused.bin" {
+                throw CocoaError(.featureUnsupported)
+            }
+            try FileManager.default.removeItem(at: url)
+        })
+        collector.add([kept, refused])
+
+        let result = await collector.deleteAll(.trash)
+
+        #expect(result.deletedCount == 1)
+        #expect(result.freedBytes == 4)
+        #expect(result.failures.map(\.path) == [refused.path])
+        #expect(FileManager.default.fileExists(atPath: refused.path))
+        #expect(collector.count == 1)
+        #expect(collector.contains(path: refused.path))
+    }
+
+    @Test("deleteAll defaults to permanent deletion and never calls the trasher")
+    func deleteAllDefaultSkipsTrasher() async throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try makeFile("a.bin", in: root, bytes: 4)
+
+        let collector = Collector(trasher: { _ in Issue.record("trasher should not run for .delete") })
+        collector.add(a)
+
+        let result = await collector.deleteAll()
+
+        #expect(result.disposal == .delete)
+        #expect(result.deletedCount == 1)
+        #expect(!FileManager.default.fileExists(atPath: a.path))
+    }
+
     @Test("dropping a dragged-out item where nothing accepts it removes it from the collector")
     func dragOutToNowhereRemoves() throws {
         let root = try makeTempRoot()
