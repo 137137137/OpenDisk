@@ -35,7 +35,7 @@ brew install --cask opendisk
 
 **Mac App Store:** [OpenDisk on the App Store](https://apps.apple.com/app/opendisk/id6793260558). Apple's sandbox means this version only scans the drives and folders you pick, so the download is the better choice if you want to scan your whole Mac.
 
-Requires macOS 15 or later, on Apple Silicon or Intel.
+Requires macOS 14 or later, on Apple Silicon or Intel.
 
 ## What you can do with it
 
