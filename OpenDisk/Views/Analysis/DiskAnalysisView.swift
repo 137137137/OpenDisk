@@ -285,6 +285,7 @@ struct DiskAnalysisView: View {
                         columnHeader
                     }
                 }
+                .id(currentPath)
             }
         }
         .environment(\.listScale, listScale)

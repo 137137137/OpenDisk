@@ -15,6 +15,10 @@ struct ScanResultsView<Header: View>: View {
     var body: some View {
         ScrollViewReader { proxy in
             scrollContent
+                .onAppear {
+                    guard let focusedPath, items.contains(where: { $0.path == focusedPath }) else { return }
+                    proxy.scrollTo(focusedPath)
+                }
                 .onChange(of: focusedPath) { _, path in
                     guard let path, items.contains(where: { $0.path == path }) else { return }
                     proxy.scrollTo(path)

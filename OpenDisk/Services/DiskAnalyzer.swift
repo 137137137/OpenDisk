@@ -9,6 +9,7 @@ final class DiskAnalyzer {
 
     private(set) var rootItems: [FolderItem] = []
     private(set) var chartRoot: ChartItem?
+    @ObservationIgnored private var chartBuildTask: Task<Void, Never>?
     private(set) var isScanning = false
     private(set) var unreadableDirectories = 0
     private(set) var needsFullDiskAccess = false
@@ -76,7 +77,7 @@ final class DiskAnalyzer {
         if !keepsCurrentResult {
             scanResult = nil
             rootItems = []
-            chartRoot = nil
+            setChartRoot(nil)
             displayedTotalBytes = 0
             displayVersion += 1
         } else {
@@ -181,7 +182,7 @@ final class DiskAnalyzer {
         rootItems = items
         displayedTotalBytes = items.reduce(0) { $0 + $1.size }
         displayVersion += 1
-        chartRoot = cleanableChartRoot(items: items, total: displayedTotalBytes)
+        setChartRoot(cleanableChartRoot(items: items, total: displayedTotalBytes))
     }
 
     private func cleanableChartRoot(items: [FolderItem], total: Int64) -> ChartItem? {
@@ -300,13 +301,25 @@ final class DiskAnalyzer {
 
     private func rebuildChartRoot(for node: FileTree.NodeID) {
         guard let tree = scanResult?.tree, tree.isDirectory(node) else {
-            chartRoot = nil
+            setChartRoot(nil)
             return
         }
         let name = (currentPath as NSString).lastPathComponent
-        chartRoot = ChartItem.build(
-            from: tree, at: node, name: name, path: currentPath
-        )
+        let path = currentPath
+        chartBuildTask?.cancel()
+        chartBuildTask = Task { [weak self] in
+            let item = await Task.detached(priority: .userInitiated) {
+                ChartItem.build(from: tree, at: node, name: name, path: path)
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.chartRoot = item
+        }
+    }
+
+    private func setChartRoot(_ item: ChartItem?) {
+        chartBuildTask?.cancel()
+        chartBuildTask = nil
+        chartRoot = item
     }
 
     func updateSearch(query: String, scope: SearchScope) {
