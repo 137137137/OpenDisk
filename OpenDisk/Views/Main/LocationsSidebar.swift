@@ -96,7 +96,7 @@ private struct LocationRow: View {
                     .controlSize(.mini)
                     .tint(.secondary)
 
-                    Text("\(ByteFormatter.formatFileSize(location.availableBytes)) available of \(location.formattedTotalStorage)")
+                    Text("\(ByteFormatter.formatDecimalNoFraction(location.availableBytes)) available of \(location.formattedTotalStorage)")
                         .font(.caption2)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)

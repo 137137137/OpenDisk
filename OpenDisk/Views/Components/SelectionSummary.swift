@@ -16,6 +16,24 @@ struct SelectionSummary: View {
         !selected.isEmpty && selected.contains { !ProtectedPaths.isProtected($0.path) }
     }
 
+    private var protectedItems: [(item: FolderItem, reason: String)] {
+        selected.compactMap { item in
+            ProtectedPaths.reason(for: item.path).map { (item, $0) }
+        }
+    }
+
+    private var collectNote: String? {
+        let blocked = protectedItems
+        guard let first = blocked.first else { return nil }
+        if selected.count == 1 {
+            return "“\(first.item.name)” \(first.reason)."
+        }
+        if blocked.count == selected.count {
+            return "None of these can be deleted. “\(first.item.name)” \(first.reason)."
+        }
+        return "\(blocked.count) of \(selected.count) items are protected and will be skipped."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
@@ -28,7 +46,14 @@ struct SelectionSummary: View {
                         Button("Add to Collector", systemImage: "tray.and.arrow.down", action: onCollect)
                             .buttonStyle(.borderedProminent)
                             .disabled(!canCollect)
+                            .help(collectNote ?? "Stage the selection for deletion")
                     }
+                }
+                if let collectNote {
+                    Label(collectNote, systemImage: "lock.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
                 }
             }
         }

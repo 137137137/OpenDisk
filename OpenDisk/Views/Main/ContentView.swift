@@ -30,7 +30,10 @@ struct ContentView: View {
                 placeholder
             }
         }
-        .frame(minWidth: 980, idealWidth: 1280, minHeight: 600, idealHeight: 800)
+        .frame(
+            minWidth: 980, idealWidth: 1280, maxWidth: .infinity,
+            minHeight: 600, idealHeight: 800, maxHeight: .infinity
+        )
         .onChange(of: selection) { _, path in
             Task { @MainActor in open(path) }
         }

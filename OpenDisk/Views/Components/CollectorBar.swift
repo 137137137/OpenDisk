@@ -27,6 +27,14 @@ struct CollectorBar: View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
     }
 
+    private var footerShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+    }
+
+    private var isCompact: Bool {
+        phase == .idle && collector.isEmpty && !collecting && !rejecting
+    }
+
     private var wantsList: Bool {
         phase == .idle && !collector.isEmpty && collector.draggingOut == nil
             && (footerHovered || listHovered || isTargeted)
@@ -116,15 +124,15 @@ struct CollectorBar: View {
     private var footerBar: some View {
         PanelContainer {
             footerContent
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: isCompact ? nil : .infinity)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .panelBackground(
                     tint: rejecting ? .red : (collecting ? .accentColor : nil),
-                    in: shape
+                    in: footerShape
                 )
                 .overlay {
-                    shape.strokeBorder(
+                    footerShape.strokeBorder(
                         rejecting ? Color.red : (collecting ? Color.accentColor : .clear),
                         lineWidth: 1.5
                     )
@@ -177,17 +185,9 @@ struct CollectorBar: View {
                 collector.endDragOut(operation: operation)
             }
             Spacer()
-            Button {
+            DeleteButton {
                 showConfirm = true
-            } label: {
-                Text("Delete")
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(Color(nsColor: .systemRed), in: Capsule())
             }
-            .buttonStyle(.plain)
             .disabled(collector.isEmpty)
         }
     }
@@ -195,12 +195,13 @@ struct CollectorBar: View {
     private var hintView: some View {
         HStack(spacing: 8) {
             Image(systemName: collecting ? "arrow.down.circle.fill" : "arrow.down.circle.dotted")
-            Text(collecting ? "Release to collect" : "Drag files here to collect them for deletion")
+            Text(collecting ? "Release to collect" : "Drop files to collect")
         }
         .font(.callout)
         .fontWeight(collecting ? .semibold : .regular)
         .foregroundStyle(collecting ? Color.accentColor : Color.secondary)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: collecting ? .infinity : nil)
+        .help("Drag files or folders here to stage them for deletion")
         .padding(.vertical, 2)
     }
 
@@ -458,6 +459,38 @@ private struct QuickLookView: NSViewRepresentable {
 
     final class Coordinator {
         var preview: QLPreviewView?
+    }
+}
+
+private struct DeleteButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26, *) {
+            Button(action: action) {
+                Text("Delete").fontWeight(.semibold)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(.red)
+        } else {
+            legacy
+        }
+        #else
+        legacy
+        #endif
+    }
+
+    private var legacy: some View {
+        Button(action: action) {
+            Text("Delete")
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: .systemRed), in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
