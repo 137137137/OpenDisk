@@ -14,6 +14,8 @@ struct RingsChartView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let side = min(geometry.size.width, geometry.size.height).rounded(.down)
+            let square = CGSize(width: side, height: side)
             ZStack {
                 if let layout {
                     StaticChartLayer(layout: layout)
@@ -23,6 +25,7 @@ struct RingsChartView: View {
                     }
                 }
             }
+            .frame(width: side, height: side)
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
@@ -60,14 +63,15 @@ struct RingsChartView: View {
                 accessibilitySegmentList
             }
             .onChange(of: root, initial: true) {
-                layout = RingsChartLayout.layout(root: root, in: geometry.size, freeBytes: freeBytes)
+                layout = RingsChartLayout.layout(root: root, in: square, freeBytes: freeBytes)
             }
             .onChange(of: freeBytes) {
-                layout = RingsChartLayout.layout(root: root, in: geometry.size, freeBytes: freeBytes)
+                layout = RingsChartLayout.layout(root: root, in: square, freeBytes: freeBytes)
             }
-            .onChange(of: geometry.size) {
-                layout = RingsChartLayout.layout(root: root, in: geometry.size, freeBytes: freeBytes)
+            .onChange(of: side) {
+                layout = RingsChartLayout.layout(root: root, in: square, freeBytes: freeBytes)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
     }
 
@@ -172,7 +176,9 @@ private enum ChartDrawing {
     ) {
         let border = GraphicsContext.Shading.color(.black.opacity(0.35))
         let isFreeSpace = segment.path == FreeSpaceInfo.sentinelPath
-        let fill = isFreeSpace
+        let fill = segment.depth == 0
+            ? ChartPalette.centerColor(highlighted: highlighted)
+            : isFreeSpace
             ? (highlighted ? ChartPalette.freeSpaceHighlighted : ChartPalette.freeSpace).color
             : ChartPalette.fill(
                 position: segment.colorPosition,
@@ -293,17 +299,17 @@ private enum ChartDrawing {
         var lines: [GraphicsContext.ResolvedText] = [
             context.resolve(
                 Text(segment.name).font(.caption).fontWeight(.semibold)
-                    .foregroundColor(.black.opacity(0.75))
+                    .foregroundStyle(.primary)
             ),
             context.resolve(
                 Text(ByteFormatter.formatFileSize(segment.size)).font(.caption2)
-                    .foregroundColor(.black.opacity(0.6))
+                    .foregroundStyle(.secondary)
             ),
         ]
         if let free = layout.freeBytes {
             lines.append(context.resolve(
                 Text("\(ByteFormatter.formatFileSize(free)) free").font(.caption2)
-                    .foregroundColor(.black.opacity(0.6))
+                    .foregroundStyle(.secondary)
             ))
         }
 
