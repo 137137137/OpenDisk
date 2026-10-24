@@ -162,7 +162,7 @@ struct CollectorBar: View {
         }
         .font(.callout)
         .fontWeight(.semibold)
-        .foregroundStyle(.red)
+        .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
     }
@@ -198,8 +198,8 @@ struct CollectorBar: View {
             Text(collecting ? "Release to collect" : "Drop files to collect")
         }
         .font(.callout)
-        .fontWeight(collecting ? .semibold : .regular)
-        .foregroundStyle(collecting ? Color.accentColor : Color.secondary)
+        .fontWeight(collecting ? .semibold : .medium)
+        .foregroundStyle(.primary)
         .frame(maxWidth: collecting ? .infinity : nil)
         .help("Drag files or folders here to stage them for deletion")
         .padding(.vertical, 2)
@@ -298,7 +298,8 @@ struct CollectorBar: View {
             Text(text).lineLimit(2)
         }
         .font(.callout)
-        .foregroundStyle(.orange)
+        .fontWeight(.medium)
+        .foregroundStyle(.primary)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
