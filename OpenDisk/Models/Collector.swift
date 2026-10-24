@@ -18,10 +18,20 @@ final class Collector {
     private var dragOutTask: Task<Void, Never>?
 
     struct DeletionProgress: Equatable {
+        var disposal: Disposal
         var currentName: String
         var completed: Int
         var total: Int
         var freedBytes: Int64
+    }
+
+    enum Disposal: Sendable, Equatable { case delete, trash }
+
+    typealias Trasher = @Sendable (URL) throws -> Void
+    private let trasher: Trasher
+
+    init(trasher: @escaping Trasher = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }) {
+        self.trasher = trasher
     }
 
     private var undoStack: [[CollectedFile]] = []
@@ -124,12 +134,13 @@ final class Collector {
 
     struct Failure: Sendable { let path: String; let error: String }
     struct Result: Sendable {
+        let disposal: Disposal
         let freedBytes: Int64
         let deletedCount: Int
         let failures: [Failure]
     }
 
-    func deleteAll() async -> Result {
+    func deleteAll(_ disposal: Disposal = .delete) async -> Result {
         let targets = items
         let total = targets.count
         var freed: Int64 = 0
@@ -138,11 +149,19 @@ final class Collector {
 
         for (index, file) in targets.enumerated() {
             deletionProgress = DeletionProgress(
-                currentName: file.name, completed: index, total: total, freedBytes: freed
+                disposal: disposal, currentName: file.name, completed: index, total: total, freedBytes: freed
             )
+            let trasher = self.trasher
             let failure = await Task.detached(priority: .userInitiated) { () -> String? in
-                do { try FileManager.default.removeItem(atPath: file.path); return nil }
-                catch { return error.localizedDescription }
+                do {
+                    switch disposal {
+                    case .delete: try FileManager.default.removeItem(atPath: file.path)
+                    case .trash: try trasher(URL(fileURLWithPath: file.path))
+                    }
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
             }.value
             if let failure {
                 failures.append(Failure(path: file.path, error: failure))
@@ -156,6 +175,6 @@ final class Collector {
         items.removeAll { !failed.contains($0.path) }
         deletionProgress = nil
         undoStack.removeAll()
-        return Result(freedBytes: freed, deletedCount: deleted, failures: failures)
+        return Result(disposal: disposal, freedBytes: freed, deletedCount: deleted, failures: failures)
     }
 }

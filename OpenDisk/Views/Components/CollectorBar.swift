@@ -102,11 +102,14 @@ struct CollectorBar: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete \(collector.formattedTotal)", role: .destructive) {
-                    Task { await performDeletion() }
+                    Task { await performDeletion(.delete) }
+                }
+                Button("Move to Trash") {
+                    Task { await performDeletion(.trash) }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This permanently deletes the collected items and can’t be undone.")
+                Text("Deleting is permanent and can’t be undone. Moving to the Trash lets you put items back, but the space isn’t freed until you empty the Trash.")
             }
     }
 
@@ -211,7 +214,7 @@ struct CollectorBar: View {
                         .lineLimit(1)
                     if let progress = collector.deletionProgress {
                         HStack(spacing: 0) {
-                            Text("Freed ").foregroundStyle(.secondary)
+                            Text(progress.disposal == .trash ? "Moved " : "Freed ").foregroundStyle(.secondary)
                             Text(ByteFormatter.formatFileSize(progress.freedBytes))
                                 .fontWeight(.semibold)
                                 .monospacedDigit()
@@ -236,10 +239,12 @@ struct CollectorBar: View {
     }
 
     private var deletingTitle: String {
+        let verb = collector.deletionProgress?.disposal == .trash ? "Moving" : "Deleting"
+        let suffix = collector.deletionProgress?.disposal == .trash ? " to the Trash" : ""
         if let name = collector.deletionProgress?.currentName, !name.isEmpty {
-            return "Deleting \(name)…"
+            return "\(verb) \(name)\(suffix)…"
         }
-        return "Deleting…"
+        return "\(verb)\(suffix)…"
     }
 
     private var doneView: some View {
@@ -248,8 +253,11 @@ struct CollectorBar: View {
                 .foregroundStyle(.green)
             if let result = lastResult {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text("Freed ").foregroundStyle(.secondary)
+                    Text(result.disposal == .trash ? "Moved " : "Freed ").foregroundStyle(.secondary)
                     Text(ByteFormatter.formatFileSize(result.freedBytes)).fontWeight(.semibold)
+                    if result.disposal == .trash {
+                        Text(" to the Trash").foregroundStyle(.secondary)
+                    }
                 }
                 if !result.failures.isEmpty {
                     Text(" · \(result.failures.count) couldn't be removed")
@@ -296,9 +304,9 @@ struct CollectorBar: View {
         .panelBackground(tint: .orange, in: shape)
     }
 
-    private func performDeletion() async {
+    private func performDeletion(_ disposal: Collector.Disposal) async {
         phase = .deleting
-        let result = await collector.deleteAll()
+        let result = await collector.deleteAll(disposal)
         lastResult = result
         phase = .done
         onDeleted(result.freedBytes)
