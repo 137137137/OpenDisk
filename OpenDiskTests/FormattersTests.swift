@@ -18,8 +18,15 @@ struct FormattersTests {
         #expect(!ByteFormatter.formatDecimalNoFraction(1_500_000_000_000).contains("."))
     }
 
+    @Test("capacities stay whole from 1 GB up and fall back to smaller units below")
+    func capacities() {
+        #expect(ByteFormatter.formatCapacity(175_400_000_000) == ByteFormatter.formatDecimalNoFraction(175_400_000_000))
+        #expect(ByteFormatter.formatCapacity(400_000_000).hasSuffix("MB"))
+        #expect(!ByteFormatter.formatCapacity(0).hasPrefix("Zero"))
+    }
+
     @Test("scan durations pick sensible units", arguments: [
-        (0.5, "ms"), (3.2, "seconds"), (65.0, "1:05"),
+        (0.5, "ms"), (3.2, "seconds"), (65.0, "1 min 5 sec"), (3_725.0, "1 hr 2 min"),
     ])
     func durations(duration: Double, expectedFragment: String) {
         #expect(DurationFormatter.scanDuration(duration).contains(expectedFragment))

@@ -238,7 +238,7 @@ struct DiskAnalysisView: View {
         switch sort {
         case .name:
             return items.sorted {
-                let result = $0.name.localizedCaseInsensitiveCompare($1.name)
+                let result = $0.name.localizedStandardCompare($1.name)
                 return sortAscending ? result == .orderedAscending : result == .orderedDescending
             }
         case .size:
@@ -496,7 +496,11 @@ struct DiskAnalysisView: View {
                 .frame(width: listScale.scaled(FileColumns.bar), height: 1)
             if showsDetailColumns {
                 Text("Kind")
-                    .frame(width: listScale.scaled(FileColumns.kind), alignment: .leading)
+                    .frame(
+                        minWidth: listScale.scaled(FileColumns.kind),
+                        maxWidth: listScale.scaled(FileColumns.kindMax),
+                        alignment: .leading
+                    )
             }
         }
         .font(.system(size: listScale.headerFontSize, weight: .medium))

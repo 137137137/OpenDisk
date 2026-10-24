@@ -158,7 +158,7 @@ struct CollectorBar: View {
         HStack(spacing: 8) {
             Image(systemName: "nosign")
             Text(collector.draggedProtectedReason ?? "This item can’t be deleted")
-                .lineLimit(2)
+                .lineLimit(3)
         }
         .font(.callout)
         .fontWeight(.semibold)

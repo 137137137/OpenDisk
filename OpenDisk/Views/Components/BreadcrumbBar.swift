@@ -51,12 +51,15 @@ struct BreadcrumbBar: View {
     var body: some View {
         let components = pathComponents
         ViewThatFits(in: .horizontal) {
-            row(components)
+            row(components.map(Optional.some), showsSizes: true)
+            row(components.map(Optional.some), showsSizes: false)
             ForEach(collapsedVariants(of: components), id: \.count) { variant in
-                row(variant)
+                row(variant, showsSizes: false)
+            }
+            if let last = components.last {
+                row([last], showsSizes: false)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func collapsedVariants(of components: [PathComponent]) -> [[PathComponent?]] {
@@ -66,11 +69,7 @@ struct BreadcrumbBar: View {
         }
     }
 
-    private func row(_ components: [PathComponent]) -> some View {
-        row(components.map(Optional.some))
-    }
-
-    private func row(_ components: [PathComponent?]) -> some View {
+    private func row(_ components: [PathComponent?], showsSizes: Bool) -> some View {
         HStack(spacing: 3) {
             ForEach(Array(components.enumerated()), id: \.offset) { index, component in
                 if index > 0 {
@@ -80,7 +79,7 @@ struct BreadcrumbBar: View {
                         .padding(.horizontal, 1)
                 }
                 if let component {
-                    segment(component)
+                    segment(component, showsSize: showsSizes)
                         .layoutPriority(component.isLast ? 1 : 0)
                 } else {
                     Text("…")
@@ -97,7 +96,7 @@ struct BreadcrumbBar: View {
     }
 
     @ViewBuilder
-    private func segment(_ component: PathComponent) -> some View {
+    private func segment(_ component: PathComponent, showsSize: Bool) -> some View {
         if component.isLast {
             HStack(spacing: 5) {
                 Text(component.name)
@@ -110,7 +109,7 @@ struct BreadcrumbBar: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
         } else {
-            let size = sizeOfPath(component.path).map(ByteFormatter.formatFileSize)
+            let size = showsSize ? sizeOfPath(component.path).map(ByteFormatter.formatFileSize) : nil
             BreadcrumbLink(name: component.name, size: size) { onNavigate(component.path) }
         }
     }

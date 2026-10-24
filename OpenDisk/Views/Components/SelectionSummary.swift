@@ -31,7 +31,7 @@ struct SelectionSummary: View {
         if blocked.count == selected.count {
             return "None of these can be deleted. “\(first.item.name)” \(first.reason)."
         }
-        return "\(blocked.count) of \(selected.count) items are protected and will be skipped."
+        return "\(blocked.count.formatted()) of \(selected.count.formatted()) items are protected and will be skipped."
     }
 
     var body: some View {
@@ -54,6 +54,7 @@ struct SelectionSummary: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -110,7 +111,7 @@ struct SelectionSummary: View {
                 row("Contains", fileCountText)
             }
             if let location {
-                row("Where", location)
+                row("Where", location.display, help: location.full)
             }
         }
         .font(.callout)
@@ -120,13 +121,14 @@ struct SelectionSummary: View {
         selected.isEmpty ? folderSize : selected.reduce(0) { $0 + $1.size }
     }
 
-    private var location: String? {
+    private var location: (display: String, full: String)? {
         let path = single?.path ?? (selected.isEmpty ? folderPath : nil)
         guard let path, !path.hasPrefix("::") else { return nil }
-        return ((path as NSString).deletingLastPathComponent as NSString).abbreviatingWithTildeInPath
+        let parent = (path as NSString).deletingLastPathComponent
+        return ((parent as NSString).abbreviatingWithTildeInPath, parent)
     }
 
-    private func row(_ label: String, _ value: String) -> some View {
+    private func row(_ label: String, _ value: String, help: String? = nil) -> some View {
         GridRow {
             Text(label)
                 .foregroundStyle(.secondary)
@@ -136,6 +138,7 @@ struct SelectionSummary: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
+                .help(help ?? value)
         }
     }
 }

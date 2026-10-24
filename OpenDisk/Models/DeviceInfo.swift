@@ -12,7 +12,7 @@ struct DeviceInfo: Identifiable, Hashable, Sendable {
     var usedBytes: Int64 { totalBytes - availableBytes }
 
     var formattedTotalStorage: String {
-        ByteFormatter.formatDecimalNoFraction(totalBytes)
+        ByteFormatter.formatCapacity(totalBytes)
     }
 
     var formattedUsedStorage: String {

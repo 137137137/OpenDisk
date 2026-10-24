@@ -28,10 +28,12 @@ struct ScanStatusBar<Leading: View>: View {
             Divider()
             HStack(spacing: 8) {
                 leading
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
                 status
                     .font(.footnote)
-                    .fixedSize()
+                    .lineLimit(1)
+                    .frame(minWidth: isScanning ? 190 : nil, alignment: .trailing)
                     .padding(.trailing, 14)
             }
         }
@@ -54,10 +56,12 @@ struct ScanStatusBar<Leading: View>: View {
                     .progressViewStyle(.linear)
                     .controlSize(.small)
                     .frame(width: 80)
-                Text("Updating changed folders (\(stepsCompleted.formatted()) of \(stepsTotal.formatted()))")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                ViewThatFits(in: .horizontal) {
+                    Text("Updating changed folders (\(stepsCompleted.formatted()) of \(stepsTotal.formatted()))")
+                    Text("\(stepsCompleted.formatted()) of \(stepsTotal.formatted())")
+                }
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
             }
         } else if isScanning {
             HStack(spacing: 6) {
@@ -70,12 +74,19 @@ struct ScanStatusBar<Leading: View>: View {
                     ProgressView()
                         .controlSize(.mini)
                 }
-                Text(itemsScanned > 0 ? scanStatus : "Scanning…")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if !filesPerSecond.isEmpty {
-                    Text("· \(filesPerSecond)")
-                        .foregroundStyle(.tertiary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        Text(itemsScanned > 0 ? scanStatus : "Scanning…")
+                            .foregroundStyle(.secondary)
+                        if !filesPerSecond.isEmpty {
+                            Text("· \(filesPerSecond)")
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    Text(itemsScanned > 0 ? scanStatus : "Scanning…")
+                        .foregroundStyle(.secondary)
+                    Text(itemsScanned > 0 ? ByteFormatter.formatFileSize(scannedBytes) : "Scanning…")
+                        .foregroundStyle(.secondary)
                 }
             }
         } else if scanDuration > 0 {

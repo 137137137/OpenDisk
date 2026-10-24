@@ -168,7 +168,9 @@ struct FileTree: Sendable {
     func childrenSortedForDisplay(of id: NodeID) -> [NodeID] {
         children(of: id).sorted {
             let (a, b) = (size(of: $0), size(of: $1))
-            return a == b ? name(of: $0) < name(of: $1) : a > b
+            return a == b
+                ? name(of: $0).localizedStandardCompare(name(of: $1)) == .orderedAscending
+                : a > b
         }
     }
 
