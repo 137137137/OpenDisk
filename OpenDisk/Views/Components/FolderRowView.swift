@@ -7,12 +7,12 @@ enum FileColumns {
     static let icon: CGFloat = 20
     static let size: CGFloat = 76
     static let bar: CGFloat = 48
-    static let kind: CGFloat = 140
+    static let kind: CGFloat = 110
     static let kindMax: CGFloat = 240
     static let nameMax: CGFloat = 420
     static let inset: CGFloat = 8
     static let rowHeight: CGFloat = 28
-    static let detailMinWidth: CGFloat = 600
+    static let detailMinWidth: CGFloat = 460
 }
 
 struct ListScale: Equatable {
@@ -156,6 +156,7 @@ struct FolderRowView: View {
                 }
             }
             .frame(maxWidth: scale.scaled(FileColumns.nameMax), alignment: .leading)
+            .layoutPriority(1)
 
             Group {
                 if item.sizeIsKnown {
@@ -183,6 +184,7 @@ struct FolderRowView: View {
                         alignment: .leading
                     )
                     .help(FileKind.description(for: item))
+                    .layoutPriority(1)
             }
 
             Spacer(minLength: 0)

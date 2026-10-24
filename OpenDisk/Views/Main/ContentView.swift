@@ -8,11 +8,12 @@ struct ContentView: View {
     @State private var selection: String?
     @State private var active: DeviceInfo?
     @State private var isChoosingFolder = false
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var didSelectInitialLocation = false
     @AppStorage("last_location") private var lastLocation = ""
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             LocationsSidebar(
                 devices: deviceMonitor.devices,
                 folders: folderLocations,
@@ -26,7 +27,10 @@ struct ContentView: View {
                 DiskAnalysisView(
                     rootPath: active.path,
                     rootName: active.name,
-                    totalUsedSpace: active.usedBytes
+                    totalUsedSpace: active.usedBytes,
+                    onScanFinished: {
+                        withAnimation { columnVisibility = .detailOnly }
+                    }
                 )
                 .id(active.path)
             } else {

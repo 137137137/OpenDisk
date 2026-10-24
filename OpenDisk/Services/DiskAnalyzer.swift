@@ -156,18 +156,6 @@ final class DiskAnalyzer {
         return true
     }
 
-    func fileCount(inPaths paths: [String]) async -> Int? {
-        guard let result = scanResult, !paths.isEmpty else { return nil }
-        let tree = result.tree
-        let nodes = paths.compactMap { tree.nodeID(forPath: $0, rootPath: result.rootPath) }
-        guard nodes.count == paths.count else { return nil }
-        return await Task.detached(priority: .utility) {
-            nodes.reduce(0) { total, node in
-                total + (tree.isDirectory(node) ? tree.descendantFileCount(of: node) : 1)
-            }
-        }.value
-    }
-
     func size(ofPath path: String) -> Int64? {
         guard !path.hasPrefix("::"), let tree = scanResult?.tree,
               let node = nodeID(forPath: path) else { return nil }

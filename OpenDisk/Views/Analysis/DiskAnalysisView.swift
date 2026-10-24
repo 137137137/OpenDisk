@@ -6,6 +6,7 @@ import SwiftUI
 struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
+    let onScanFinished: () -> Void
 
     @Environment(ScanAccess.self) private var scanAccess
     @State private var analyzer = DiskAnalyzer()
@@ -33,60 +34,30 @@ struct DiskAnalysisView: View {
     @AppStorage(ListScale.defaultsKey) private var listScaleLevel = ListScale.defaultLevel
     @State private var isVolumeRoot = false
     @State private var listIsWide = true
-    @State private var containedFileCount: Int?
 
     init(
         rootPath: String,
         rootName: String = "Computer",
-        totalUsedSpace: Int64 = 0
+        totalUsedSpace: Int64 = 0,
+        onScanFinished: @escaping () -> Void = {}
     ) {
         self.rootPath = rootPath
         self.rootName = rootName
+        self.onScanFinished = onScanFinished
         self.totalUsedDiskSpace = totalUsedSpace
         self._currentPath = State(initialValue: rootPath)
     }
 
     var body: some View {
-        let detailMinWidth = listScale.scaled(FileColumns.detailMinWidth)
-        VStack(spacing: 0) {
-            if !analyzer.rootItems.isEmpty {
-                listPane
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onGeometryChange(for: Bool.self) {
-                        $0.size.width >= detailMinWidth
-                    } action: { listIsWide = $0 }
-                    .searchable(
-                        text: $searchText,
-                        isPresented: $searchPresented,
-                        placement: .toolbar,
-                        prompt: "Search"
-                    )
-                ScanStatusBar(
-                    isScanning: analyzer.isScanning,
-                    phase: analyzer.scanPhase,
-                    stepsCompleted: analyzer.scanStepsCompleted,
-                    stepsTotal: analyzer.scanStepsTotal,
-                    progressFraction: progressFraction,
-                    scannedBytes: analyzer.totalDiskScannedBytes,
-                    itemsScanned: analyzer.itemsScanned,
-                    scanStartDate: analyzer.scanStartDate,
-                    scanDuration: analyzer.scanDuration
-                ) {
-                    EmptyView()
-                }
-            } else if analyzer.isScanning {
-                ProgressView("Preparing scan…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                emptyStateView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        HSplitView {
+            mainColumn
+                .frame(minWidth: 340, idealWidth: 600, maxWidth: .infinity, maxHeight: .infinity)
+            if showInspector {
+                inspectorPane
+                    .frame(minWidth: 280, idealWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(minWidth: 480, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
-        .inspector(isPresented: $showInspector) {
-            inspectorPane
-                .inspectorColumnWidth(min: 280, ideal: 460, max: 900)
-        }
+        .frame(minHeight: 480, maxHeight: .infinity)
         .navigationTitle(windowTitle)
         .navigationSubtitle(windowSubtitle)
         .toolbar {
@@ -143,7 +114,11 @@ struct DiskAnalysisView: View {
             }
         }
         .onChange(of: analyzer.isScanning) { _, isScanning in
-            if !isScanning { Task { await refreshVolumeCapacity() } }
+            guard !isScanning else { return }
+            Task { await refreshVolumeCapacity() }
+            if !analyzer.rootItems.isEmpty, !analyzer.needsFullDiskAccess {
+                onScanFinished()
+            }
         }
         .onDisappear {
             if let keyMonitor {
@@ -204,6 +179,45 @@ struct DiskAnalysisView: View {
                 .disabled(parentPath == nil)
                 .opacity(0)
                 .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var mainColumn: some View {
+        let detailMinWidth = listScale.scaled(FileColumns.detailMinWidth)
+        VStack(spacing: 0) {
+            if !analyzer.rootItems.isEmpty {
+                listPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onGeometryChange(for: Bool.self) {
+                        $0.size.width >= detailMinWidth
+                    } action: { listIsWide = $0 }
+                    .searchable(
+                        text: $searchText,
+                        isPresented: $searchPresented,
+                        placement: .toolbar,
+                        prompt: "Search"
+                    )
+                ScanStatusBar(
+                    isScanning: analyzer.isScanning,
+                    phase: analyzer.scanPhase,
+                    stepsCompleted: analyzer.scanStepsCompleted,
+                    stepsTotal: analyzer.scanStepsTotal,
+                    progressFraction: progressFraction,
+                    scannedBytes: analyzer.totalDiskScannedBytes,
+                    itemsScanned: analyzer.itemsScanned,
+                    scanStartDate: analyzer.scanStartDate,
+                    scanDuration: analyzer.scanDuration
+                ) {
+                    EmptyView()
+                }
+            } else if analyzer.isScanning {
+                ProgressView("Preparing scan…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                emptyStateView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
@@ -503,6 +517,7 @@ struct DiskAnalysisView: View {
                 .frame(width: listScale.icon, height: 1)
             sortHeaderButton(.name, "Name")
                 .frame(maxWidth: listScale.scaled(FileColumns.nameMax), alignment: .leading)
+                .layoutPriority(1)
             sortHeaderButton(.size, "Size")
                 .frame(width: listScale.scaled(FileColumns.size), alignment: .trailing)
             Color.clear
@@ -514,6 +529,7 @@ struct DiskAnalysisView: View {
                         maxWidth: listScale.scaled(FileColumns.kindMax),
                         alignment: .leading
                     )
+                    .layoutPriority(1)
             }
 
             Spacer(minLength: 0)
@@ -600,64 +616,9 @@ struct DiskAnalysisView: View {
         navigateToPath(destination)
     }
 
-    private var selectedItems: [FolderItem] {
-        visibleItems.filter { selectedPaths.contains($0.path) }
-    }
-
-    private var fileCountTargets: [String] {
-        let selected = selectedItems
-        if selected.isEmpty {
-            return currentPath.hasPrefix("::") ? [] : [currentPath]
-        }
-        guard selected.contains(where: \.isDirectory) else { return [] }
-        let paths = selected.map(\.path)
-        return paths.contains { $0.hasPrefix("::") } ? [] : paths
-    }
-
-    private var fileCountTaskID: String {
-        fileCountTargets.joined(separator: "\n") + "|\(analyzer.isScanning)|\(analyzer.displayVersion)"
-    }
-
-    private var fileCountText: String? {
-        guard !fileCountTargets.isEmpty else { return nil }
-        if analyzer.isScanning { return "—" }
-        guard let containedFileCount else { return "Counting…" }
-        return containedFileCount == 1 ? "1 file" : "\(containedFileCount.formatted()) files"
-    }
-
-    private func showCurrentSelectionInFinder() {
-        if selectedPaths.isEmpty, !currentPath.hasPrefix("::") {
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: currentPath)])
-        } else {
-            showSelectionInFinder()
-        }
-    }
-
     @ViewBuilder
     private var inspectorPane: some View {
         VStack(spacing: 0) {
-            if !analyzer.rootItems.isEmpty {
-                SelectionSummary(
-                    selected: selectedItems,
-                    folderPath: currentPath,
-                    folderName: windowTitle,
-                    folderSize: analyzer.displayedTotalBytes,
-                    fileCountText: fileCountText,
-                    onShowInFinder: showCurrentSelectionInFinder,
-                    onCollect: collectSelection
-                )
-                .task(id: fileCountTaskID) {
-                    containedFileCount = nil
-                    let targets = fileCountTargets
-                    guard !analyzer.isScanning, !targets.isEmpty else { return }
-                    let count = await analyzer.fileCount(inPaths: targets)
-                    if !Task.isCancelled { containedFileCount = count }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
-            }
-
             Group {
                 if let chartRoot = analyzer.chartRoot {
                     RingsChartView(

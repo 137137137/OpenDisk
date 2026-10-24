@@ -11,11 +11,14 @@ struct RingsChartView: View {
     @State private var layout: RingsChartLayout.Layout?
     @State private var hoveredPath: String?
     @State private var hoverLocation: CGPoint = .zero
+    @State private var layoutSide: CGFloat = 0
+    @State private var resizeTask: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { geometry in
             let side = min(geometry.size.width, geometry.size.height).rounded(.down)
-            let square = CGSize(width: side, height: side)
+            let renderSide = layoutSide > 0 ? layoutSide : side
+            let scale = renderSide > 0 ? side / renderSide : 1
             ZStack {
                 if let layout {
                     StaticChartLayer(layout: layout)
@@ -25,20 +28,24 @@ struct RingsChartView: View {
                     }
                 }
             }
+            .frame(width: renderSide, height: renderSide)
+            .scaleEffect(scale)
             .frame(width: side, height: side)
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
-                    hoverLocation = location
-                    hoveredPath = layout?.segment(at: location)?.path
+                    let point = CGPoint(x: location.x / scale, y: location.y / scale)
+                    hoverLocation = point
+                    hoveredPath = layout?.segment(at: point)?.path
                 case .ended:
                     hoveredPath = nil
                 }
             }
             .simultaneousGesture(
                 SpatialTapGesture().onEnded { value in
-                    guard let segment = layout?.segment(at: value.location) else { return }
+                    let point = CGPoint(x: value.location.x / scale, y: value.location.y / scale)
+                    guard let segment = layout?.segment(at: point) else { return }
                     if segment.depth == 0 {
                         onSelectCenter()
                     } else if segment.kind == .directory {
@@ -47,7 +54,8 @@ struct RingsChartView: View {
                 }
             )
             .fileDrag { location in
-                draggableSegment(at: location).map { [collectedFile(for: $0)] } ?? []
+                let point = CGPoint(x: location.x / scale, y: location.y / scale)
+                return draggableSegment(at: point).map { [collectedFile(for: $0)] } ?? []
             } onBegin: { files in
                 collector.flagDraggedProtected(protectedReason(for: files))
             } onEnd: { _ in
@@ -63,16 +71,29 @@ struct RingsChartView: View {
                 accessibilitySegmentList
             }
             .onChange(of: root, initial: true) {
-                layout = RingsChartLayout.layout(root: root, in: square, freeBytes: freeBytes)
+                relayout(side: side)
             }
             .onChange(of: freeBytes) {
-                layout = RingsChartLayout.layout(root: root, in: square, freeBytes: freeBytes)
+                relayout(side: renderSide)
             }
-            .onChange(of: side) {
-                layout = RingsChartLayout.layout(root: root, in: square, freeBytes: freeBytes)
+            .onChange(of: side) { _, newSide in
+                resizeTask?.cancel()
+                resizeTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(120))
+                    guard !Task.isCancelled else { return }
+                    relayout(side: newSide)
+                }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
+    }
+
+    private func relayout(side: CGFloat) {
+        guard side > 0 else { return }
+        layoutSide = side
+        layout = RingsChartLayout.layout(
+            root: root, in: CGSize(width: side, height: side), freeBytes: freeBytes
+        )
     }
 
     private var chartAccessibilityLabel: String {
