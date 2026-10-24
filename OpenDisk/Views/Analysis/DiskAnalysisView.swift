@@ -657,7 +657,9 @@ struct DiskAnalysisView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(8)
-
+            .padding(.bottom, Self.collectorReservedHeight)
+        }
+        .overlay(alignment: .bottom) {
             CollectorBar(collector: collector, isTargeted: isCollectorTargeted) { _ in
                 history.reset()
                 currentPath = rootPath
@@ -672,6 +674,8 @@ struct DiskAnalysisView: View {
             )
         }
     }
+
+    private static let collectorReservedHeight: CGFloat = 64
 
     private var chartFreeBytes: Int64? {
         guard showFreeSpace, isVolumeRoot, currentPath == rootPath,

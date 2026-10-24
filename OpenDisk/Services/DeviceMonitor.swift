@@ -7,9 +7,18 @@ final class DeviceMonitor {
     private(set) var devices: [DeviceInfo] = []
     @ObservationIgnored private var volumeObservers: [NSObjectProtocol] = []
 
+    private static let refreshInterval: Duration = .seconds(3)
+
     init() {
         Task { await refresh() }
         observeVolumeChanges()
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.refreshInterval)
+                guard let self else { return }
+                await self.refresh()
+            }
+        }
     }
 
     private func observeVolumeChanges() {
@@ -18,6 +27,7 @@ final class DeviceMonitor {
             NSWorkspace.didMountNotification,
             NSWorkspace.didUnmountNotification,
             NSWorkspace.didRenameVolumeNotification,
+            NSWorkspace.didActivateApplicationNotification,
         ]
         volumeObservers = names.map { name in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -30,9 +40,10 @@ final class DeviceMonitor {
     }
 
     func refresh() async {
-        devices = await Task.detached(priority: .utility) {
+        let current = await Task.detached(priority: .utility) {
             Self.currentDevices()
         }.value
+        if current != devices { devices = current }
     }
 
     private nonisolated static func currentDevices() -> [DeviceInfo] {
