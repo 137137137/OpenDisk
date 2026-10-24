@@ -85,7 +85,7 @@ struct DiskAnalysisView: View {
         .frame(minWidth: 480, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
         .inspector(isPresented: $showInspector) {
             inspectorPane
-                .inspectorColumnWidth(min: 280, ideal: 360, max: 560)
+                .inspectorColumnWidth(min: 280, ideal: 460, max: 900)
         }
         .navigationTitle(windowTitle)
         .navigationSubtitle(windowSubtitle)
@@ -501,7 +501,7 @@ struct DiskAnalysisView: View {
             Color.clear
                 .frame(width: listScale.icon, height: 1)
             sortHeaderButton(.name, "Name")
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: listScale.scaled(FileColumns.nameMax), alignment: .leading)
             sortHeaderButton(.size, "Size")
                 .frame(width: listScale.scaled(FileColumns.size), alignment: .trailing)
             Color.clear
@@ -514,6 +514,8 @@ struct DiskAnalysisView: View {
                         alignment: .leading
                     )
             }
+
+            Spacer(minLength: 0)
         }
         .font(.system(size: listScale.headerFontSize, weight: .medium))
         .foregroundStyle(.secondary)
