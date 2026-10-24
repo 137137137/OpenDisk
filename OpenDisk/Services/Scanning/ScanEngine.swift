@@ -185,43 +185,65 @@ final class ScanEngine: DiskScanning {
     ) async -> FileTree {
         let startEventID = FSEventsChangeJournal.currentEventID
         let startedAt = Date()
+        var showsCachedTree = false
 
         if let (header, fileBytes) = ScanCache.peek(forRoot: path) {
-            metrics.setPhase(.checkingChanges)
-            async let pendingChanges = FSEventsChangeJournal.changes(
-                since: header.eventID, under: path,
-                timeout: replayTimeBudget(
-                    expectedFullScanSeconds: header.fullScanSeconds > 0
-                        ? header.fullScanSeconds
-                        : Double(fileBytes) / 10_000_000
-                )
-            )
-            let cached = await offload { ScanCache.load(forRoot: path) }
-            if let cached, cached.tree.name(of: FileTree.rootID) == rootName {
-                let live = Mutex(cached.tree)
-                registerPartial { live.withLock { $0 } }
-                let changes = await pendingChanges
-                metrics.setPhase(.scanning)
-                if let changes {
-                    let applied = await IncrementalUpdater.apply(
-                        changes, to: live, rootPath: path,
-                        allowedDevices: allowedDevices,
-                        newInodesSince: cached.header.capturedAt,
-                        metrics: metrics, isCancelled: isCancelled
-                    )
-                    if applied {
-                        let tree = live.withLock { $0 }
-                        saveCacheInBackground(tree: tree, rootPath: path, header: ScanCache.Header(
-                            eventID: startEventID, capturedAt: startedAt,
-                            fullScanSeconds: header.fullScanSeconds
-                        ))
-                        return tree
-                    }
+            let cacheAge = startedAt.timeIntervalSince(header.capturedAt)
+            if cacheAge > maxReplayAge {
+                showsCachedTree = true
+                Task.detached(priority: .userInitiated) {
+                    guard let cached = ScanCache.load(forRoot: path),
+                          cached.tree.name(of: FileTree.rootID) == rootName,
+                          !isCancelled()
+                    else { return }
+                    let snapshot = cached.tree
+                    registerPartial { snapshot }
                 }
             } else {
-                _ = await pendingChanges
-                metrics.setPhase(.scanning)
+                metrics.setPhase(.checkingChanges)
+                async let pendingChanges = FSEventsChangeJournal.changes(
+                    since: header.eventID, under: path,
+                    timeout: replayTimeBudget(
+                        expectedFullScanSeconds: header.fullScanSeconds > 0
+                            ? header.fullScanSeconds
+                            : Double(fileBytes) / 10_000_000
+                    )
+                )
+                let cached = await offload { ScanCache.load(forRoot: path) }
+                if let cached, cached.tree.name(of: FileTree.rootID) == rootName {
+                    let live = Mutex(cached.tree)
+                    registerPartial { live.withLock { $0 } }
+                    showsCachedTree = true
+                    let changes = await pendingChanges
+                    metrics.setPhase(.scanning)
+                    if let changes {
+                        let applied = await IncrementalUpdater.apply(
+                            changes, to: live, rootPath: path,
+                            allowedDevices: allowedDevices,
+                            newInodesSince: cached.header.capturedAt,
+                            metrics: metrics, isCancelled: isCancelled
+                        )
+                        if applied {
+                            let tree = live.withLock { $0 }
+                            saveCacheInBackground(tree: tree, rootPath: path, header: ScanCache.Header(
+                                eventID: startEventID, capturedAt: startedAt,
+                                fullScanSeconds: header.fullScanSeconds
+                            ))
+                            return tree
+                        }
+                    }
+                } else {
+                    _ = await pendingChanges
+                    metrics.setPhase(.scanning)
+                }
             }
+        }
+
+        let traversalPartials: @Sendable (@escaping PartialTreeProvider) -> Void
+        if showsCachedTree {
+            traversalPartials = { _ in }
+        } else {
+            traversalPartials = registerPartial
         }
 
         let clock = ContinuousClock()
@@ -229,7 +251,7 @@ final class ScanEngine: DiskScanning {
         let tree = await traverse(
             path: path, rootName: rootName, allowedDevices: allowedDevices,
             metrics: metrics, isCancelled: isCancelled,
-            registerPartial: registerPartial
+            registerPartial: traversalPartials
         )
         if !isCancelled() {
             saveCacheInBackground(tree: tree, rootPath: path, header: ScanCache.Header(
@@ -239,6 +261,8 @@ final class ScanEngine: DiskScanning {
         }
         return tree
     }
+
+    private static let maxReplayAge: TimeInterval = 6 * 60 * 60
 
     private static func replayTimeBudget(expectedFullScanSeconds: TimeInterval) -> TimeInterval {
         min(30, max(2, expectedFullScanSeconds * 0.5))
