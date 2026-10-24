@@ -15,6 +15,8 @@ final class DiskAnalyzer {
     private(set) var totalDiskScannedBytes: Int64 = 0
     private(set) var itemsScanned = 0
     private(set) var scanPhase: ScanPhase = .scanning
+    private(set) var scanStepsCompleted = 0
+    private(set) var scanStepsTotal = 0
     private(set) var scanStartDate: Date?
     private(set) var scanDuration: TimeInterval = 0
     private(set) var displayedTotalBytes: Int64 = 0
@@ -63,6 +65,8 @@ final class DiskAnalyzer {
         totalDiskScannedBytes = 0
         itemsScanned = 0
         scanPhase = .scanning
+        scanStepsCompleted = 0
+        scanStepsTotal = 0
         scanDuration = 0
         scanRootPath = path
         currentPath = path
@@ -244,6 +248,8 @@ final class DiskAnalyzer {
         totalDiskScannedBytes = progress.scannedBytes
         itemsScanned = progress.itemsScanned
         scanPhase = progress.phase
+        scanStepsCompleted = progress.stepsCompleted
+        scanStepsTotal = progress.stepsTotal
     }
 
     private func refreshDisplayedItems() {

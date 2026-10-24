@@ -16,6 +16,10 @@ enum IncrementalUpdater {
             known: tree.withLock { $0.hardLinkKeys }, capturedAt: capturedAt
         )
 
+        metrics.beginSteps(
+            total: changes.changedDirectories.count + changes.subtreesToRescan.count + 1
+        )
+
         for directoryPath in changes.changedDirectories {
             if isCancelled() { return false }
             let consistent = await updateDirectory(
@@ -25,6 +29,7 @@ enum IncrementalUpdater {
                 metrics: metrics, isCancelled: isCancelled
             )
             guard consistent else { return false }
+            metrics.completeStep()
         }
 
         for subtreePath in changes.subtreesToRescan {
@@ -36,10 +41,12 @@ enum IncrementalUpdater {
                 metrics: metrics, isCancelled: isCancelled
             )
             guard consistent else { return false }
+            metrics.completeStep()
         }
 
         guard !isCancelled() else { return false }
         refreshLargeFileSizes(in: tree)
+        metrics.completeStep()
         tree.withLock { current in
             current.normalizeHardLinks()
             current.compactIfFragmented()

@@ -6,6 +6,8 @@ final class ScanMetrics: Sendable {
         var itemsScanned: Int64 = 0
         var unreadableDirectories = 0
         var phase: ScanPhase = .scanning
+        var stepsCompleted = 0
+        var stepsTotal = 0
     }
 
     private let state = Mutex(Counters())
@@ -20,6 +22,26 @@ final class ScanMetrics: Sendable {
 
     func addUnreadable() {
         state.withLock { $0.unreadableDirectories += 1 }
+    }
+
+    func beginSteps(total: Int) {
+        state.withLock {
+            $0.stepsCompleted = 0
+            $0.stepsTotal = total
+        }
+    }
+
+    func completeStep() {
+        state.withLock { $0.stepsCompleted = min($0.stepsCompleted + 1, $0.stepsTotal) }
+    }
+
+    func reset(bytes: Int64 = 0, items: Int = 0) {
+        state.withLock {
+            $0.scannedBytes = bytes
+            $0.itemsScanned = Int64(items)
+            $0.stepsCompleted = 0
+            $0.stepsTotal = 0
+        }
     }
 
     func add(bytes: Int64, items: Int) {
@@ -41,7 +63,9 @@ final class ScanMetrics: Sendable {
             ScanProgress(
                 scannedBytes: $0.scannedBytes,
                 itemsScanned: Int($0.itemsScanned),
-                phase: $0.phase
+                phase: $0.phase,
+                stepsCompleted: $0.stepsCompleted,
+                stepsTotal: $0.stepsTotal
             )
         }
     }

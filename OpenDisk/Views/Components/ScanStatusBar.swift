@@ -3,6 +3,8 @@ import SwiftUI
 struct ScanStatusBar<Leading: View>: View {
     let isScanning: Bool
     var phase: ScanPhase = .scanning
+    var stepsCompleted = 0
+    var stepsTotal = 0
     let progressFraction: Double?
     let scannedBytes: Int64
     let itemsScanned: Int
@@ -38,7 +40,26 @@ struct ScanStatusBar<Leading: View>: View {
 
     @ViewBuilder
     private var status: some View {
-        if isScanning {
+        if isScanning && phase == .checkingChanges {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Checking what changed since the last scan…")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } else if isScanning && phase == .applyingChanges {
+            HStack(spacing: 6) {
+                ProgressView(value: Double(stepsCompleted), total: Double(max(stepsTotal, 1)))
+                    .progressViewStyle(.linear)
+                    .controlSize(.small)
+                    .frame(width: 80)
+                Text("Updating changed folders (\(stepsCompleted.formatted()) of \(stepsTotal.formatted()))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } else if isScanning {
             HStack(spacing: 6) {
                 if let progressFraction {
                     ProgressView(value: progressFraction)
@@ -49,11 +70,7 @@ struct ScanStatusBar<Leading: View>: View {
                     ProgressView()
                         .controlSize(.mini)
                 }
-                Text(itemsScanned > 0
-                    ? scanStatus
-                    : phase == .checkingChanges
-                        ? "Checking what changed since the last scan…"
-                        : "Scanning…")
+                Text(itemsScanned > 0 ? scanStatus : "Scanning…")
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 if !filesPerSecond.isEmpty {

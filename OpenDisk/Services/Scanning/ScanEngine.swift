@@ -215,7 +215,7 @@ final class ScanEngine: DiskScanning {
                     registerPartial { live.withLock { $0 } }
                     showsCachedTree = true
                     let changes = await pendingChanges
-                    metrics.setPhase(.scanning)
+                    metrics.setPhase(changes == nil ? .scanning : .applyingChanges)
                     if let changes {
                         let applied = await IncrementalUpdater.apply(
                             changes, to: live, rootPath: path,
@@ -225,6 +225,10 @@ final class ScanEngine: DiskScanning {
                         )
                         if applied {
                             let tree = live.withLock { $0 }
+                            metrics.reset(
+                                bytes: tree.size(of: FileTree.rootID), items: tree.nodeCount
+                            )
+                            metrics.setPhase(.scanning)
                             saveCacheInBackground(tree: tree, rootPath: path, header: ScanCache.Header(
                                 eventID: startEventID, capturedAt: startedAt,
                                 fullScanSeconds: header.fullScanSeconds
@@ -238,6 +242,9 @@ final class ScanEngine: DiskScanning {
                 }
             }
         }
+
+        metrics.reset()
+        metrics.setPhase(.scanning)
 
         let traversalPartials: @Sendable (@escaping PartialTreeProvider) -> Void
         if showsCachedTree {

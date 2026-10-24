@@ -64,6 +64,8 @@ struct DiskAnalysisView: View {
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
                     phase: analyzer.scanPhase,
+                    stepsCompleted: analyzer.scanStepsCompleted,
+                    stepsTotal: analyzer.scanStepsTotal,
                     progressFraction: progressFraction,
                     scannedBytes: analyzer.totalDiskScannedBytes,
                     itemsScanned: analyzer.itemsScanned,
