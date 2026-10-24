@@ -48,13 +48,20 @@ struct ChartItem: Equatable, Identifiable, Sendable {
         let isDirectory = tree.isDirectory(node)
         let totalSize = tree.size(of: node)
         let parentSize = max(totalSize, 1)
-        let hasChildren = isDirectory && tree.childCount(of: node) > 0
+        let childIDs = isDirectory ? tree.children(of: node) : []
+        let hasChildren = !childIDs.isEmpty
         var children: [ChartItem] = []
         var cursor = 0.0
 
         if hasChildren && depth < maxDepth {
             let prefix = path.directoryPrefix
-            for child in tree.childrenSortedForDisplay(of: node) {
+            let smallestVisible = max(
+                Int64((minVisibleFraction / fractionOfRoot * Double(parentSize)).rounded(.down)), 1
+            )
+            let visibleIDs = tree.sortedForDisplay(
+                childIDs.filter { tree.size(of: $0) >= smallestVisible }
+            )
+            for child in visibleIDs {
                 let childSize = tree.size(of: child)
                 guard childSize > 0 else { break }
                 let share = Double(childSize) / Double(parentSize) * 100
