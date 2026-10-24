@@ -33,6 +33,7 @@ struct DiskAnalysisView: View {
     @AppStorage(ListScale.defaultsKey) private var listScaleLevel = ListScale.defaultLevel
     @State private var isVolumeRoot = false
     @State private var listIsWide = true
+    @State private var containedFileCount: Int?
 
     init(
         rootPath: String,
@@ -493,8 +494,6 @@ struct DiskAnalysisView: View {
             if showsDetailColumns {
                 Text("Kind")
                     .frame(width: listScale.scaled(FileColumns.kind), alignment: .leading)
-                Text("Items")
-                    .frame(width: listScale.scaled(FileColumns.items), alignment: .trailing)
             }
         }
         .font(.system(size: listScale.headerFontSize, weight: .medium))
@@ -583,6 +582,27 @@ struct DiskAnalysisView: View {
         visibleItems.filter { selectedPaths.contains($0.path) }
     }
 
+    private var fileCountTargets: [String] {
+        let selected = selectedItems
+        if selected.isEmpty {
+            return currentPath.hasPrefix("::") ? [] : [currentPath]
+        }
+        guard selected.contains(where: \.isDirectory) else { return [] }
+        let paths = selected.map(\.path)
+        return paths.contains { $0.hasPrefix("::") } ? [] : paths
+    }
+
+    private var fileCountTaskID: String {
+        fileCountTargets.joined(separator: "\n") + "|\(analyzer.isScanning)|\(analyzer.displayVersion)"
+    }
+
+    private var fileCountText: String? {
+        guard !fileCountTargets.isEmpty else { return nil }
+        if analyzer.isScanning { return "—" }
+        guard let containedFileCount else { return "Counting…" }
+        return containedFileCount == 1 ? "1 file" : "\(containedFileCount.formatted()) files"
+    }
+
     private func showCurrentSelectionInFinder() {
         if selectedPaths.isEmpty, !currentPath.hasPrefix("::") {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: currentPath)])
@@ -600,10 +620,17 @@ struct DiskAnalysisView: View {
                     folderPath: currentPath,
                     folderName: windowTitle,
                     folderSize: analyzer.displayedTotalBytes,
-                    folderItemCount: analyzer.rootItems.count,
+                    fileCountText: fileCountText,
                     onShowInFinder: showCurrentSelectionInFinder,
                     onCollect: collectSelection
                 )
+                .task(id: fileCountTaskID) {
+                    containedFileCount = nil
+                    let targets = fileCountTargets
+                    guard !analyzer.isScanning, !targets.isEmpty else { return }
+                    let count = await analyzer.fileCount(inPaths: targets)
+                    if !Task.isCancelled { containedFileCount = count }
+                }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 4)
@@ -618,7 +645,8 @@ struct DiskAnalysisView: View {
                         onSelectCenter: goBack
                     )
                 } else if analyzer.isScanning || !analyzer.rootItems.isEmpty {
-                    ProgressView("Building chart…")
+                    ProgressView()
+                        .controlSize(.small)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Color.clear

@@ -7,8 +7,7 @@ enum FileColumns {
     static let icon: CGFloat = 20
     static let size: CGFloat = 76
     static let bar: CGFloat = 48
-    static let kind: CGFloat = 120
-    static let items: CGFloat = 56
+    static let kind: CGFloat = 140
     static let inset: CGFloat = 8
     static let rowHeight: CGFloat = 28
     static let detailMinWidth: CGFloat = 600
@@ -136,11 +135,6 @@ struct FolderRowView: View {
         isEmphasized ? AnyShapeStyle(Color.white.opacity(0.7)) : AnyShapeStyle(.tertiary)
     }
 
-    private var itemsText: String {
-        guard item.isDirectory, item.itemCount > 0, !FileKind.isPackage(item) else { return "—" }
-        return item.itemCount.formatted()
-    }
-
     private var row: some View {
         HStack(spacing: FileColumns.spacing) {
             icon
@@ -182,12 +176,6 @@ struct FolderRowView: View {
                     .lineLimit(1)
                     .foregroundStyle(secondaryStyle)
                     .frame(width: scale.scaled(FileColumns.kind), alignment: .leading)
-
-                Text(itemsText)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .foregroundStyle(itemsText == "—" ? tertiaryStyle : secondaryStyle)
-                    .frame(width: scale.scaled(FileColumns.items), alignment: .trailing)
             }
         }
         .font(.system(size: scale.fontSize))

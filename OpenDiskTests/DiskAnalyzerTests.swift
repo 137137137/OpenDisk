@@ -46,6 +46,31 @@ private final class GatedScanner: DiskScanning, Sendable {
     }
 }
 
+private final class RescanGatedScanner: DiskScanning, Sendable {
+    private let result: ScanResult
+    private let scans = Mutex(0)
+    private let gate: GatedScanner
+
+    init(result: ScanResult) {
+        self.result = result
+        gate = GatedScanner(partial: nil, final: result)
+    }
+
+    func release() { gate.release() }
+
+    func scan(
+        path: String,
+        onEvent: @escaping @Sendable (ScanEvent) -> Void
+    ) async -> ScanResult {
+        let index = scans.withLock { count in
+            count += 1
+            return count
+        }
+        if index == 1 { return result }
+        return await gate.scan(path: path, onEvent: onEvent)
+    }
+}
+
 @Suite("DiskAnalyzer")
 @MainActor
 struct DiskAnalyzerTests {
@@ -133,6 +158,51 @@ struct DiskAnalyzerTests {
         #expect(analyzer.isScanning == false)
         #expect(analyzer.rootItems.first?.size == 2_000_000)
         #expect(analyzer.scanDuration > 0)
+    }
+
+    @Test("hides tiny files and hidden empty folders in partial results, keeps unsized folders")
+    func partialResultsHideNoise() async {
+        var partial = FileTree(rootName: "/Volumes/Test")
+        partial.addNode(name: "Documents", parent: FileTree.rootID, size: 0, isDirectory: true)
+        partial.addNode(name: ".vol", parent: FileTree.rootID, size: 0, isDirectory: true)
+        partial.addNode(name: ".file", parent: FileTree.rootID, size: 0, isDirectory: false)
+        partial.addNode(name: "tiny.txt", parent: FileTree.rootID, size: 10, isDirectory: false)
+        partial.addNode(name: "movie.mov", parent: FileTree.rootID, size: 900_000, isDirectory: false)
+        partial.rollUpDirectorySizes()
+
+        let scanner = GatedScanner(
+            partial: partial, final: Self.makeResult(rootPath: "/Volumes/Test")
+        )
+        let analyzer = DiskAnalyzer(scanner: scanner)
+
+        async let scanCompleted: Void = analyzer.scanDirectory("/Volumes/Test")
+        await waitUntil { !analyzer.rootItems.isEmpty }
+
+        #expect(analyzer.rootItems.map(\.name) == ["movie.mov", "Documents"])
+
+        scanner.release()
+        await scanCompleted
+    }
+
+    @Test("keeps the previous results and chart visible while rescanning the same location")
+    func rescanKeepsPreviousResults() async {
+        let scanner = RescanGatedScanner(result: Self.makeResult(rootPath: "/Volumes/Test"))
+        let analyzer = DiskAnalyzer(scanner: scanner)
+        await analyzer.scanDirectory("/Volumes/Test")
+        await waitUntil { analyzer.chartRoot != nil }
+        let before = analyzer.rootItems
+
+        async let rescanCompleted: Void = analyzer.scanDirectory("/Volumes/Test")
+        await waitUntil { analyzer.isScanning }
+
+        #expect(analyzer.isScanning)
+        #expect(analyzer.rootItems == before)
+        #expect(analyzer.chartRoot != nil)
+
+        scanner.release()
+        await rescanCompleted
+        #expect(analyzer.isScanning == false)
+        #expect(analyzer.rootItems == before)
     }
 
     @Test("shows a skeleton of top-level names before any scan data arrives")

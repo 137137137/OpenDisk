@@ -54,11 +54,29 @@ struct LocationsSidebar: View {
                 systemImage: "plus",
                 action: onAddFolder
             )
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
+            .buttonStyle(SidebarFooterButtonStyle())
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+        }
+    }
+}
+
+private struct SidebarFooterButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        FooterLabel(configuration: configuration)
+    }
+
+    private struct FooterLabel: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .foregroundStyle(isHovered || configuration.isPressed ? .primary : .secondary)
+                .opacity(configuration.isPressed ? 0.7 : 1)
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
         }
     }
 }

@@ -6,7 +6,7 @@ struct SelectionSummary: View {
     let folderPath: String
     let folderName: String
     let folderSize: Int64
-    let folderItemCount: Int
+    let fileCountText: String?
     let onShowInFinder: () -> Void
     let onCollect: () -> Void
 
@@ -106,8 +106,8 @@ struct SelectionSummary: View {
     private var details: some View {
         Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
             row("Size", ByteFormatter.formatFileSize(totalSize))
-            if let count = itemCount {
-                row("Items", count.formatted())
+            if let fileCountText {
+                row("Contains", fileCountText)
             }
             if let location {
                 row("Where", location)
@@ -118,15 +118,6 @@ struct SelectionSummary: View {
 
     private var totalSize: Int64 {
         selected.isEmpty ? folderSize : selected.reduce(0) { $0 + $1.size }
-    }
-
-    private var itemCount: Int? {
-        if let single {
-            guard single.isDirectory, !FileKind.isPackage(single), single.itemCount > 0 else { return nil }
-            return single.itemCount
-        }
-        if selected.count > 1 { return nil }
-        return folderItemCount
     }
 
     private var location: String? {

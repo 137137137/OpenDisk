@@ -179,6 +179,25 @@ struct FileTree: Sendable {
     func isDirectory(_ id: NodeID) -> Bool { nodes[Int(id)].isDirectory }
     func parent(of id: NodeID) -> NodeID { nodes[Int(id)].parent }
 
+    func descendantFileCount(of id: NodeID) -> Int {
+        var count = 0
+        var stack: [NodeID] = [id]
+        var visited = 0
+        while let node = stack.popLast(), visited <= nodes.count {
+            visited += 1
+            var child = nodes[Int(node)].firstChild
+            while child != Self.noNode {
+                if nodes[Int(child)].isDirectory {
+                    stack.append(child)
+                } else {
+                    count += 1
+                }
+                child = nodes[Int(child)].nextSibling
+            }
+        }
+        return count
+    }
+
     func childCount(of id: NodeID) -> Int {
         var count = 0
         var remaining = nodes.count

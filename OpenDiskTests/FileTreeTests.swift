@@ -29,6 +29,22 @@ struct FileTreeSerializationTests {
         #expect(roundtripped.path(of: decodedDocs) == "/Volumes/T/Documents")
     }
 
+    @Test("counts every file below a folder, through all subfolders")
+    func descendantFileCountIsRecursive() {
+        var tree = FileTree(rootName: "/Volumes/T")
+        let docs = tree.addNode(name: "Documents", parent: FileTree.rootID, size: 0, isDirectory: true)
+        tree.addNode(name: "a.pdf", parent: docs, size: 1, isDirectory: false)
+        let nested = tree.addNode(name: "nested", parent: docs, size: 0, isDirectory: true)
+        tree.addNode(name: "b.bin", parent: nested, size: 1, isDirectory: false)
+        tree.addNode(name: "c.bin", parent: nested, size: 1, isDirectory: false)
+        tree.addNode(name: "empty", parent: docs, size: 0, isDirectory: true)
+        tree.addNode(name: "movie.mov", parent: FileTree.rootID, size: 1, isDirectory: false)
+
+        #expect(tree.descendantFileCount(of: FileTree.rootID) == 4)
+        #expect(tree.descendantFileCount(of: docs) == 3)
+        #expect(tree.descendantFileCount(of: nested) == 2)
+    }
+
     @Test("malformed blobs are rejected, not crashed on")
     func malformedDataRejected() {
         #expect(FileTree(serializedData: Data()) == nil)

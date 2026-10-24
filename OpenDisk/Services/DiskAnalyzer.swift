@@ -57,6 +57,7 @@ final class DiskAnalyzer {
             return
         }
 
+        let keepsCurrentResult = path == scanRootPath && scanResult != nil && !needsFullDiskAccess
         needsFullDiskAccess = false
         isScanning = true
         totalDiskScannedBytes = 0
@@ -65,14 +66,18 @@ final class DiskAnalyzer {
         scanDuration = 0
         scanRootPath = path
         currentPath = path
-        scanResult = nil
         resultIsPartial = false
         lastAppliedPartialSequence = 0
-        rootItems = []
-        chartRoot = nil
         unreadableDirectories = 0
-        displayedTotalBytes = 0
-        displayVersion += 1
+        if !keepsCurrentResult {
+            scanResult = nil
+            rootItems = []
+            chartRoot = nil
+            displayedTotalBytes = 0
+            displayVersion += 1
+        } else {
+            refreshDisplayedItems()
+        }
         searchIndexBuildTask?.cancel()
         searchIndexBuildTask = nil
         searchTask?.cancel()
@@ -144,6 +149,18 @@ final class DiskAnalyzer {
         currentPath = path
         display(node: node)
         return true
+    }
+
+    func fileCount(inPaths paths: [String]) async -> Int? {
+        guard let result = scanResult, !paths.isEmpty else { return nil }
+        let tree = result.tree
+        let nodes = paths.compactMap { tree.nodeID(forPath: $0, rootPath: result.rootPath) }
+        guard nodes.count == paths.count else { return nil }
+        return await Task.detached(priority: .utility) {
+            nodes.reduce(0) { total, node in
+                total + (tree.isDirectory(node) ? tree.descendantFileCount(of: node) : 1)
+            }
+        }.value
     }
 
     func size(ofPath path: String) -> Int64? {
@@ -358,10 +375,13 @@ final class DiskAnalyzer {
 
     private func folderItems(for node: FileTree.NodeID, limit: Int?) -> [FolderItem] {
         guard let tree = scanResult?.tree, tree.isDirectory(node) else { return [] }
-        let minVisibleSize = resultIsPartial ? Int64(-1) : Self.minVisibleSize
+        let isPartial = resultIsPartial
         return tree.childrenSortedForDisplay(of: node)
             .prefix(limit ?? Int.max)
-            .filter { tree.size(of: $0) > minVisibleSize }
+            .filter { child in
+                if tree.size(of: child) > Self.minVisibleSize { return true }
+                return isPartial && tree.isDirectory(child) && !tree.name(of: child).hasPrefix(".")
+            }
             .map { child in
                 FolderItem(
                     name: tree.name(of: child),
