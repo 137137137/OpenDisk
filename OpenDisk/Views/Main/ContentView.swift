@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var selection: String?
     @State private var active: DeviceInfo?
     @State private var isChoosingFolder = false
+    @State private var didSelectInitialLocation = false
+    @AppStorage("last_location") private var lastLocation = ""
 
     var body: some View {
         NavigationSplitView {
@@ -43,16 +45,49 @@ struct ContentView: View {
         .onChange(of: selection) { _, path in
             Task { @MainActor in open(path) }
         }
+        .onChange(of: active?.path) { _, path in
+            if let path { lastLocation = path }
+        }
+        .onChange(of: deviceMonitor.devices, initial: true) {
+            selectInitialLocation()
+        }
         .environment(scanAccess)
     }
 
     private var placeholder: some View {
-        StorageOverview(
-            devices: deviceMonitor.devices,
-            folders: folderLocations,
-            onOpen: { selection = $0.path },
-            onAddFolder: addFolder
-        )
+        VStack(spacing: 6) {
+            Text("No Location Selected")
+                .font(.title3)
+                .foregroundStyle(.tertiary)
+            if ScanAccess.isSandboxed && scanAccess.grants.isEmpty {
+                Text("Choose a disk in the sidebar. OpenDisk asks for access once and remembers it.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("OpenDisk")
+    }
+
+    private func selectInitialLocation() {
+        guard selection == nil, !didSelectInitialLocation, !deviceMonitor.devices.isEmpty else { return }
+        didSelectInitialLocation = true
+        let canOpen = { (location: DeviceInfo) in
+            !ScanAccess.isSandboxed || scanAccess.isGranted(location.path)
+        }
+        let locations = deviceMonitor.devices + folderLocations
+        if let last = locations.first(where: { $0.path == lastLocation }),
+           Self.isInternal(last.path), canOpen(last) {
+            selection = last.path
+        } else if let computer = deviceMonitor.devices.first(where: { $0.path == "/" }), canOpen(computer) {
+            selection = computer.path
+        }
+    }
+
+    private static func isInternal(_ path: String) -> Bool {
+        path != "/Volumes" && !path.hasPrefix("/Volumes/")
     }
 
     private var savedFolderPaths: [String] {
@@ -145,14 +180,15 @@ struct ContentView: View {
     }
 
     private func removeFolder(_ folder: DeviceInfo) {
-        if selection == folder.path { selection = nil }
+        let wasSelected = selection == folder.path
         if ScanAccess.isSandboxed {
             if let grant = scanAccess.grants.first(where: { $0.path == folder.path }) {
                 scanAccess.removeGrant(grant)
             }
-            return
+        } else {
+            storedFolders = savedFolderPaths.filter { $0 != folder.path }.joined(separator: "\n")
         }
-        storedFolders = savedFolderPaths.filter { $0 != folder.path }.joined(separator: "\n")
+        if wasSelected { selection = nil }
     }
 }
 
