@@ -108,6 +108,10 @@ struct BreadcrumbBar: View {
             .font(.callout)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
+            .contentShape(Rectangle())
+            .onTapGesture { onNavigate(component.path) }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { onNavigate(component.path) }
         } else {
             let size = showsSize ? sizeOfPath(component.path).map(ByteFormatter.formatFileSize) : nil
             BreadcrumbLink(name: component.name, size: size) { onNavigate(component.path) }

@@ -47,19 +47,12 @@ struct ContentView: View {
     }
 
     private var placeholder: some View {
-        ContentUnavailableView {
-            Label(
-                ScanAccess.isSandboxed ? "Choose What to Scan" : "Select a Disk",
-                systemImage: "internaldrive"
-            )
-        } description: {
-            Text(ScanAccess.isSandboxed
-                ? "Grant OpenDisk access to your startup disk to analyze your whole Mac, or to any folder or volume. Your choice is remembered."
-                : "Choose a disk or folder in the sidebar to see what’s taking up space.")
-        } actions: {
-            Button(ScanAccess.isSandboxed ? "Choose a Folder…" : "Scan Folder…", action: addFolder)
-        }
-        .navigationTitle("OpenDisk")
+        StorageOverview(
+            devices: deviceMonitor.devices,
+            folders: folderLocations,
+            onOpen: { selection = $0.path },
+            onAddFolder: addFolder
+        )
     }
 
     private var savedFolderPaths: [String] {

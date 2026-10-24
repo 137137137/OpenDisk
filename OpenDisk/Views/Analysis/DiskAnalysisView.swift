@@ -72,13 +72,7 @@ struct DiskAnalysisView: View {
                     scanStartDate: analyzer.scanStartDate,
                     scanDuration: analyzer.scanDuration
                 ) {
-                    BreadcrumbBar(
-                        currentPath: currentPath,
-                        rootPath: rootPath,
-                        rootName: rootName,
-                        sizeOfPath: analyzer.size(ofPath:),
-                        onNavigate: navigateToPath
-                    )
+                    EmptyView()
                 }
             } else if analyzer.isScanning {
                 ProgressView("Preparing scan…")
@@ -255,21 +249,25 @@ struct DiskAnalysisView: View {
         let items = visibleItems
         Group {
             if isSearchActive {
-                SearchResultsView(
-                    items: items,
-                    resultsVersion: analyzer.searchResultsVersion,
-                    totalMatches: analyzer.searchTotalMatches,
-                    isRunning: analyzer.isSearchRunning,
-                    resultsArePartial: analyzer.searchResultsArePartial,
-                    query: searchText,
-                    selectedPaths: selectedPaths,
-                    focusedPath: selectionAnchor,
-                    showsDetailColumns: showsDetailColumns,
-                    selectionFiles: selectionFiles(in: items),
-                    onQuickLook: quickLook,
-                    onSelect: selectRow,
-                    onOpen: openRow
-                )
+                VStack(spacing: 0) {
+                    pathBar
+                    Divider()
+                    SearchResultsView(
+                        items: items,
+                        resultsVersion: analyzer.searchResultsVersion,
+                        totalMatches: analyzer.searchTotalMatches,
+                        isRunning: analyzer.isSearchRunning,
+                        resultsArePartial: analyzer.searchResultsArePartial,
+                        query: searchText,
+                        selectedPaths: selectedPaths,
+                        focusedPath: selectionAnchor,
+                        showsDetailColumns: showsDetailColumns,
+                        selectionFiles: selectionFiles(in: items),
+                        onQuickLook: quickLook,
+                        onSelect: selectRow,
+                        onOpen: openRow
+                    )
+                }
             } else {
                 ScanResultsView(
                     items: items,
@@ -282,7 +280,10 @@ struct DiskAnalysisView: View {
                     onSelect: selectRow,
                     onOpen: openRow
                 ) {
-                    columnHeader
+                    VStack(spacing: 0) {
+                        pathBar
+                        columnHeader
+                    }
                 }
             }
         }
@@ -484,6 +485,17 @@ struct DiskAnalysisView: View {
 
     private var showsDetailColumns: Bool { listIsWide }
 
+    private var pathBar: some View {
+        BreadcrumbBar(
+            currentPath: currentPath,
+            rootPath: rootPath,
+            rootName: rootName,
+            sizeOfPath: analyzer.size(ofPath:),
+            onNavigate: { navigateLeavingSearch(to: $0) }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var columnHeader: some View {
         HStack(spacing: FileColumns.spacing) {
             Color.clear
@@ -648,8 +660,11 @@ struct DiskAnalysisView: View {
                     RingsChartView(
                         root: chartRoot,
                         freeBytes: chartFreeBytes,
-                        onSelectDirectory: navigateToPath,
-                        onSelectCenter: goBack
+                        onSelectDirectory: { navigateLeavingSearch(to: $0) },
+                        onSelectCenter: {
+                            exitSearch()
+                            goBack()
+                        }
                     )
                 } else if analyzer.isScanning || !analyzer.rootItems.isEmpty {
                     ProgressView()
@@ -809,6 +824,17 @@ struct DiskAnalysisView: View {
         guard showContents(of: target) else { return }
         _ = history.goForward()
         currentPath = target
+    }
+
+    private func exitSearch() {
+        guard isSearchActive || searchPresented else { return }
+        searchPresented = false
+        searchText = ""
+    }
+
+    private func navigateLeavingSearch(to path: String) {
+        exitSearch()
+        navigateToPath(path)
     }
 
     private func navigateToPath(_ path: String) {
