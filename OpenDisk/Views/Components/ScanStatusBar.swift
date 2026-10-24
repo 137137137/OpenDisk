@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ScanStatusBar: View {
+struct ScanStatusBar<Leading: View>: View {
     let isScanning: Bool
     var phase: ScanPhase = .scanning
     let progressFraction: Double?
@@ -8,9 +8,7 @@ struct ScanStatusBar: View {
     let itemsScanned: Int
     let scanStartDate: Date?
     let scanDuration: TimeInterval
-    let totalBytes: Int64
-    let itemCount: Int
-    var volumeCapacity: VolumeCapacity?
+    @ViewBuilder let leading: Leading
 
     private var scanStatus: String {
         "Scanning: \(ByteFormatter.formatFileSize(scannedBytes)) (\(itemsScanned.formatted()) items)"
@@ -26,88 +24,46 @@ struct ScanStatusBar: View {
     var body: some View {
         VStack(spacing: 0) {
             Divider()
-
-            if isScanning {
-                ProgressView(value: progressFraction)
-                    .progressViewStyle(.linear)
-                    .controlSize(.small)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
+            HStack(spacing: 8) {
+                leading
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                status
+                    .font(.footnote)
+                    .fixedSize()
+                    .padding(.trailing, 14)
             }
-
-            HStack(spacing: 6) {
-                if isScanning {
-                    ProgressView()
-                        .controlSize(.mini)
-                    Text(itemsScanned > 0
-                        ? scanStatus
-                        : phase == .checkingChanges
-                            ? "Checking what changed since the last scan…"
-                            : "Scanning…")
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    if !filesPerSecond.isEmpty {
-                        Text("· \(filesPerSecond)")
-                            .foregroundStyle(.tertiary)
-                    }
-                } else if scanDuration > 0 {
-                    Text(DurationFormatter.scanDuration(scanDuration))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 12)
-
-                if let volumeCapacity {
-                    capacityReadout(volumeCapacity)
-                    Spacer(minLength: 12)
-                }
-
-                Text(ByteFormatter.formatFileSize(totalBytes))
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-                    .contentTransition(.numericText())
-                Text("· \(itemCount) item\(itemCount == 1 ? "" : "s")")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.footnote)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 6)
         }
         .background(.bar)
     }
 
-    private func capacityReadout(_ capacity: VolumeCapacity) -> some View {
-        let available = ByteFormatter.formatFileSize(capacity.available)
-        let used = ByteFormatter.formatFileSize(capacity.used)
-        let total = ByteFormatter.formatFileSize(capacity.total)
-        return HStack(spacing: 8) {
-            StorageProgressBar(
-                totalBytes: capacity.total,
-                availableBytes: capacity.available
-            )
-            .frame(width: 96)
-            Text("\(available) available of \(total)")
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .lineLimit(1)
+    @ViewBuilder
+    private var status: some View {
+        if isScanning {
+            HStack(spacing: 6) {
+                if let progressFraction {
+                    ProgressView(value: progressFraction)
+                        .progressViewStyle(.linear)
+                        .controlSize(.small)
+                        .frame(width: 80)
+                } else {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+                Text(itemsScanned > 0
+                    ? scanStatus
+                    : phase == .checkingChanges
+                        ? "Checking what changed since the last scan…"
+                        : "Scanning…")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if !filesPerSecond.isEmpty {
+                    Text("· \(filesPerSecond)")
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        } else if scanDuration > 0 {
+            Text(DurationFormatter.scanDuration(scanDuration))
+                .foregroundStyle(.tertiary)
         }
-        .help(capacityHelp(capacity, used: used, available: available, total: total))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Disk space")
-        .accessibilityValue("\(used) used, \(available) available of \(total)")
-    }
-
-    private func capacityHelp(
-        _ capacity: VolumeCapacity, used: String, available: String, total: String
-    ) -> String {
-        var lines = ["Used: \(used)", "Available: \(available)", "Total: \(total)"]
-        if capacity.purgeable > 0 {
-            let purgeable = ByteFormatter.formatFileSize(capacity.purgeable)
-            lines.append(
-                "Available includes \(purgeable) of purgeable space, such as local Time Machine snapshots, that macOS frees automatically when needed."
-            )
-        }
-        return lines.joined(separator: "\n")
     }
 }

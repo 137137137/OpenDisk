@@ -7,7 +7,6 @@ struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(ScanAccess.self) private var scanAccess
     @State private var analyzer = DiskAnalyzer()
     @State private var collector = Collector()
@@ -18,7 +17,6 @@ struct DiskAnalysisView: View {
     @State private var hasInitiallyScanned = false
     @State private var searchText = ""
     @State private var searchPresented = false
-    @State private var isShowingUnmountConfirmation = false
     @State private var selectedPaths = Set<String>()
     @State private var selectionAnchor: String?
     @State private var quickLookURL: URL?
@@ -31,6 +29,10 @@ struct DiskAnalysisView: View {
     private let totalUsedDiskSpace: Int64
     @State private var volumeCapacity: VolumeCapacity?
     @AppStorage(FreeSpaceInfo.defaultsKey) private var showFreeSpace = true
+    @AppStorage("inspector_visible") private var showInspector = true
+    @AppStorage(ListScale.defaultsKey) private var listScaleLevel = ListScale.defaultLevel
+    @State private var isVolumeRoot = false
+    @State private var listIsWide = true
 
     init(
         rootPath: String,
@@ -45,38 +47,18 @@ struct DiskAnalysisView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            BreadcrumbBar(
-                currentPath: currentPath,
-                rootPath: rootPath,
-                rootName: rootName,
-                sizeOfPath: analyzer.size(ofPath:),
-                onNavigate: navigateToPath
-            )
-
             if !analyzer.rootItems.isEmpty {
-                GeometryReader { geometry in
-                    HSplitView {
-                        listPane
-                            .frame(
-                                minWidth: 320,
-                                idealWidth: geometry.size.width * 0.6,
-                                maxWidth: .infinity, maxHeight: .infinity
-                            )
-                            .searchable(
-                                text: $searchText,
-                                isPresented: $searchPresented,
-                                placement: .toolbar,
-                                prompt: "Search scanned files and folders"
-                            )
-
-                        chartPane
-                            .frame(
-                                minWidth: 280,
-                                idealWidth: geometry.size.width * 0.4,
-                                maxWidth: .infinity, maxHeight: .infinity
-                            )
-                    }
-                }
+                listPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onGeometryChange(for: Bool.self) {
+                        $0.size.width >= listScale.scaled(FileColumns.detailMinWidth)
+                    } action: { listIsWide = $0 }
+                    .searchable(
+                        text: $searchText,
+                        isPresented: $searchPresented,
+                        placement: .toolbar,
+                        prompt: "Search"
+                    )
                 ScanStatusBar(
                     isScanning: analyzer.isScanning,
                     phase: analyzer.scanPhase,
@@ -84,28 +66,31 @@ struct DiskAnalysisView: View {
                     scannedBytes: analyzer.totalDiskScannedBytes,
                     itemsScanned: analyzer.itemsScanned,
                     scanStartDate: analyzer.scanStartDate,
-                    scanDuration: analyzer.scanDuration,
-                    totalBytes: analyzer.displayedTotalBytes,
-                    itemCount: analyzer.rootItems.count,
-                    volumeCapacity: volumeCapacity
-                )
+                    scanDuration: analyzer.scanDuration
+                ) {
+                    BreadcrumbBar(
+                        currentPath: currentPath,
+                        rootPath: rootPath,
+                        rootName: rootName,
+                        sizeOfPath: analyzer.size(ofPath:),
+                        onNavigate: navigateToPath
+                    )
+                }
             } else if analyzer.isScanning {
-                Spacer()
                 ProgressView("Preparing scan…")
-                Spacer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Spacer()
                 emptyStateView
-                Spacer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(
-            minWidth: 900, idealWidth: 1100, maxWidth: .infinity,
-            minHeight: 600, idealHeight: 720, maxHeight: .infinity
-        )
+        .frame(minWidth: 480, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
+        .inspector(isPresented: $showInspector) {
+            inspectorPane
+                .inspectorColumnWidth(min: 280, ideal: 360, max: 560)
+        }
         .navigationTitle(windowTitle)
         .navigationSubtitle(windowSubtitle)
-        .navigationBarBackButtonHidden()
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
@@ -120,29 +105,17 @@ struct DiskAnalysisView: View {
                 }
                 .controlGroupStyle(.navigation)
             }
-            ToolbarItem(placement: .navigation) {
-                Button(
-                    "Unmount",
-                    systemImage: "eject",
-                    action: requestUnmount
-                )
-                .keyboardShortcut("e", modifiers: .command)
-                .help("Unmount and clear scan data")
-                .confirmationDialog(
-                    "Unmount \(rootName)?",
-                    isPresented: $isShowingUnmountConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Unmount", role: .destructive, action: unmount)
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("This clears the current scan data and returns to disk selection. It does not eject the disk from macOS.")
-                }
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise", action: rescanFromTop)
                 .keyboardShortcut("r", modifiers: .command)
                 .help("Rescan from the top level")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Inspector", systemImage: "sidebar.right") {
+                    showInspector.toggle()
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+                .help(showInspector ? "Hide Inspector (⌥⌘I)" : "Show Inspector (⌥⌘I)")
             }
         }
         .onAppear {
@@ -160,6 +133,8 @@ struct DiskAnalysisView: View {
             }
             guard !hasInitiallyScanned else { return }
             hasInitiallyScanned = true
+            isVolumeRoot = (try? URL(fileURLWithPath: rootPath)
+                .resourceValues(forKeys: [.isVolumeKey]))?.isVolume ?? false
             scanAccess.beginAccess(toPath: rootPath)
             Task { await analyzer.scanDirectory(rootPath) }
         }
@@ -220,20 +195,18 @@ struct DiskAnalysisView: View {
                 .disabled(!collector.canUndo || searchPresented)
                 .opacity(0)
                 .accessibilityHidden(true)
+            Button("Make Text Bigger") {
+                listScaleLevel = ListScale(level: listScaleLevel + 1).level
+            }
+                .keyboardShortcut("=", modifiers: .command)
+                .opacity(0)
+                .accessibilityHidden(true)
             Button("Enclosing Folder", action: goBack)
                 .keyboardShortcut(.upArrow, modifiers: .command)
                 .disabled(parentPath == nil)
                 .opacity(0)
                 .accessibilityHidden(true)
         }
-    }
-
-    private func requestUnmount() {
-        isShowingUnmountConfirmation = true
-    }
-
-    private func unmount() {
-        dismiss()
     }
 
     private var isSearchActive: Bool {
@@ -287,25 +260,29 @@ struct DiskAnalysisView: View {
                     query: searchText,
                     selectedPaths: selectedPaths,
                     focusedPath: selectionAnchor,
+                    showsDetailColumns: showsDetailColumns,
                     selectionFiles: selectionFiles(in: items),
                     onQuickLook: quickLook,
-                    onOpen: handleRowTap
+                    onSelect: selectRow,
+                    onOpen: openRow
                 )
             } else {
-                VStack(spacing: 0) {
+                ScanResultsView(
+                    items: items,
+                    displayVersion: analyzer.displayVersion,
+                    selectedPaths: selectedPaths,
+                    focusedPath: selectionAnchor,
+                    showsDetailColumns: showsDetailColumns,
+                    selectionFiles: selectionFiles(in: items),
+                    onQuickLook: quickLook,
+                    onSelect: selectRow,
+                    onOpen: openRow
+                ) {
                     columnHeader
-                    ScanResultsView(
-                        items: items,
-                        displayVersion: analyzer.displayVersion,
-                        selectedPaths: selectedPaths,
-                        focusedPath: selectionAnchor,
-                        selectionFiles: selectionFiles(in: items),
-                        onQuickLook: quickLook,
-                        onFolderTap: handleRowTap
-                    )
                 }
             }
         }
+        .environment(\.listScale, listScale)
         .quickLookPreview(
             $quickLookURL,
             in: items.compactMap {
@@ -499,21 +476,32 @@ struct DiskAnalysisView: View {
         return nil
     }
 
-    @ViewBuilder
+    private var listScale: ListScale { ListScale(level: listScaleLevel) }
+
+    private var showsDetailColumns: Bool { listIsWide }
+
     private var columnHeader: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: FileColumns.spacing) {
+            Color.clear
+                .frame(width: listScale.icon, height: 1)
             sortHeaderButton(.name, "Name")
-            Spacer(minLength: 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             sortHeaderButton(.size, "Size")
+                .frame(width: listScale.scaled(FileColumns.size), alignment: .trailing)
+            Color.clear
+                .frame(width: listScale.scaled(FileColumns.bar), height: 1)
+            if showsDetailColumns {
+                Text("Kind")
+                    .frame(width: listScale.scaled(FileColumns.kind), alignment: .leading)
+                Text("Items")
+                    .frame(width: listScale.scaled(FileColumns.items), alignment: .trailing)
+            }
         }
-        .font(.caption)
-        .fontWeight(.semibold)
+        .font(.system(size: listScale.headerFontSize, weight: .medium))
         .foregroundStyle(.secondary)
-        .padding(.leading, 40)
-        .padding(.trailing, 20)
+        .lineLimit(1)
+        .padding(.horizontal, FileColumns.inset * 2)
         .padding(.vertical, 5)
-        .background(.bar)
-        Divider()
     }
 
     private func sortHeaderButton(_ field: SortField, _ label: String) -> some View {
@@ -536,7 +524,7 @@ struct DiskAnalysisView: View {
         .buttonStyle(.plain)
     }
 
-    private func handleRowTap(_ item: FolderItem) {
+    private func selectRow(_ item: FolderItem) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let selectable = !item.path.hasPrefix("::")
 
@@ -565,14 +553,20 @@ struct DiskAnalysisView: View {
             return
         }
 
-        selectedPaths.removeAll()
+        selectedPaths = selectable ? [item.path] : []
+        selectionAnchor = item.path
+    }
+
+    private func openRow(_ item: FolderItem) {
         selectionAnchor = item.path
         if isSearchActive {
+            selectedPaths.removeAll()
             openSearchResult(item)
         } else if item.isDirectory {
+            selectedPaths.removeAll()
             navigateToFolder(item)
-        } else if selectable {
-            selectedPaths = [item.path]
+        } else {
+            quickLook(item)
         }
     }
 
@@ -585,9 +579,36 @@ struct DiskAnalysisView: View {
         navigateToPath(destination)
     }
 
+    private var selectedItems: [FolderItem] {
+        visibleItems.filter { selectedPaths.contains($0.path) }
+    }
+
+    private func showCurrentSelectionInFinder() {
+        if selectedPaths.isEmpty, !currentPath.hasPrefix("::") {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: currentPath)])
+        } else {
+            showSelectionInFinder()
+        }
+    }
+
     @ViewBuilder
-    private var chartPane: some View {
+    private var inspectorPane: some View {
         VStack(spacing: 0) {
+            if !analyzer.rootItems.isEmpty {
+                SelectionSummary(
+                    selected: selectedItems,
+                    folderPath: currentPath,
+                    folderName: windowTitle,
+                    folderSize: analyzer.displayedTotalBytes,
+                    folderItemCount: analyzer.rootItems.count,
+                    onShowInFinder: showCurrentSelectionInFinder,
+                    onCollect: collectSelection
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+            }
+
             Group {
                 if let chartRoot = analyzer.chartRoot {
                     RingsChartView(
@@ -596,9 +617,11 @@ struct DiskAnalysisView: View {
                         onSelectDirectory: navigateToPath,
                         onSelectCenter: goBack
                     )
-                } else {
+                } else if analyzer.isScanning || !analyzer.rootItems.isEmpty {
                     ProgressView("Building chart…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Color.clear
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -620,7 +643,7 @@ struct DiskAnalysisView: View {
     }
 
     private var chartFreeBytes: Int64? {
-        guard showFreeSpace, currentPath == rootPath,
+        guard showFreeSpace, isVolumeRoot, currentPath == rootPath,
               let capacity = volumeCapacity, capacity.available > 0
         else { return nil }
         return capacity.available
@@ -681,9 +704,11 @@ struct DiskAnalysisView: View {
     }
 
     private var windowSubtitle: String {
-        analyzer.displayedTotalBytes > 0
-            ? ByteFormatter.formatFileSize(analyzer.displayedTotalBytes)
-            : ""
+        guard analyzer.displayedTotalBytes > 0 else {
+            return analyzer.isScanning ? "Scanning…" : ""
+        }
+        let count = analyzer.rootItems.count
+        return "\(ByteFormatter.formatFileSize(analyzer.displayedTotalBytes)) · \(count.formatted()) \(count == 1 ? "item" : "items")"
     }
 
     @ViewBuilder
@@ -839,7 +864,9 @@ private struct WindowNumberReader: NSViewRepresentable {
 }
 
 #Preview {
-    NavigationStack {
+    NavigationSplitView {
+        EmptyView()
+    } detail: {
         DiskAnalysisView(rootPath: "/", totalUsedSpace: 500_000_000_000)
     }
 }

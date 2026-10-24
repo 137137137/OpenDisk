@@ -98,7 +98,6 @@ struct BreadcrumbBar: View {
 
     @ViewBuilder
     private func segment(_ component: PathComponent) -> some View {
-        let size = sizeOfPath(component.path).map(ByteFormatter.formatFileSize)
         if component.isLast {
             HStack(spacing: 5) {
                 Text(component.name)
@@ -106,12 +105,12 @@ struct BreadcrumbBar: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if let size { BreadcrumbSize(text: size) }
             }
             .font(.callout)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
         } else {
+            let size = sizeOfPath(component.path).map(ByteFormatter.formatFileSize)
             BreadcrumbLink(name: component.name, size: size) { onNavigate(component.path) }
         }
     }

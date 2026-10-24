@@ -9,8 +9,10 @@ struct SearchResultsView: View {
     let query: String
     var selectedPaths: Set<String> = []
     var focusedPath: String? = nil
+    var showsDetailColumns: Bool = true
     var selectionFiles: [CollectedFile] = []
     var onQuickLook: ((FolderItem) -> Void)? = nil
+    let onSelect: (FolderItem) -> Void
     let onOpen: (FolderItem) -> Void
 
     var body: some View {
@@ -30,16 +32,18 @@ struct SearchResultsView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(items) { item in
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                 FolderRowView(
                                     item: item,
+                                    index: index,
                                     locationDetail: location(of: item),
                                     isSelected: selectedPaths.contains(item.path),
+                                    showsDetailColumns: showsDetailColumns,
                                     selectionFiles: selectionFiles,
-                                    onQuickLook: onQuickLook
-                                ) {
-                                    onOpen(item)
-                                }
+                                    onQuickLook: onQuickLook,
+                                    onSelect: { onSelect(item) },
+                                    onOpen: { onOpen(item) }
+                                )
                                 .id(item.path)
                             }
                         }
