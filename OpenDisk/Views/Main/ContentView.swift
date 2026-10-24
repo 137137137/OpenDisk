@@ -7,6 +7,7 @@ struct ContentView: View {
     @AppStorage("sidebar_folders") private var storedFolders = ""
     @State private var selection: String?
     @State private var active: DeviceInfo?
+    @State private var isChoosingFolder = false
 
     var body: some View {
         NavigationSplitView {
@@ -34,6 +35,11 @@ struct ContentView: View {
             minWidth: 980, idealWidth: 1280, maxWidth: .infinity,
             minHeight: 600, idealHeight: 800, maxHeight: .infinity
         )
+        .fileImporter(isPresented: $isChoosingFolder, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result { addFolder(at: url) }
+        }
+        .fileDialogConfirmationLabel("Scan")
+        .fileDialogMessage("Choose a folder to analyze")
         .onChange(of: selection) { _, path in
             Task { @MainActor in open(path) }
         }
@@ -133,14 +139,10 @@ struct ContentView: View {
             return
         }
 
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Scan"
-        panel.message = "Choose a folder to analyze"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        isChoosingFolder = true
+    }
 
+    private func addFolder(at url: URL) {
         let path = url.path
         if !deviceMonitor.devices.contains(where: { $0.path == path }),
            !savedFolderPaths.contains(path) {

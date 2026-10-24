@@ -47,12 +47,13 @@ struct DiskAnalysisView: View {
     }
 
     var body: some View {
+        let detailMinWidth = listScale.scaled(FileColumns.detailMinWidth)
         VStack(spacing: 0) {
             if !analyzer.rootItems.isEmpty {
                 listPane
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onGeometryChange(for: Bool.self) {
-                        $0.size.width >= listScale.scaled(FileColumns.detailMinWidth)
+                        $0.size.width >= detailMinWidth
                     } action: { listIsWide = $0 }
                     .searchable(
                         text: $searchText,
