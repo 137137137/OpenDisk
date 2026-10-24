@@ -188,29 +188,47 @@ extension View {
     }
 }
 
-struct InAppFileDropDelegate: DropDelegate {
+struct InAppFileDropTarget: NSViewRepresentable {
     let onTargetChange: (Bool) -> Void
     let perform: ([CollectedFile], CGPoint) -> Bool
 
-    func validateDrop(info: DropInfo) -> Bool {
-        FileDragSource.shared.activeFiles != nil
+    func makeNSView(context: Context) -> InAppFileDropView {
+        let view = InAppFileDropView()
+        view.registerForDraggedTypes([.fileURL, .collectedFile])
+        return view
     }
 
-    func dropEntered(info: DropInfo) {
+    func updateNSView(_ view: InAppFileDropView, context: Context) {
+        view.onTargetChange = onTargetChange
+        view.perform = perform
+    }
+}
+
+final class InAppFileDropView: NSView {
+    var onTargetChange: (Bool) -> Void = { _ in }
+    var perform: ([CollectedFile], CGPoint) -> Bool = { _, _ in false }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard FileDragSource.shared.activeFiles != nil else { return [] }
         onTargetChange(true)
+        return .copy
     }
 
-    func dropExited(info: DropInfo) {
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        FileDragSource.shared.activeFiles != nil ? .copy : []
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
         onTargetChange(false)
     }
 
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .copy)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         onTargetChange(false)
         guard let files = FileDragSource.shared.activeFiles else { return false }
-        return perform(files, info.location)
+        return perform(files, convert(sender.draggingLocation, from: nil))
     }
 }
