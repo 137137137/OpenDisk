@@ -62,6 +62,12 @@ struct DiskAnalysisView: View {
                                 idealWidth: geometry.size.width * 0.6,
                                 maxWidth: .infinity, maxHeight: .infinity
                             )
+                            .searchable(
+                                text: $searchText,
+                                isPresented: $searchPresented,
+                                placement: .toolbar,
+                                prompt: "Search scanned files and folders"
+                            )
 
                         chartPane
                             .frame(
@@ -184,12 +190,6 @@ struct DiskAnalysisView: View {
                 Task { await analyzer.scanDirectory(rootPath) }
             }
         }
-        .searchable(
-            text: $searchText,
-            isPresented: $searchPresented,
-            placement: .toolbar,
-            prompt: "Search scanned files and folders"
-        )
         .onChange(of: searchText) {
             analyzer.updateSearch(query: searchText, scope: .all)
             selectedPaths.removeAll()

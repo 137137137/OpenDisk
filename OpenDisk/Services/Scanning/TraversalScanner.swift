@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import Synchronization
 
 enum TraversalScanner {
     static var subtreeWorkerCount: Int {
