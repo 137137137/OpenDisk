@@ -10,6 +10,7 @@ struct SearchResultsView: View {
     var selectedPaths: Set<String> = []
     var focusedPath: String? = nil
     var showsDetailColumns: Bool = true
+    var kindWidth: CGFloat? = nil
     var selectionFiles: [CollectedFile] = []
     var onQuickLook: ((FolderItem) -> Void)? = nil
     let onSelect: (FolderItem) -> Void
@@ -39,6 +40,7 @@ struct SearchResultsView: View {
                                     locationDetail: location(of: item),
                                     isSelected: selectedPaths.contains(item.path),
                                     showsDetailColumns: showsDetailColumns,
+                                    kindWidth: kindWidth,
                                     selectionFiles: selectionFiles,
                                     onQuickLook: onQuickLook,
                                     onSelect: { onSelect(item) },

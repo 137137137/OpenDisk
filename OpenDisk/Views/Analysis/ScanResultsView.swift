@@ -6,6 +6,7 @@ struct ScanResultsView<Header: View>: View {
     var selectedPaths: Set<String> = []
     var focusedPath: String? = nil
     var showsDetailColumns: Bool = true
+    var kindWidth: CGFloat? = nil
     var selectionFiles: [CollectedFile] = []
     var onQuickLook: ((FolderItem) -> Void)? = nil
     let onSelect: (FolderItem) -> Void
@@ -76,6 +77,7 @@ struct ScanResultsView<Header: View>: View {
                 isSelected: selectedPaths.contains(item.path)
                     || (item.path.hasPrefix("::") && focusedPath == item.path),
                 showsDetailColumns: showsDetailColumns,
+                kindWidth: kindWidth,
                 selectionFiles: selectionFiles,
                 sizeFraction: maxSize > 0 ? Double(item.size) / Double(maxSize) : nil,
                 onQuickLook: onQuickLook,

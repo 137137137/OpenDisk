@@ -8,6 +8,20 @@ enum FileColumns {
     static let size: CGFloat = 76
     static let bar: CGFloat = 48
     static let kind: CGFloat = 150
+    static let kindMin: CGFloat = 56
+
+    @MainActor
+    static func kindWidth(for items: [FolderItem], scale: ListScale) -> CGFloat {
+        var labels = Set<String>()
+        for item in items { labels.insert(FileKind.description(for: item)) }
+        let rowFont = NSFont.systemFont(ofSize: scale.fontSize)
+        let headerFont = NSFont.systemFont(ofSize: scale.headerFontSize, weight: .medium)
+        var widest = ("Kind" as NSString).size(withAttributes: [.font: headerFont]).width
+        for label in labels {
+            widest = max(widest, (label as NSString).size(withAttributes: [.font: rowFont]).width)
+        }
+        return min(scale.scaled(kind), max(scale.scaled(kindMin), widest.rounded(.up) + 4))
+    }
     static let inset: CGFloat = 8
     static let rowHeight: CGFloat = 28
     static let detailMinWidth: CGFloat = 460
@@ -81,6 +95,7 @@ struct FolderRowView: View {
     var locationDetail: String? = nil
     var isSelected: Bool = false
     var showsDetailColumns: Bool = true
+    var kindWidth: CGFloat? = nil
     var selectionFiles: [CollectedFile] = []
     var sizeFraction: Double? = nil
     var onQuickLook: ((FolderItem) -> Void)? = nil
@@ -175,7 +190,7 @@ struct FolderRowView: View {
                 Text(FileKind.description(for: item))
                     .lineLimit(1)
                     .foregroundStyle(secondaryStyle)
-                    .frame(width: scale.scaled(FileColumns.kind), alignment: .leading)
+                    .frame(width: kindWidth ?? scale.scaled(FileColumns.kind), alignment: .leading)
                     .help(FileKind.description(for: item))
             }
         }

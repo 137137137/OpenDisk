@@ -261,6 +261,7 @@ struct DiskAnalysisView: View {
     @ViewBuilder
     private var listPane: some View {
         let items = visibleItems
+        let kindWidth = FileColumns.kindWidth(for: items, scale: listScale)
         Group {
             if isSearchActive {
                 VStack(spacing: 0) {
@@ -276,6 +277,7 @@ struct DiskAnalysisView: View {
                         selectedPaths: selectedPaths,
                         focusedPath: selectionAnchor,
                         showsDetailColumns: showsDetailColumns,
+                        kindWidth: kindWidth,
                         selectionFiles: selectionFiles(in: items),
                         onQuickLook: quickLook,
                         onSelect: selectRow,
@@ -289,6 +291,7 @@ struct DiskAnalysisView: View {
                     selectedPaths: selectedPaths,
                     focusedPath: selectionAnchor,
                     showsDetailColumns: showsDetailColumns,
+                    kindWidth: kindWidth,
                     selectionFiles: selectionFiles(in: items),
                     onQuickLook: quickLook,
                     onSelect: selectRow,
@@ -296,7 +299,7 @@ struct DiskAnalysisView: View {
                 ) {
                     VStack(spacing: 0) {
                         pathBar
-                        columnHeader
+                        columnHeader(kindWidth: kindWidth)
                     }
                 }
                 .id(currentPath)
@@ -511,7 +514,7 @@ struct DiskAnalysisView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var columnHeader: some View {
+    private func columnHeader(kindWidth: CGFloat) -> some View {
         HStack(spacing: FileColumns.spacing) {
             Color.clear
                 .frame(width: listScale.icon, height: 1)
@@ -523,7 +526,7 @@ struct DiskAnalysisView: View {
                 .frame(width: listScale.scaled(FileColumns.bar), height: 1)
             if showsDetailColumns {
                 Text("Kind")
-                    .frame(width: listScale.scaled(FileColumns.kind), alignment: .leading)
+                    .frame(width: kindWidth, alignment: .leading)
             }
         }
         .font(.system(size: listScale.headerFontSize, weight: .medium))
