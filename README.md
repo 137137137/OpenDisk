@@ -68,7 +68,7 @@ Rescanning the same drive with OpenDisk is 20 to 28 times faster than the first 
 
 ## Build from source
 
-You need Xcode 26 or later.
+You need Xcode 16 or later. Xcode 26 or later enables the macOS 26 features (Liquid Glass, scroll edge effects).
 
 ```sh
 git clone https://github.com/137137137/OpenDisk.git
