@@ -324,6 +324,7 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/Sparkle.framework",
 			);
 			name = "Trim Sparkle";
 			outputFileListPaths = (
@@ -332,7 +333,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nFW=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Sparkle.framework\"\n[ -d \"$FW\" ] || exit 0\nrm -rf \"$FW/Versions/B/XPCServices\" \"$FW/XPCServices\"\nfind \"$FW/Versions/B/Resources\" -maxdepth 1 -name \"*.lproj\" ! -name \"en.lproj\" ! -name \"Base.lproj\" -exec rm -rf {} +\nif [ \"${CODE_SIGNING_ALLOWED}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY}\" ]; then\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --preserve-metadata=identifier,entitlements,flags,runtime --timestamp=none \"$FW\"\nfi\n";
+			shellScript = "set -e\n[ \"${CONFIGURATION}\" = \"Release\" ] || exit 0\nFW=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Sparkle.framework\"\n[ -d \"$FW\" ] || exit 0\nrm -rf \"$FW/Versions/B/XPCServices\" \"$FW/XPCServices\"\nfind \"$FW/Versions/B/Resources\" -maxdepth 1 -name \"*.lproj\" ! -name \"en.lproj\" ! -name \"Base.lproj\" -exec rm -rf {} +\nif [ \"${CODE_SIGNING_ALLOWED}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY}\" ]; then\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --preserve-metadata=identifier,entitlements,flags,runtime --timestamp=none \"$FW\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
