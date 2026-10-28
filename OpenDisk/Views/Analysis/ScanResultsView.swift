@@ -32,6 +32,7 @@ struct ScanResultsView<Header: View>: View {
 
     @ViewBuilder
     private var scrollContent: some View {
+        #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -44,18 +45,25 @@ struct ScanResultsView<Header: View>: View {
             }
             .scrollEdgeEffectStyle(.hard, for: .top)
         } else {
-            ScrollView {
-                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    Section {
-                        rows
-                    } header: {
-                        header
-                            .background(.background)
-                            .overlay(alignment: .bottom) { Divider() }
-                    }
+            pinnedHeaderScrollContent
+        }
+        #else
+        pinnedHeaderScrollContent
+        #endif
+    }
+
+    private var pinnedHeaderScrollContent: some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                Section {
+                    rows
+                } header: {
+                    header
+                        .background(.background)
+                        .overlay(alignment: .bottom) { Divider() }
                 }
-                .padding(.bottom, 4)
             }
+            .padding(.bottom, 4)
         }
     }
 
