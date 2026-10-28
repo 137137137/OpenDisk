@@ -9,7 +9,7 @@
 
 [![release](https://img.shields.io/github/release/137137137/OpenDisk.svg?style=flat)](https://github.com/137137137/OpenDisk/releases/latest)
 [![license](https://img.shields.io/github/license/137137137/OpenDisk.svg)](LICENSE)
-[![platform](https://img.shields.io/badge/macOS-15%2B-blue.svg?style=flat)](#install)
+[![platform](https://img.shields.io/badge/macOS-14%2B-blue.svg?style=flat)](#install)
 
 <a href="https://opendisk.app"><b>Download</b></a> &nbsp;·&nbsp;
 <a href="https://apps.apple.com/app/opendisk/id6793260558">Mac App Store</a> &nbsp;·&nbsp;
