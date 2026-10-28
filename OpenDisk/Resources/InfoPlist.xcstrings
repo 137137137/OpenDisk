@@ -1,0 +1,1679 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSAppleMusicUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقيس OpenDisk مقدار مساحة القرص التي يستخدمها كل مجلد على جهاز Mac. يتيح الوصول إلى مكتبة الموسيقى لـ OpenDisk تضمينها في تفصيل مساحة التخزين، فمثلًا يُظهر أن مكتبة الموسيقى تشغل 15 GB لتقرر ما تريد تنظيفه. يقرأ OpenDisk أسماء الملفات وأحجامها فقط، ولا يقوم أبدًا بتشغيل الموسيقى أو رفعها أو تعديلها."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesura quant espai de disc ocupa cada carpeta del Mac. L’accés a la biblioteca de música permet a OpenDisk incloure-la al desglossament de l’emmagatzematge; per exemple, pot mostrar que la biblioteca de Música ocupa 15 GB perquè decideixis què vols netejar. OpenDisk només llegeix els noms i les mides dels fitxers; mai no reprodueix, puja ni modifica la teva música."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk měří, kolik místa na disku zabírá každá složka na Macu. Přístup k vaší hudební knihovně umožní aplikaci OpenDisk zahrnout ji do přehledu úložiště – například ukázat, že knihovna Hudby zabírá 15 GB, abyste se mohli rozhodnout, co uklidit. OpenDisk čte jen názvy a velikosti souborů; vaši hudbu nikdy nepřehrává, neodesílá ani nemění."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler, hvor meget diskplads hver mappe på din Mac bruger. Med adgang til dit musikbibliotek kan OpenDisk medtage det i din lageroversigt – f.eks. at dit musikbibliotek fylder 15 GB, så du kan beslutte, hvad der skal ryddes op. OpenDisk læser kun filnavne og -størrelser og afspiller, uploader eller ændrer aldrig din musik."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misst, wie viel Speicherplatz jeder Ordner auf deinem Mac belegt. Mit Zugriff auf deine Musikmediathek kann OpenDisk sie in die Speicheraufschlüsselung einbeziehen – zum Beispiel, dass deine Musikmediathek 15 GB belegt, damit du entscheiden kannst, was du aufräumst. OpenDisk liest nur Dateinamen und -größen und spielt deine Musik niemals ab, lädt sie nicht hoch und ändert sie nicht."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το OpenDisk μετρά πόσο χώρο στον δίσκο χρησιμοποιεί κάθε φάκελος στο Mac σας. Η πρόσβαση στη μουσική βιβλιοθήκη σας επιτρέπει στο OpenDisk να τη συμπεριλάβει στην ανάλυση του αποθηκευτικού χώρου – για παράδειγμα, δείχνοντας ότι η βιβλιοθήκη Μουσικής καταλαμβάνει 15 GB, ώστε να αποφασίσετε τι θα καθαρίσετε. Το OpenDisk διαβάζει μόνο ονόματα και μεγέθη αρχείων· δεν αναπαράγει, δεν αποστέλλει και δεν τροποποιεί ποτέ τη μουσική σας."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your music library lets OpenDisk include it in your storage breakdown - for example, showing that your Music library takes up 15 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never plays, uploads, or modifies your music."
+          }
+        },
+        "en-AU" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your music library lets OpenDisk include it in your storage breakdown - for example, showing that your Music library takes up 15 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never plays, uploads, or modifies your music."
+          }
+        },
+        "en-GB" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your music library lets OpenDisk include it in your storage breakdown - for example, showing that your Music library takes up 15 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never plays, uploads, or modifies your music."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu biblioteca de música permite a OpenDisk incluirla en el desglose del almacenamiento; por ejemplo, para mostrar que tu biblioteca de Música ocupa 15 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca reproduce, sube ni modifica tu música."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu biblioteca de música permite que OpenDisk la incluya en el desglose del almacenamiento; por ejemplo, para mostrar que tu biblioteca de Música ocupa 15 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca reproduce, sube ni modifica tu música."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mittaa, kuinka paljon levytilaa kukin Macin kansio käyttää. Musiikkikirjaston käyttöoikeuden avulla OpenDisk voi sisällyttää sen tallennustilan erittelyyn – esimerkiksi näyttää, että Musiikki-kirjastosi vie 15 Gt, jotta voit päättää, mitä siivoat. OpenDisk lukee vain tiedostojen nimiä ja kokoja eikä koskaan toista, lähetä tai muokkaa musiikkiasi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre bibliothèque musicale permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre bibliothèque Musique occupe 15 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers ; il ne lance jamais la lecture de votre musique et ne la transfère ni ne la modifie."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre bibliothèque musicale permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre bibliothèque Musique occupe 15 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers; il ne lance jamais la lecture de votre musique et ne la transfère ni ne la modifie."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk מודד כמה שטח דיסק מנצלת כל תיקיה ב-Mac שלך. גישה לספריית המוזיקה מאפשרת ל-OpenDisk לכלול אותה בפירוט האחסון – למשל, להראות שספריית המוזיקה תופסת 15 GB, כדי לעזור לך להחליט מה לנקות. OpenDisk קורא רק שמות וגדלים של קבצים; הוא לעולם לא מנגן, מעלה או משנה את המוזיקה שלך."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk मापता है कि आपके Mac पर हर फ़ोल्डर कितना डिस्क स्पेस उपयोग करता है। आपकी म्यूज़िक लाइब्रेरी के ऐक्सेस से OpenDisk इसे आपके स्टोरेज विवरण में शामिल कर पाता है – उदाहरण के लिए, यह दिखाना कि आपकी म्यूज़िक लाइब्रेरी 15 GB लेती है, ताकि आप तय कर सकें कि क्या साफ़ करना है। OpenDisk केवल फ़ाइलों के नाम और आकार पढ़ता है; यह आपका म्यूज़िक कभी चलाता, अपलोड या संशोधित नहीं करता।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mjeri koliko prostora na disku zauzima svaka mapa na vašem Macu. Pristup glazbenoj knjižnici omogućuje aplikaciji OpenDisk da je uključi u pregled zauzeća – na primjer, da pokaže da knjižnica Glazbe zauzima 15 GB kako biste mogli odlučiti što očistiti. OpenDisk čita samo nazive i veličine datoteka; nikad ne reproducira, ne prenosi niti mijenja vašu glazbu."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenDisk megméri, hogy a Mac egyes mappái mennyi lemezterületet foglalnak. A zenei könyvtárhoz való hozzáféréssel az OpenDisk azt is belefoglalhatja a tárhely-kimutatásba – például megmutatja, hogy a Zene könyvtár 15 GB-ot foglal, így eldöntheti, mit takarít ki. Az OpenDisk csak a fájlneveket és -méreteket olvassa be; a zenéit soha nem játssza le, nem tölti fel és nem módosítja."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur berapa banyak ruang disk yang digunakan setiap folder di Mac Anda. Akses ke perpustakaan musik memungkinkan OpenDisk menyertakannya dalam rincian penyimpanan Anda – misalnya, menunjukkan bahwa perpustakaan Musik menggunakan 15 GB sehingga Anda dapat memutuskan apa yang perlu dibersihkan. OpenDisk hanya membaca nama dan ukuran file; OpenDisk tidak pernah memutar, mengunggah, atau mengubah musik Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misura lo spazio su disco occupato da ogni cartella del Mac. L’accesso alla libreria musicale consente a OpenDisk di includerla nella ripartizione dello spazio, ad esempio mostrando che la libreria di Musica occupa 15 GB, così puoi decidere cosa eliminare. OpenDisk legge solo i nomi e le dimensioni dei file; non riproduce, carica né modifica mai la tua musica."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk は、Mac 上の各フォルダが使用しているディスク容量を測定します。ミュージックライブラリへのアクセスを許可すると、OpenDisk はそれをストレージの内訳に含めることができます。たとえば、ミュージックライブラリが 15 GB を使用していることを表示し、何を整理するか判断するのに役立ちます。OpenDisk が読み取るのはファイル名とサイズのみで、ミュージックを再生、アップロード、変更することはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk는 Mac의 각 폴더가 사용하는 디스크 공간을 측정합니다. 음악 보관함에 접근하면 OpenDisk가 이를 저장 공간 분석에 포함할 수 있습니다. 예를 들어 음악 보관함이 15GB를 차지한다는 것을 보여 주어 무엇을 정리할지 결정할 수 있도록 돕습니다. OpenDisk는 파일 이름과 크기만 읽으며, 음악을 재생, 업로드 또는 수정하지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur jumlah ruang cakera yang digunakan oleh setiap folder pada Mac anda. Akses ke pustaka muzik membolehkan OpenDisk memasukkannya dalam pecahan storan anda – contohnya, menunjukkan bahawa pustaka Muzik anda menggunakan 15 GB supaya anda boleh memutuskan perkara yang perlu dibersihkan. OpenDisk hanya membaca nama dan saiz fail; OpenDisk tidak sesekali memainkan, memuat naik atau mengubah suai muzik anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler hvor mye diskplass hver mappe på Macen bruker. Med tilgang til musikkbiblioteket kan OpenDisk ta det med i lagringsoversikten – for eksempel at musikkbiblioteket tar opp 15 GB, slik at du kan bestemme hva du vil rydde opp i. OpenDisk leser bare filnavn og størrelser og spiller aldri av, laster opp eller endrer musikken din."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meet hoeveel schijfruimte elke map op je Mac gebruikt. Met toegang tot je muziekbibliotheek kan OpenDisk deze opnemen in je opslagoverzicht, bijvoorbeeld dat je muziekbibliotheek 15 GB inneemt, zodat je kunt bepalen wat je opruimt. OpenDisk leest alleen bestandsnamen en -groottes en zal je muziek nooit afspelen, uploaden of wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mierzy, ile miejsca na dysku zajmuje każdy katalog na Macu. Dostęp do biblioteki muzyki pozwala OpenDisk uwzględnić ją w zestawieniu zajętości — np. pokazać, że biblioteka Muzyki zajmuje 15 GB, aby łatwiej zdecydować, co usunąć. OpenDisk odczytuje tylko nazwy i wielkości plików; nigdy nie odtwarza, nie wysyła ani nie zmienia Twojej muzyki."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac usa. O acesso à sua biblioteca de música permite que o OpenDisk a inclua no detalhamento do armazenamento — por exemplo, mostrando que sua biblioteca do Música ocupa 15 GB para que você decida o que limpar. O OpenDisk só lê nomes e tamanhos de arquivos; ele nunca reproduz, envia nem modifica suas músicas."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac utiliza. O acesso à sua biblioteca de música permite ao OpenDisk incluí-la na discriminação do armazenamento; por exemplo, mostrando que a sua biblioteca da Música ocupa 15 GB para que possa decidir o que limpar. O OpenDisk só lê nomes e tamanhos de ficheiros; nunca reproduz, carrega nem modifica a sua música."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk măsoară cât spațiu pe disc ocupă fiecare dosar de pe Mac. Accesul la biblioteca muzicală îi permite lui OpenDisk să o includă în defalcarea spațiului de stocare – de exemplu, arătând că biblioteca Muzică ocupă 15 GB, ca să puteți decide ce să curățați. OpenDisk citește doar numele și dimensiunile fișierelor; nu redă, nu încarcă și nu modifică niciodată muzica dvs."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показывает, сколько места на диске занимает каждая папка на Mac. Доступ к медиатеке музыки позволяет OpenDisk учитывать ее при анализе хранилища — например, показать, что медиатека Музыки занимает 15 ГБ, чтобы вы решили, что очистить. OpenDisk считывает только имена и размеры файлов; программа никогда не воспроизводит, не отправляет и не изменяет вашу музыку."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meria, koľko miesta na disku zaberá každý priečinok na Macu. Prístup k hudobnej knižnici umožní aplikácii OpenDisk zahrnúť ju do prehľadu úložiska – napríklad ukázať, že knižnica Hudby zaberá 15 GB, aby ste sa mohli rozhodnúť, čo vyčistiť. OpenDisk číta iba názvy a veľkosti súborov; vašu hudbu nikdy neprehráva, neodosiela ani nemení."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mäter hur mycket skivutrymme varje mapp på din Mac använder. Med åtkomst till ditt musikbibliotek kan OpenDisk ta med det i lagringsöversikten – till exempel att ditt musikbibliotek tar upp 15 GB så att du kan bestämma vad du vill rensa. OpenDisk läser bara filnamn och storlekar och spelar aldrig upp, laddar upp eller ändrar din musik."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk วัดว่าแต่ละโฟลเดอร์บน Mac ของคุณใช้พื้นที่ดิสก์เท่าใด การเข้าถึงคลังเพลงช่วยให้ OpenDisk รวมคลังเพลงไว้ในรายละเอียดพื้นที่จัดเก็บของคุณ เช่น แสดงว่าคลังเพลงใช้พื้นที่ 15 GB เพื่อให้คุณตัดสินใจได้ว่าจะล้างอะไร OpenDisk อ่านเฉพาะชื่อและขนาดไฟล์ และจะไม่เล่น อัปโหลด หรือแก้ไขเพลงของคุณ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk, Mac’inizdeki her klasörün ne kadar disk alanı kullandığını ölçer. Müzik arşivinize erişim, OpenDisk’in onu depolama dökümünüze dahil etmesini sağlar; örneğin Müzik arşivinizin 15 GB yer kapladığını göstererek neyi temizleyeceğinize karar vermenize yardımcı olur. OpenDisk yalnızca dosya adlarını ve boyutlarını okur; müziğinizi asla çalmaz, karşıya yüklemez veya değiştirmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показує, скільки місця на диску займає кожна папка на Mac. Доступ до медіатеки музики дає змогу OpenDisk враховувати її в аналізі сховища — наприклад, показати, що медіатека Музики займає 15 ГБ, щоб ви вирішили, що очистити. OpenDisk зчитує лише назви й розміри файлів; програма ніколи не відтворює, не вивантажує й не змінює вашу музику."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk đo dung lượng ổ đĩa mà mỗi thư mục trên máy Mac sử dụng. Quyền truy cập thư viện nhạc cho phép OpenDisk đưa thư viện này vào bảng phân tích dung lượng – ví dụ: cho thấy thư viện Nhạc chiếm 15 GB để bạn quyết định cần dọn dẹp gì. OpenDisk chỉ đọc tên và kích thước tệp; ứng dụng không bao giờ phát, tải lên hay sửa đổi nhạc của bạn."
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個資料夾使用的磁碟空間。取用你的音樂資料庫後，OpenDisk 可將其納入儲存空間明細，例如顯示你的音樂資料庫佔用了 15 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會播放、上傳或修改你的音樂。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 会测量 Mac 上每个文件夹占用的磁盘空间。访问你的音乐资料库后，OpenDisk 可将其纳入存储空间明细，例如显示你的音乐资料库占用了 15 GB，以便你决定要清理哪些内容。OpenDisk 只读取文件名称和大小，绝不会播放、上传或修改你的音乐。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個檔案夾使用的磁碟空間。取用你的音樂資料庫後，OpenDisk 可將其納入儲存空間明細，例如顯示你的音樂資料庫佔用了 15 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會播放、上傳或修改你的音樂。"
+          }
+        }
+      }
+    },
+    "NSDesktopFolderUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقيس OpenDisk مقدار مساحة القرص التي يستخدمها كل مجلد على جهاز Mac. يتيح الوصول إلى مجلد سطح المكتب لـ OpenDisk تضمينه في تفصيل مساحة التخزين، فمثلًا يُظهر أن سطح المكتب يشغل 3 GB لتقرر ما تريد تنظيفه. يقرأ OpenDisk أسماء الملفات وأحجامها فقط، ولا يقوم أبدًا برفع ملفاتك أو تعديلها."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesura quant espai de disc ocupa cada carpeta del Mac. L’accés a la carpeta Escriptori permet a OpenDisk incloure-la al desglossament de l’emmagatzematge; per exemple, pot mostrar que l’escriptori ocupa 3 GB perquè decideixis què vols netejar. OpenDisk només llegeix els noms i les mides dels fitxers; mai no puja ni modifica els teus fitxers."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk měří, kolik místa na disku zabírá každá složka na Macu. Přístup ke složce Plocha umožní aplikaci OpenDisk zahrnout ji do přehledu úložiště – například ukázat, že Plocha zabírá 3 GB, abyste se mohli rozhodnout, co uklidit. OpenDisk čte jen názvy a velikosti souborů; vaše soubory nikdy neodesílá ani nemění."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler, hvor meget diskplads hver mappe på din Mac bruger. Med adgang til din skrivebordsmappe kan OpenDisk medtage den i din lageroversigt – f.eks. at dit skrivebord fylder 3 GB, så du kan beslutte, hvad der skal ryddes op. OpenDisk læser kun filnavne og -størrelser og uploader eller ændrer aldrig dine filer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misst, wie viel Speicherplatz jeder Ordner auf deinem Mac belegt. Mit Zugriff auf deinen Schreibtischordner kann OpenDisk ihn in die Speicheraufschlüsselung einbeziehen – zum Beispiel, dass dein Schreibtisch 3 GB belegt, damit du entscheiden kannst, was du aufräumst. OpenDisk liest nur Dateinamen und -größen und lädt deine Dateien niemals hoch oder ändert sie."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το OpenDisk μετρά πόσο χώρο στον δίσκο χρησιμοποιεί κάθε φάκελος στο Mac σας. Η πρόσβαση στον φάκελο «Γραφείο» επιτρέπει στο OpenDisk να τον συμπεριλάβει στην ανάλυση του αποθηκευτικού χώρου – για παράδειγμα, δείχνοντας ότι το Γραφείο καταλαμβάνει 3 GB, ώστε να αποφασίσετε τι θα καθαρίσετε. Το OpenDisk διαβάζει μόνο ονόματα και μεγέθη αρχείων· δεν αποστέλλει και δεν τροποποιεί ποτέ τα αρχεία σας."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Desktop folder lets OpenDisk include it in your storage breakdown - for example, showing that your Desktop takes up 3 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-AU" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Desktop folder lets OpenDisk include it in your storage breakdown - for example, showing that your Desktop takes up 3 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-GB" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Desktop folder lets OpenDisk include it in your storage breakdown - for example, showing that your Desktop takes up 3 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu carpeta Escritorio permite a OpenDisk incluirla en el desglose del almacenamiento; por ejemplo, para mostrar que tu Escritorio ocupa 3 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu carpeta Escritorio permite que OpenDisk la incluya en el desglose del almacenamiento; por ejemplo, para mostrar que tu Escritorio ocupa 3 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mittaa, kuinka paljon levytilaa kukin Macin kansio käyttää. Työpöytä-kansion käyttöoikeuden avulla OpenDisk voi sisällyttää sen tallennustilan erittelyyn – esimerkiksi näyttää, että työpöytäsi vie 3 Gt, jotta voit päättää, mitä siivoat. OpenDisk lukee vain tiedostojen nimiä ja kokoja eikä koskaan lähetä tai muokkaa tiedostojasi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre dossier Bureau permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre bureau occupe 3 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers ; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre dossier Bureau permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre bureau occupe 3 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk מודד כמה שטח דיסק מנצלת כל תיקיה ב-Mac שלך. גישה לתיקיית ”שולחן העבודה“ מאפשרת ל-OpenDisk לכלול אותה בפירוט האחסון – למשל, להראות ששולחן העבודה תופס 3 GB, כדי לעזור לך להחליט מה לנקות. OpenDisk קורא רק שמות וגדלים של קבצים; הוא לעולם לא מעלה או משנה את הקבצים שלך."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk मापता है कि आपके Mac पर हर फ़ोल्डर कितना डिस्क स्पेस उपयोग करता है। आपके डेस्कटॉप फ़ोल्डर के ऐक्सेस से OpenDisk इसे आपके स्टोरेज विवरण में शामिल कर पाता है – उदाहरण के लिए, यह दिखाना कि आपका डेस्कटॉप 3 GB लेता है, ताकि आप तय कर सकें कि क्या साफ़ करना है। OpenDisk केवल फ़ाइलों के नाम और आकार पढ़ता है; यह आपकी फ़ाइलें कभी अपलोड या संशोधित नहीं करता।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mjeri koliko prostora na disku zauzima svaka mapa na vašem Macu. Pristup mapi Radna površina omogućuje aplikaciji OpenDisk da je uključi u pregled zauzeća – na primjer, da pokaže da Radna površina zauzima 3 GB kako biste mogli odlučiti što očistiti. OpenDisk čita samo nazive i veličine datoteka; nikad ne prenosi niti mijenja vaše datoteke."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenDisk megméri, hogy a Mac egyes mappái mennyi lemezterületet foglalnak. Az Íróasztal mappához való hozzáféréssel az OpenDisk azt is belefoglalhatja a tárhely-kimutatásba – például megmutatja, hogy az Íróasztal 3 GB-ot foglal, így eldöntheti, mit takarít ki. Az OpenDisk csak a fájlneveket és -méreteket olvassa be; a fájljait soha nem tölti fel és nem módosítja."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur berapa banyak ruang disk yang digunakan setiap folder di Mac Anda. Akses ke folder Desktop memungkinkan OpenDisk menyertakannya dalam rincian penyimpanan Anda – misalnya, menunjukkan bahwa Desktop Anda menggunakan 3 GB sehingga Anda dapat memutuskan apa yang perlu dibersihkan. OpenDisk hanya membaca nama dan ukuran file; OpenDisk tidak pernah mengunggah atau mengubah file Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misura lo spazio su disco occupato da ogni cartella del Mac. L’accesso alla cartella Scrivania consente a OpenDisk di includerla nella ripartizione dello spazio, ad esempio mostrando che la Scrivania occupa 3 GB, così puoi decidere cosa eliminare. OpenDisk legge solo i nomi e le dimensioni dei file; non carica né modifica mai i tuoi file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk は、Mac 上の各フォルダが使用しているディスク容量を測定します。デスクトップフォルダへのアクセスを許可すると、OpenDisk はそれをストレージの内訳に含めることができます。たとえば、デスクトップが 3 GB を使用していることを表示し、何を整理するか判断するのに役立ちます。OpenDisk が読み取るのはファイル名とサイズのみで、ファイルをアップロードしたり変更したりすることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk는 Mac의 각 폴더가 사용하는 디스크 공간을 측정합니다. 데스크탑 폴더에 접근하면 OpenDisk가 이를 저장 공간 분석에 포함할 수 있습니다. 예를 들어 데스크탑이 3GB를 차지한다는 것을 보여 주어 무엇을 정리할지 결정할 수 있도록 돕습니다. OpenDisk는 파일 이름과 크기만 읽으며, 파일을 업로드하거나 수정하지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur jumlah ruang cakera yang digunakan oleh setiap folder pada Mac anda. Akses ke folder Desktop membolehkan OpenDisk memasukkannya dalam pecahan storan anda – contohnya, menunjukkan bahawa Desktop anda menggunakan 3 GB supaya anda boleh memutuskan perkara yang perlu dibersihkan. OpenDisk hanya membaca nama dan saiz fail; OpenDisk tidak sesekali memuat naik atau mengubah suai fail anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler hvor mye diskplass hver mappe på Macen bruker. Med tilgang til Skrivebord-mappen kan OpenDisk ta den med i lagringsoversikten – for eksempel at skrivebordet tar opp 3 GB, slik at du kan bestemme hva du vil rydde opp i. OpenDisk leser bare filnavn og størrelser og laster aldri opp eller endrer filene dine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meet hoeveel schijfruimte elke map op je Mac gebruikt. Met toegang tot je bureaubladmap kan OpenDisk deze opnemen in je opslagoverzicht, bijvoorbeeld dat je bureaublad 3 GB inneemt, zodat je kunt bepalen wat je opruimt. OpenDisk leest alleen bestandsnamen en -groottes en zal je bestanden nooit uploaden of wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mierzy, ile miejsca na dysku zajmuje każdy katalog na Macu. Dostęp do katalogu Biurko pozwala OpenDisk uwzględnić go w zestawieniu zajętości — np. pokazać, że Biurko zajmuje 3 GB, aby łatwiej zdecydować, co usunąć. OpenDisk odczytuje tylko nazwy i wielkości plików; nigdy nie wysyła ani nie zmienia Twoich plików."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac usa. O acesso à sua pasta Mesa permite que o OpenDisk a inclua no detalhamento do armazenamento — por exemplo, mostrando que sua Mesa ocupa 3 GB para que você decida o que limpar. O OpenDisk só lê nomes e tamanhos de arquivos; ele nunca envia nem modifica seus arquivos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac utiliza. O acesso à sua pasta Secretária permite ao OpenDisk incluí-la na discriminação do armazenamento; por exemplo, mostrando que a sua Secretária ocupa 3 GB para que possa decidir o que limpar. O OpenDisk só lê nomes e tamanhos de ficheiros; nunca carrega nem modifica os seus ficheiros."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk măsoară cât spațiu pe disc ocupă fiecare dosar de pe Mac. Accesul la dosarul Birou îi permite lui OpenDisk să îl includă în defalcarea spațiului de stocare – de exemplu, arătând că Biroul ocupă 3 GB, ca să puteți decide ce să curățați. OpenDisk citește doar numele și dimensiunile fișierelor; nu încarcă și nu modifică niciodată fișierele dvs."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показывает, сколько места на диске занимает каждая папка на Mac. Доступ к папке «Рабочий стол» позволяет OpenDisk учитывать ее при анализе хранилища — например, показать, что Рабочий стол занимает 3 ГБ, чтобы вы решили, что очистить. OpenDisk считывает только имена и размеры файлов; программа никогда не отправляет и не изменяет ваши файлы."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meria, koľko miesta na disku zaberá každý priečinok na Macu. Prístup k priečinku Plocha umožní aplikácii OpenDisk zahrnúť ho do prehľadu úložiska – napríklad ukázať, že Plocha zaberá 3 GB, aby ste sa mohli rozhodnúť, čo vyčistiť. OpenDisk číta iba názvy a veľkosti súborov; vaše súbory nikdy neodosiela ani nemení."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mäter hur mycket skivutrymme varje mapp på din Mac använder. Med åtkomst till din skrivbordsmapp kan OpenDisk ta med den i lagringsöversikten – till exempel att skrivbordet tar upp 3 GB så att du kan bestämma vad du vill rensa. OpenDisk läser bara filnamn och storlekar och laddar aldrig upp eller ändrar dina filer."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk วัดว่าแต่ละโฟลเดอร์บน Mac ของคุณใช้พื้นที่ดิสก์เท่าใด การเข้าถึงโฟลเดอร์เดสก์ท็อปช่วยให้ OpenDisk รวมโฟลเดอร์นี้ไว้ในรายละเอียดพื้นที่จัดเก็บของคุณ เช่น แสดงว่าเดสก์ท็อปใช้พื้นที่ 3 GB เพื่อให้คุณตัดสินใจได้ว่าจะล้างอะไร OpenDisk อ่านเฉพาะชื่อและขนาดไฟล์ และจะไม่อัปโหลดหรือแก้ไขไฟล์ของคุณ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk, Mac’inizdeki her klasörün ne kadar disk alanı kullandığını ölçer. Masaüstü klasörünüze erişim, OpenDisk’in onu depolama dökümünüze dahil etmesini sağlar; örneğin Masaüstünüzün 3 GB yer kapladığını göstererek neyi temizleyeceğinize karar vermenize yardımcı olur. OpenDisk yalnızca dosya adlarını ve boyutlarını okur; dosyalarınızı asla karşıya yüklemez veya değiştirmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показує, скільки місця на диску займає кожна папка на Mac. Доступ до папки «Робочий стіл» дає змогу OpenDisk враховувати її в аналізі сховища — наприклад, показати, що Робочий стіл займає 3 ГБ, щоб ви вирішили, що очистити. OpenDisk зчитує лише назви й розміри файлів; програма ніколи не вивантажує й не змінює ваші файли."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk đo dung lượng ổ đĩa mà mỗi thư mục trên máy Mac sử dụng. Quyền truy cập thư mục Màn hình nền cho phép OpenDisk đưa thư mục này vào bảng phân tích dung lượng – ví dụ: cho thấy Màn hình nền chiếm 3 GB để bạn quyết định cần dọn dẹp gì. OpenDisk chỉ đọc tên và kích thước tệp; ứng dụng không bao giờ tải lên hay sửa đổi tệp của bạn."
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個資料夾使用的磁碟空間。取用你的「桌面」資料夾後，OpenDisk 可將其納入儲存空間明細，例如顯示你的桌面佔用了 3 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 会测量 Mac 上每个文件夹占用的磁盘空间。访问你的“桌面”文件夹后，OpenDisk 可将其纳入存储空间明细，例如显示你的桌面占用了 3 GB，以便你决定要清理哪些内容。OpenDisk 只读取文件名称和大小，绝不会上传或修改你的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個檔案夾使用的磁碟空間。取用你的「桌面」檔案夾後，OpenDisk 可將其納入儲存空間明細，例如顯示你的桌面佔用了 3 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        }
+      }
+    },
+    "NSDocumentsFolderUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقيس OpenDisk مقدار مساحة القرص التي يستخدمها كل مجلد على جهاز Mac. يتيح الوصول إلى مجلد المستندات لـ OpenDisk تضمينه في تفصيل مساحة التخزين، فمثلًا يُظهر أن مجلد المستندات يشغل 10 GB لتقرر ما تريد تنظيفه. يقرأ OpenDisk أسماء الملفات وأحجامها فقط، ولا يقوم أبدًا برفع ملفاتك أو تعديلها."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesura quant espai de disc ocupa cada carpeta del Mac. L’accés a la carpeta Documents permet a OpenDisk incloure-la al desglossament de l’emmagatzematge; per exemple, pot mostrar que la carpeta Documents ocupa 10 GB perquè decideixis què vols netejar. OpenDisk només llegeix els noms i les mides dels fitxers; mai no puja ni modifica els teus fitxers."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk měří, kolik místa na disku zabírá každá složka na Macu. Přístup ke složce Dokumenty umožní aplikaci OpenDisk zahrnout ji do přehledu úložiště – například ukázat, že složka Dokumenty zabírá 10 GB, abyste se mohli rozhodnout, co uklidit. OpenDisk čte jen názvy a velikosti souborů; vaše soubory nikdy neodesílá ani nemění."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler, hvor meget diskplads hver mappe på din Mac bruger. Med adgang til din mappe Dokumenter kan OpenDisk medtage den i din lageroversigt – f.eks. at din mappe Dokumenter fylder 10 GB, så du kan beslutte, hvad der skal ryddes op. OpenDisk læser kun filnavne og -størrelser og uploader eller ændrer aldrig dine filer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misst, wie viel Speicherplatz jeder Ordner auf deinem Mac belegt. Mit Zugriff auf deinen Ordner „Dokumente“ kann OpenDisk ihn in die Speicheraufschlüsselung einbeziehen – zum Beispiel, dass dein Ordner „Dokumente“ 10 GB belegt, damit du entscheiden kannst, was du aufräumst. OpenDisk liest nur Dateinamen und -größen und lädt deine Dateien niemals hoch oder ändert sie."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το OpenDisk μετρά πόσο χώρο στον δίσκο χρησιμοποιεί κάθε φάκελος στο Mac σας. Η πρόσβαση στον φάκελο «Έγγραφα» επιτρέπει στο OpenDisk να τον συμπεριλάβει στην ανάλυση του αποθηκευτικού χώρου – για παράδειγμα, δείχνοντας ότι ο φάκελος «Έγγραφα» καταλαμβάνει 10 GB, ώστε να αποφασίσετε τι θα καθαρίσετε. Το OpenDisk διαβάζει μόνο ονόματα και μεγέθη αρχείων· δεν αποστέλλει και δεν τροποποιεί ποτέ τα αρχεία σας."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Documents folder lets OpenDisk include it in your storage breakdown - for example, showing that your Documents folder takes up 10 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-AU" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Documents folder lets OpenDisk include it in your storage breakdown - for example, showing that your Documents folder takes up 10 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-GB" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Documents folder lets OpenDisk include it in your storage breakdown - for example, showing that your Documents folder takes up 10 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu carpeta Documentos permite a OpenDisk incluirla en el desglose del almacenamiento; por ejemplo, para mostrar que tu carpeta Documentos ocupa 10 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu carpeta Documentos permite que OpenDisk la incluya en el desglose del almacenamiento; por ejemplo, para mostrar que tu carpeta Documentos ocupa 10 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mittaa, kuinka paljon levytilaa kukin Macin kansio käyttää. Dokumentit-kansion käyttöoikeuden avulla OpenDisk voi sisällyttää sen tallennustilan erittelyyn – esimerkiksi näyttää, että Dokumentit-kansiosi vie 10 Gt, jotta voit päättää, mitä siivoat. OpenDisk lukee vain tiedostojen nimiä ja kokoja eikä koskaan lähetä tai muokkaa tiedostojasi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre dossier Documents permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre dossier Documents occupe 10 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers ; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre dossier Documents permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre dossier Documents occupe 10 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk מודד כמה שטח דיסק מנצלת כל תיקיה ב-Mac שלך. גישה לתיקיית ”מסמכים“ מאפשרת ל-OpenDisk לכלול אותה בפירוט האחסון – למשל, להראות שתיקיית ”מסמכים“ תופסת 10 GB, כדי לעזור לך להחליט מה לנקות. OpenDisk קורא רק שמות וגדלים של קבצים; הוא לעולם לא מעלה או משנה את הקבצים שלך."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk मापता है कि आपके Mac पर हर फ़ोल्डर कितना डिस्क स्पेस उपयोग करता है। आपके दस्तावेज़ फ़ोल्डर के ऐक्सेस से OpenDisk इसे आपके स्टोरेज विवरण में शामिल कर पाता है – उदाहरण के लिए, यह दिखाना कि आपका दस्तावेज़ फ़ोल्डर 10 GB लेता है, ताकि आप तय कर सकें कि क्या साफ़ करना है। OpenDisk केवल फ़ाइलों के नाम और आकार पढ़ता है; यह आपकी फ़ाइलें कभी अपलोड या संशोधित नहीं करता।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mjeri koliko prostora na disku zauzima svaka mapa na vašem Macu. Pristup mapi Dokumenti omogućuje aplikaciji OpenDisk da je uključi u pregled zauzeća – na primjer, da pokaže da mapa Dokumenti zauzima 10 GB kako biste mogli odlučiti što očistiti. OpenDisk čita samo nazive i veličine datoteka; nikad ne prenosi niti mijenja vaše datoteke."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenDisk megméri, hogy a Mac egyes mappái mennyi lemezterületet foglalnak. A Dokumentumok mappához való hozzáféréssel az OpenDisk azt is belefoglalhatja a tárhely-kimutatásba – például megmutatja, hogy a Dokumentumok mappa 10 GB-ot foglal, így eldöntheti, mit takarít ki. Az OpenDisk csak a fájlneveket és -méreteket olvassa be; a fájljait soha nem tölti fel és nem módosítja."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur berapa banyak ruang disk yang digunakan setiap folder di Mac Anda. Akses ke folder Dokumen memungkinkan OpenDisk menyertakannya dalam rincian penyimpanan Anda – misalnya, menunjukkan bahwa folder Dokumen Anda menggunakan 10 GB sehingga Anda dapat memutuskan apa yang perlu dibersihkan. OpenDisk hanya membaca nama dan ukuran file; OpenDisk tidak pernah mengunggah atau mengubah file Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misura lo spazio su disco occupato da ogni cartella del Mac. L’accesso alla cartella Documenti consente a OpenDisk di includerla nella ripartizione dello spazio, ad esempio mostrando che la cartella Documenti occupa 10 GB, così puoi decidere cosa eliminare. OpenDisk legge solo i nomi e le dimensioni dei file; non carica né modifica mai i tuoi file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk は、Mac 上の各フォルダが使用しているディスク容量を測定します。書類フォルダへのアクセスを許可すると、OpenDisk はそれをストレージの内訳に含めることができます。たとえば、書類フォルダが 10 GB を使用していることを表示し、何を整理するか判断するのに役立ちます。OpenDisk が読み取るのはファイル名とサイズのみで、ファイルをアップロードしたり変更したりすることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk는 Mac의 각 폴더가 사용하는 디스크 공간을 측정합니다. 문서 폴더에 접근하면 OpenDisk가 이를 저장 공간 분석에 포함할 수 있습니다. 예를 들어 문서 폴더가 10GB를 차지한다는 것을 보여 주어 무엇을 정리할지 결정할 수 있도록 돕습니다. OpenDisk는 파일 이름과 크기만 읽으며, 파일을 업로드하거나 수정하지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur jumlah ruang cakera yang digunakan oleh setiap folder pada Mac anda. Akses ke folder Dokumen membolehkan OpenDisk memasukkannya dalam pecahan storan anda – contohnya, menunjukkan bahawa folder Dokumen anda menggunakan 10 GB supaya anda boleh memutuskan perkara yang perlu dibersihkan. OpenDisk hanya membaca nama dan saiz fail; OpenDisk tidak sesekali memuat naik atau mengubah suai fail anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler hvor mye diskplass hver mappe på Macen bruker. Med tilgang til Dokumenter-mappen kan OpenDisk ta den med i lagringsoversikten – for eksempel at Dokumenter-mappen tar opp 10 GB, slik at du kan bestemme hva du vil rydde opp i. OpenDisk leser bare filnavn og størrelser og laster aldri opp eller endrer filene dine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meet hoeveel schijfruimte elke map op je Mac gebruikt. Met toegang tot je map Documenten kan OpenDisk deze opnemen in je opslagoverzicht, bijvoorbeeld dat je map Documenten 10 GB inneemt, zodat je kunt bepalen wat je opruimt. OpenDisk leest alleen bestandsnamen en -groottes en zal je bestanden nooit uploaden of wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mierzy, ile miejsca na dysku zajmuje każdy katalog na Macu. Dostęp do katalogu Dokumenty pozwala OpenDisk uwzględnić go w zestawieniu zajętości — np. pokazać, że katalog Dokumenty zajmuje 10 GB, aby łatwiej zdecydować, co usunąć. OpenDisk odczytuje tylko nazwy i wielkości plików; nigdy nie wysyła ani nie zmienia Twoich plików."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac usa. O acesso à sua pasta Documentos permite que o OpenDisk a inclua no detalhamento do armazenamento — por exemplo, mostrando que sua pasta Documentos ocupa 10 GB para que você decida o que limpar. O OpenDisk só lê nomes e tamanhos de arquivos; ele nunca envia nem modifica seus arquivos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac utiliza. O acesso à sua pasta Documentos permite ao OpenDisk incluí-la na discriminação do armazenamento; por exemplo, mostrando que a sua pasta Documentos ocupa 10 GB para que possa decidir o que limpar. O OpenDisk só lê nomes e tamanhos de ficheiros; nunca carrega nem modifica os seus ficheiros."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk măsoară cât spațiu pe disc ocupă fiecare dosar de pe Mac. Accesul la dosarul Documente îi permite lui OpenDisk să îl includă în defalcarea spațiului de stocare – de exemplu, arătând că dosarul Documente ocupă 10 GB, ca să puteți decide ce să curățați. OpenDisk citește doar numele și dimensiunile fișierelor; nu încarcă și nu modifică niciodată fișierele dvs."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показывает, сколько места на диске занимает каждая папка на Mac. Доступ к папке «Документы» позволяет OpenDisk учитывать ее при анализе хранилища — например, показать, что папка «Документы» занимает 10 ГБ, чтобы вы решили, что очистить. OpenDisk считывает только имена и размеры файлов; программа никогда не отправляет и не изменяет ваши файлы."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meria, koľko miesta na disku zaberá každý priečinok na Macu. Prístup k priečinku Dokumenty umožní aplikácii OpenDisk zahrnúť ho do prehľadu úložiska – napríklad ukázať, že priečinok Dokumenty zaberá 10 GB, aby ste sa mohli rozhodnúť, čo vyčistiť. OpenDisk číta iba názvy a veľkosti súborov; vaše súbory nikdy neodosiela ani nemení."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mäter hur mycket skivutrymme varje mapp på din Mac använder. Med åtkomst till mappen Dokument kan OpenDisk ta med den i lagringsöversikten – till exempel att mappen Dokument tar upp 10 GB så att du kan bestämma vad du vill rensa. OpenDisk läser bara filnamn och storlekar och laddar aldrig upp eller ändrar dina filer."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk วัดว่าแต่ละโฟลเดอร์บน Mac ของคุณใช้พื้นที่ดิสก์เท่าใด การเข้าถึงโฟลเดอร์เอกสารช่วยให้ OpenDisk รวมโฟลเดอร์นี้ไว้ในรายละเอียดพื้นที่จัดเก็บของคุณ เช่น แสดงว่าโฟลเดอร์เอกสารใช้พื้นที่ 10 GB เพื่อให้คุณตัดสินใจได้ว่าจะล้างอะไร OpenDisk อ่านเฉพาะชื่อและขนาดไฟล์ และจะไม่อัปโหลดหรือแก้ไขไฟล์ของคุณ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk, Mac’inizdeki her klasörün ne kadar disk alanı kullandığını ölçer. Belgeler klasörünüze erişim, OpenDisk’in onu depolama dökümünüze dahil etmesini sağlar; örneğin Belgeler klasörünüzün 10 GB yer kapladığını göstererek neyi temizleyeceğinize karar vermenize yardımcı olur. OpenDisk yalnızca dosya adlarını ve boyutlarını okur; dosyalarınızı asla karşıya yüklemez veya değiştirmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показує, скільки місця на диску займає кожна папка на Mac. Доступ до папки «Документи» дає змогу OpenDisk враховувати її в аналізі сховища — наприклад, показати, що папка «Документи» займає 10 ГБ, щоб ви вирішили, що очистити. OpenDisk зчитує лише назви й розміри файлів; програма ніколи не вивантажує й не змінює ваші файли."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk đo dung lượng ổ đĩa mà mỗi thư mục trên máy Mac sử dụng. Quyền truy cập thư mục Tài liệu cho phép OpenDisk đưa thư mục này vào bảng phân tích dung lượng – ví dụ: cho thấy thư mục Tài liệu chiếm 10 GB để bạn quyết định cần dọn dẹp gì. OpenDisk chỉ đọc tên và kích thước tệp; ứng dụng không bao giờ tải lên hay sửa đổi tệp của bạn."
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個資料夾使用的磁碟空間。取用你的「文件」資料夾後，OpenDisk 可將其納入儲存空間明細，例如顯示你的「文件」資料夾佔用了 10 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 会测量 Mac 上每个文件夹占用的磁盘空间。访问你的“文稿”文件夹后，OpenDisk 可将其纳入存储空间明细，例如显示你的“文稿”文件夹占用了 10 GB，以便你决定要清理哪些内容。OpenDisk 只读取文件名称和大小，绝不会上传或修改你的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個檔案夾使用的磁碟空間。取用你的「文件」檔案夾後，OpenDisk 可將其納入儲存空間明細，例如顯示你的「文件」檔案夾佔用了 10 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        }
+      }
+    },
+    "NSDownloadsFolderUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقيس OpenDisk مقدار مساحة القرص التي يستخدمها كل مجلد على جهاز Mac. يتيح الوصول إلى مجلد التنزيلات لـ OpenDisk تضمينه في تفصيل مساحة التخزين، فمثلًا يُظهر أن مجلد التنزيلات يشغل 8 GB لتقرر ما تريد تنظيفه. يقرأ OpenDisk أسماء الملفات وأحجامها فقط، ولا يقوم أبدًا برفع ملفاتك أو تعديلها."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesura quant espai de disc ocupa cada carpeta del Mac. L’accés a la carpeta Descàrregues permet a OpenDisk incloure-la al desglossament de l’emmagatzematge; per exemple, pot mostrar que la carpeta Descàrregues ocupa 8 GB perquè decideixis què vols netejar. OpenDisk només llegeix els noms i les mides dels fitxers; mai no puja ni modifica els teus fitxers."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk měří, kolik místa na disku zabírá každá složka na Macu. Přístup ke složce Stahování umožní aplikaci OpenDisk zahrnout ji do přehledu úložiště – například ukázat, že složka Stahování zabírá 8 GB, abyste se mohli rozhodnout, co uklidit. OpenDisk čte jen názvy a velikosti souborů; vaše soubory nikdy neodesílá ani nemění."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler, hvor meget diskplads hver mappe på din Mac bruger. Med adgang til din mappe Overførsler kan OpenDisk medtage den i din lageroversigt – f.eks. at din mappe Overførsler fylder 8 GB, så du kan beslutte, hvad der skal ryddes op. OpenDisk læser kun filnavne og -størrelser og uploader eller ændrer aldrig dine filer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misst, wie viel Speicherplatz jeder Ordner auf deinem Mac belegt. Mit Zugriff auf deinen Ordner „Downloads“ kann OpenDisk ihn in die Speicheraufschlüsselung einbeziehen – zum Beispiel, dass dein Ordner „Downloads“ 8 GB belegt, damit du entscheiden kannst, was du aufräumst. OpenDisk liest nur Dateinamen und -größen und lädt deine Dateien niemals hoch oder ändert sie."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το OpenDisk μετρά πόσο χώρο στον δίσκο χρησιμοποιεί κάθε φάκελος στο Mac σας. Η πρόσβαση στον φάκελο «Λήψεις» επιτρέπει στο OpenDisk να τον συμπεριλάβει στην ανάλυση του αποθηκευτικού χώρου – για παράδειγμα, δείχνοντας ότι ο φάκελος «Λήψεις» καταλαμβάνει 8 GB, ώστε να αποφασίσετε τι θα καθαρίσετε. Το OpenDisk διαβάζει μόνο ονόματα και μεγέθη αρχείων· δεν αποστέλλει και δεν τροποποιεί ποτέ τα αρχεία σας."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Downloads folder lets OpenDisk include it in your storage breakdown - for example, showing that your Downloads folder takes up 8 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-AU" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Downloads folder lets OpenDisk include it in your storage breakdown - for example, showing that your Downloads folder takes up 8 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-GB" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your Downloads folder lets OpenDisk include it in your storage breakdown - for example, showing that your Downloads folder takes up 8 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu carpeta Descargas permite a OpenDisk incluirla en el desglose del almacenamiento; por ejemplo, para mostrar que tu carpeta Descargas ocupa 8 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu carpeta Descargas permite que OpenDisk la incluya en el desglose del almacenamiento; por ejemplo, para mostrar que tu carpeta Descargas ocupa 8 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mittaa, kuinka paljon levytilaa kukin Macin kansio käyttää. Lataukset-kansion käyttöoikeuden avulla OpenDisk voi sisällyttää sen tallennustilan erittelyyn – esimerkiksi näyttää, että Lataukset-kansiosi vie 8 Gt, jotta voit päättää, mitä siivoat. OpenDisk lukee vain tiedostojen nimiä ja kokoja eikä koskaan lähetä tai muokkaa tiedostojasi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre dossier Téléchargements permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre dossier Téléchargements occupe 8 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers ; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre dossier Téléchargements permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre dossier Téléchargements occupe 8 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk מודד כמה שטח דיסק מנצלת כל תיקיה ב-Mac שלך. גישה לתיקיית ”הורדות“ מאפשרת ל-OpenDisk לכלול אותה בפירוט האחסון – למשל, להראות שתיקיית ”הורדות“ תופסת 8 GB, כדי לעזור לך להחליט מה לנקות. OpenDisk קורא רק שמות וגדלים של קבצים; הוא לעולם לא מעלה או משנה את הקבצים שלך."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk मापता है कि आपके Mac पर हर फ़ोल्डर कितना डिस्क स्पेस उपयोग करता है। आपके डाउनलोड्स फ़ोल्डर के ऐक्सेस से OpenDisk इसे आपके स्टोरेज विवरण में शामिल कर पाता है – उदाहरण के लिए, यह दिखाना कि आपका डाउनलोड्स फ़ोल्डर 8 GB लेता है, ताकि आप तय कर सकें कि क्या साफ़ करना है। OpenDisk केवल फ़ाइलों के नाम और आकार पढ़ता है; यह आपकी फ़ाइलें कभी अपलोड या संशोधित नहीं करता।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mjeri koliko prostora na disku zauzima svaka mapa na vašem Macu. Pristup mapi Preuzimanja omogućuje aplikaciji OpenDisk da je uključi u pregled zauzeća – na primjer, da pokaže da mapa Preuzimanja zauzima 8 GB kako biste mogli odlučiti što očistiti. OpenDisk čita samo nazive i veličine datoteka; nikad ne prenosi niti mijenja vaše datoteke."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenDisk megméri, hogy a Mac egyes mappái mennyi lemezterületet foglalnak. A Letöltések mappához való hozzáféréssel az OpenDisk azt is belefoglalhatja a tárhely-kimutatásba – például megmutatja, hogy a Letöltések mappa 8 GB-ot foglal, így eldöntheti, mit takarít ki. Az OpenDisk csak a fájlneveket és -méreteket olvassa be; a fájljait soha nem tölti fel és nem módosítja."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur berapa banyak ruang disk yang digunakan setiap folder di Mac Anda. Akses ke folder Unduhan memungkinkan OpenDisk menyertakannya dalam rincian penyimpanan Anda – misalnya, menunjukkan bahwa folder Unduhan Anda menggunakan 8 GB sehingga Anda dapat memutuskan apa yang perlu dibersihkan. OpenDisk hanya membaca nama dan ukuran file; OpenDisk tidak pernah mengunggah atau mengubah file Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misura lo spazio su disco occupato da ogni cartella del Mac. L’accesso alla cartella Download consente a OpenDisk di includerla nella ripartizione dello spazio, ad esempio mostrando che la cartella Download occupa 8 GB, così puoi decidere cosa eliminare. OpenDisk legge solo i nomi e le dimensioni dei file; non carica né modifica mai i tuoi file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk は、Mac 上の各フォルダが使用しているディスク容量を測定します。ダウンロードフォルダへのアクセスを許可すると、OpenDisk はそれをストレージの内訳に含めることができます。たとえば、ダウンロードフォルダが 8 GB を使用していることを表示し、何を整理するか判断するのに役立ちます。OpenDisk が読み取るのはファイル名とサイズのみで、ファイルをアップロードしたり変更したりすることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk는 Mac의 각 폴더가 사용하는 디스크 공간을 측정합니다. 다운로드 폴더에 접근하면 OpenDisk가 이를 저장 공간 분석에 포함할 수 있습니다. 예를 들어 다운로드 폴더가 8GB를 차지한다는 것을 보여 주어 무엇을 정리할지 결정할 수 있도록 돕습니다. OpenDisk는 파일 이름과 크기만 읽으며, 파일을 업로드하거나 수정하지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur jumlah ruang cakera yang digunakan oleh setiap folder pada Mac anda. Akses ke folder Muat Turun membolehkan OpenDisk memasukkannya dalam pecahan storan anda – contohnya, menunjukkan bahawa folder Muat Turun anda menggunakan 8 GB supaya anda boleh memutuskan perkara yang perlu dibersihkan. OpenDisk hanya membaca nama dan saiz fail; OpenDisk tidak sesekali memuat naik atau mengubah suai fail anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler hvor mye diskplass hver mappe på Macen bruker. Med tilgang til Nedlastinger-mappen kan OpenDisk ta den med i lagringsoversikten – for eksempel at Nedlastinger-mappen tar opp 8 GB, slik at du kan bestemme hva du vil rydde opp i. OpenDisk leser bare filnavn og størrelser og laster aldri opp eller endrer filene dine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meet hoeveel schijfruimte elke map op je Mac gebruikt. Met toegang tot je map Downloads kan OpenDisk deze opnemen in je opslagoverzicht, bijvoorbeeld dat je map Downloads 8 GB inneemt, zodat je kunt bepalen wat je opruimt. OpenDisk leest alleen bestandsnamen en -groottes en zal je bestanden nooit uploaden of wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mierzy, ile miejsca na dysku zajmuje każdy katalog na Macu. Dostęp do katalogu Pobrane pozwala OpenDisk uwzględnić go w zestawieniu zajętości — np. pokazać, że katalog Pobrane zajmuje 8 GB, aby łatwiej zdecydować, co usunąć. OpenDisk odczytuje tylko nazwy i wielkości plików; nigdy nie wysyła ani nie zmienia Twoich plików."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac usa. O acesso à sua pasta Downloads permite que o OpenDisk a inclua no detalhamento do armazenamento — por exemplo, mostrando que sua pasta Downloads ocupa 8 GB para que você decida o que limpar. O OpenDisk só lê nomes e tamanhos de arquivos; ele nunca envia nem modifica seus arquivos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac utiliza. O acesso à sua pasta Transferências permite ao OpenDisk incluí-la na discriminação do armazenamento; por exemplo, mostrando que a sua pasta Transferências ocupa 8 GB para que possa decidir o que limpar. O OpenDisk só lê nomes e tamanhos de ficheiros; nunca carrega nem modifica os seus ficheiros."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk măsoară cât spațiu pe disc ocupă fiecare dosar de pe Mac. Accesul la dosarul Descărcări îi permite lui OpenDisk să îl includă în defalcarea spațiului de stocare – de exemplu, arătând că dosarul Descărcări ocupă 8 GB, ca să puteți decide ce să curățați. OpenDisk citește doar numele și dimensiunile fișierelor; nu încarcă și nu modifică niciodată fișierele dvs."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показывает, сколько места на диске занимает каждая папка на Mac. Доступ к папке «Загрузки» позволяет OpenDisk учитывать ее при анализе хранилища — например, показать, что папка «Загрузки» занимает 8 ГБ, чтобы вы решили, что очистить. OpenDisk считывает только имена и размеры файлов; программа никогда не отправляет и не изменяет ваши файлы."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meria, koľko miesta na disku zaberá každý priečinok na Macu. Prístup k priečinku Stiahnuté umožní aplikácii OpenDisk zahrnúť ho do prehľadu úložiska – napríklad ukázať, že priečinok Stiahnuté zaberá 8 GB, aby ste sa mohli rozhodnúť, čo vyčistiť. OpenDisk číta iba názvy a veľkosti súborov; vaše súbory nikdy neodosiela ani nemení."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mäter hur mycket skivutrymme varje mapp på din Mac använder. Med åtkomst till mappen Hämtade filer kan OpenDisk ta med den i lagringsöversikten – till exempel att mappen Hämtade filer tar upp 8 GB så att du kan bestämma vad du vill rensa. OpenDisk läser bara filnamn och storlekar och laddar aldrig upp eller ändrar dina filer."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk วัดว่าแต่ละโฟลเดอร์บน Mac ของคุณใช้พื้นที่ดิสก์เท่าใด การเข้าถึงโฟลเดอร์ดาวน์โหลดช่วยให้ OpenDisk รวมโฟลเดอร์นี้ไว้ในรายละเอียดพื้นที่จัดเก็บของคุณ เช่น แสดงว่าโฟลเดอร์ดาวน์โหลดใช้พื้นที่ 8 GB เพื่อให้คุณตัดสินใจได้ว่าจะล้างอะไร OpenDisk อ่านเฉพาะชื่อและขนาดไฟล์ และจะไม่อัปโหลดหรือแก้ไขไฟล์ของคุณ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk, Mac’inizdeki her klasörün ne kadar disk alanı kullandığını ölçer. İndirilenler klasörünüze erişim, OpenDisk’in onu depolama dökümünüze dahil etmesini sağlar; örneğin İndirilenler klasörünüzün 8 GB yer kapladığını göstererek neyi temizleyeceğinize karar vermenize yardımcı olur. OpenDisk yalnızca dosya adlarını ve boyutlarını okur; dosyalarınızı asla karşıya yüklemez veya değiştirmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показує, скільки місця на диску займає кожна папка на Mac. Доступ до папки «Завантаження» дає змогу OpenDisk враховувати її в аналізі сховища — наприклад, показати, що папка «Завантаження» займає 8 ГБ, щоб ви вирішили, що очистити. OpenDisk зчитує лише назви й розміри файлів; програма ніколи не вивантажує й не змінює ваші файли."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk đo dung lượng ổ đĩa mà mỗi thư mục trên máy Mac sử dụng. Quyền truy cập thư mục Tải về cho phép OpenDisk đưa thư mục này vào bảng phân tích dung lượng – ví dụ: cho thấy thư mục Tải về chiếm 8 GB để bạn quyết định cần dọn dẹp gì. OpenDisk chỉ đọc tên và kích thước tệp; ứng dụng không bao giờ tải lên hay sửa đổi tệp của bạn."
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個資料夾使用的磁碟空間。取用你的「下載項目」資料夾後，OpenDisk 可將其納入儲存空間明細，例如顯示你的「下載項目」資料夾佔用了 8 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 会测量 Mac 上每个文件夹占用的磁盘空间。访问你的“下载”文件夹后，OpenDisk 可将其纳入存储空间明细，例如显示你的“下载”文件夹占用了 8 GB，以便你决定要清理哪些内容。OpenDisk 只读取文件名称和大小，绝不会上传或修改你的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個檔案夾使用的磁碟空間。取用你的「下載項目」檔案夾後，OpenDisk 可將其納入儲存空間明細，例如顯示你的「下載項目」檔案夾佔用了 8 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        }
+      }
+    },
+    "NSNetworkVolumesUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقيس OpenDisk مقدار مساحة القرص التي يستخدمها كل مجلد. يتيح الوصول إلى وحدات تخزين الشبكة لـ OpenDisk فحص الأقراص التي تتصل بها عبر الشبكة، فمثلًا يُظهر أن مشاركة NAS تحتوي على 500 GB من النسخ الاحتياطية. يقرأ OpenDisk أسماء الملفات وأحجامها فقط، ولا يقوم أبدًا برفع ملفاتك أو تعديلها."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesura quant espai de disc ocupa cada carpeta. L’accés als volums de xarxa permet a OpenDisk analitzar les unitats que connectes per la xarxa; per exemple, pot mostrar que una carpeta compartida d’un NAS conté 500 GB de còpies de seguretat. OpenDisk només llegeix els noms i les mides dels fitxers; mai no puja ni modifica els teus fitxers."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk měří, kolik místa na disku zabírá každá složka. Přístup k síťovým svazkům umožní aplikaci OpenDisk skenovat disky připojené přes síť – například ukázat, že sdílená složka na NAS obsahuje 500 GB záloh. OpenDisk čte jen názvy a velikosti souborů; vaše soubory nikdy neodesílá ani nemění."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler, hvor meget diskplads hver mappe bruger. Med adgang til netværksenheder kan OpenDisk scanne drev, du forbinder til via netværket – f.eks. at en NAS-deling indeholder 500 GB sikkerhedskopier. OpenDisk læser kun filnavne og -størrelser og uploader eller ændrer aldrig dine filer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misst, wie viel Speicherplatz jeder Ordner belegt. Mit Zugriff auf Netzwerkvolumes kann OpenDisk Laufwerke scannen, die du über das Netzwerk verbindest – zum Beispiel, dass eine NAS-Freigabe 500 GB an Backups enthält. OpenDisk liest nur Dateinamen und -größen und lädt deine Dateien niemals hoch oder ändert sie."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το OpenDisk μετρά πόσο χώρο στον δίσκο χρησιμοποιεί κάθε φάκελος. Η πρόσβαση σε τόμους δικτύου επιτρέπει στο OpenDisk να σαρώνει δίσκους που συνδέετε μέσω δικτύου – για παράδειγμα, δείχνοντας ότι ένας κοινόχρηστος φάκελος NAS περιέχει 500 GB αντιγράφων ασφαλείας. Το OpenDisk διαβάζει μόνο ονόματα και μεγέθη αρχείων· δεν αποστέλλει και δεν τροποποιεί ποτέ τα αρχεία σας."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder uses. Access to network volumes lets OpenDisk scan drives you connect over the network - for example, showing that a NAS share holds 500 GB of backups. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-AU" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder uses. Access to network volumes lets OpenDisk scan drives you connect over the network - for example, showing that a NAS share holds 500 GB of backups. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-GB" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder uses. Access to network volumes lets OpenDisk scan drives you connect over the network - for example, showing that a NAS share holds 500 GB of backups. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta. El acceso a los volúmenes de red permite a OpenDisk escanear las unidades que conectes a través de la red; por ejemplo, para mostrar que una carpeta compartida de un NAS contiene 500 GB de copias de seguridad. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta. El acceso a los volúmenes de red permite que OpenDisk escanee las unidades que conectes a través de la red; por ejemplo, para mostrar que una carpeta compartida de un NAS contiene 500 GB de respaldos. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mittaa, kuinka paljon levytilaa kukin kansio käyttää. Verkkotaltioiden käyttöoikeuden avulla OpenDisk voi skannata verkon kautta yhdistettyjä asemia – esimerkiksi näyttää, että NAS-jako sisältää 500 Gt varmuuskopioita. OpenDisk lukee vain tiedostojen nimiä ja kokoja eikä koskaan lähetä tai muokkaa tiedostojasi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier. L’accès aux volumes réseau permet à OpenDisk d’analyser les disques auxquels vous vous connectez via le réseau, par exemple pour indiquer qu’un partage NAS contient 500 Go de sauvegardes. OpenDisk lit uniquement les noms et les tailles des fichiers ; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier. L’accès aux volumes réseau permet à OpenDisk d’analyser les disques auxquels vous vous connectez via le réseau, par exemple pour indiquer qu’un partage NAS contient 500 Go de sauvegardes. OpenDisk lit uniquement les noms et les tailles des fichiers; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk מודד כמה שטח דיסק מנצלת כל תיקיה. גישה לאמצעי אחסון ברשת מאפשרת ל-OpenDisk לסרוק כוננים המחוברים דרך הרשת – למשל, להראות ששיתוף NAS מכיל 500 GB של גיבויים. OpenDisk קורא רק שמות וגדלים של קבצים; הוא לעולם לא מעלה או משנה את הקבצים שלך."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk मापता है कि हर फ़ोल्डर कितना डिस्क स्पेस उपयोग करता है। नेटवर्क वॉल्यूम के ऐक्सेस से OpenDisk नेटवर्क पर कनेक्ट की गई ड्राइव स्कैन कर पाता है – उदाहरण के लिए, यह दिखाना कि किसी NAS शेयर में 500 GB बैकअप हैं। OpenDisk केवल फ़ाइलों के नाम और आकार पढ़ता है; यह आपकी फ़ाइलें कभी अपलोड या संशोधित नहीं करता।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mjeri koliko prostora na disku zauzima svaka mapa. Pristup mrežnim volumenima omogućuje aplikaciji OpenDisk skeniranje diskova povezanih preko mreže – na primjer, da pokaže da dijeljena mapa na NAS-u sadrži 500 GB sigurnosnih kopija. OpenDisk čita samo nazive i veličine datoteka; nikad ne prenosi niti mijenja vaše datoteke."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenDisk megméri, hogy az egyes mappák mennyi lemezterületet foglalnak. A hálózati kötetekhez való hozzáféréssel az OpenDisk beolvashatja a hálózaton keresztül csatlakoztatott meghajtókat – például megmutatja, hogy egy NAS-megosztáson 500 GB biztonsági mentés van. Az OpenDisk csak a fájlneveket és -méreteket olvassa be; a fájljait soha nem tölti fel és nem módosítja."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur berapa banyak ruang disk yang digunakan setiap folder. Akses ke volume jaringan memungkinkan OpenDisk memindai drive yang Anda sambungkan melalui jaringan – misalnya, menunjukkan bahwa folder bersama di NAS berisi 500 GB cadangan. OpenDisk hanya membaca nama dan ukuran file; OpenDisk tidak pernah mengunggah atau mengubah file Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misura lo spazio su disco occupato da ogni cartella. L’accesso ai volumi di rete consente a OpenDisk di analizzare le unità a cui ti connetti tramite la rete, ad esempio mostrando che una condivisione NAS contiene 500 GB di backup. OpenDisk legge solo i nomi e le dimensioni dei file; non carica né modifica mai i tuoi file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk は、各フォルダが使用しているディスク容量を測定します。ネットワークボリュームへのアクセスを許可すると、OpenDisk はネットワーク経由で接続したドライブをスキャンできます。たとえば、NAS の共有フォルダに 500 GB のバックアップがあることを表示できます。OpenDisk が読み取るのはファイル名とサイズのみで、ファイルをアップロードしたり変更したりすることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk는 각 폴더가 사용하는 디스크 공간을 측정합니다. 네트워크 볼륨에 접근하면 OpenDisk가 네트워크를 통해 연결한 드라이브를 스캔할 수 있습니다. 예를 들어 NAS 공유 폴더에 500GB의 백업이 있다는 것을 보여 줍니다. OpenDisk는 파일 이름과 크기만 읽으며, 파일을 업로드하거나 수정하지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur jumlah ruang cakera yang digunakan oleh setiap folder. Akses ke volum rangkaian membolehkan OpenDisk mengimbas pemacu yang anda sambungkan melalui rangkaian – contohnya, menunjukkan bahawa perkongsian NAS menyimpan 500 GB sandaran. OpenDisk hanya membaca nama dan saiz fail; OpenDisk tidak sesekali memuat naik atau mengubah suai fail anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler hvor mye diskplass hver mappe bruker. Med tilgang til nettverksvolumer kan OpenDisk skanne disker du kobler til over nettverket – for eksempel at en NAS-deling inneholder 500 GB med sikkerhetskopier. OpenDisk leser bare filnavn og størrelser og laster aldri opp eller endrer filene dine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meet hoeveel schijfruimte elke map gebruikt. Met toegang tot netwerkvolumes kan OpenDisk schijven scannen die je via het netwerk verbindt, bijvoorbeeld dat een NAS-share 500 GB aan reservekopieën bevat. OpenDisk leest alleen bestandsnamen en -groottes en zal je bestanden nooit uploaden of wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mierzy, ile miejsca na dysku zajmuje każdy katalog. Dostęp do woluminów sieciowych pozwala OpenDisk skanować dyski podłączone przez sieć — np. pokazać, że udział na serwerze NAS zawiera 500 GB kopii zapasowych. OpenDisk odczytuje tylko nazwy i wielkości plików; nigdy nie wysyła ani nie zmienia Twoich plików."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta usa. O acesso a volumes de rede permite que o OpenDisk escaneie unidades conectadas pela rede — por exemplo, mostrando que um compartilhamento de NAS contém 500 GB de backups. O OpenDisk só lê nomes e tamanhos de arquivos; ele nunca envia nem modifica seus arquivos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta utiliza. O acesso a volumes de rede permite ao OpenDisk analisar unidades ligadas através da rede; por exemplo, mostrando que uma partilha de NAS contém 500 GB de cópias de segurança. O OpenDisk só lê nomes e tamanhos de ficheiros; nunca carrega nem modifica os seus ficheiros."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk măsoară cât spațiu pe disc ocupă fiecare dosar. Accesul la volumele de rețea îi permite lui OpenDisk să scaneze unitățile conectate prin rețea – de exemplu, arătând că o partajare NAS conține 500 GB de backupuri. OpenDisk citește doar numele și dimensiunile fișierelor; nu încarcă și nu modifică niciodată fișierele dvs."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показывает, сколько места на диске занимает каждая папка. Доступ к сетевым томам позволяет OpenDisk сканировать диски, подключенные по сети, — например, показать, что общий ресурс на NAS содержит 500 ГБ резервных копий. OpenDisk считывает только имена и размеры файлов; программа никогда не отправляет и не изменяет ваши файлы."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meria, koľko miesta na disku zaberá každý priečinok. Prístup k sieťovým zväzkom umožní aplikácii OpenDisk skenovať disky pripojené cez sieť – napríklad ukázať, že zdieľaný priečinok na NAS obsahuje 500 GB záloh. OpenDisk číta iba názvy a veľkosti súborov; vaše súbory nikdy neodosiela ani nemení."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mäter hur mycket skivutrymme varje mapp använder. Med åtkomst till nätverksvolymer kan OpenDisk skanna enheter som du ansluter via nätverket – till exempel att en NAS-delning innehåller 500 GB säkerhetskopior. OpenDisk läser bara filnamn och storlekar och laddar aldrig upp eller ändrar dina filer."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk วัดว่าแต่ละโฟลเดอร์ใช้พื้นที่ดิสก์เท่าใด การเข้าถึงโวลุ่มเครือข่ายช่วยให้ OpenDisk สแกนไดรฟ์ที่คุณเชื่อมต่อผ่านเครือข่ายได้ เช่น แสดงว่าโฟลเดอร์แชร์บน NAS มีข้อมูลสำรอง 500 GB OpenDisk อ่านเฉพาะชื่อและขนาดไฟล์ และจะไม่อัปโหลดหรือแก้ไขไฟล์ของคุณ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk, her klasörün ne kadar disk alanı kullandığını ölçer. Ağ birimlerine erişim, OpenDisk’in ağ üzerinden bağladığınız diskleri taramasını sağlar; örneğin bir NAS paylaşımında 500 GB yedek bulunduğunu gösterir. OpenDisk yalnızca dosya adlarını ve boyutlarını okur; dosyalarınızı asla karşıya yüklemez veya değiştirmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показує, скільки місця на диску займає кожна папка. Доступ до мережевих томів дає змогу OpenDisk сканувати диски, підʼєднані через мережу, — наприклад, показати, що спільний ресурс на NAS містить 500 ГБ резервних копій. OpenDisk зчитує лише назви й розміри файлів; програма ніколи не вивантажує й не змінює ваші файли."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk đo dung lượng ổ đĩa mà mỗi thư mục sử dụng. Quyền truy cập ổ đĩa mạng cho phép OpenDisk quét các ổ đĩa bạn kết nối qua mạng – ví dụ: cho thấy một thư mục chia sẻ trên NAS chứa 500 GB bản sao lưu. OpenDisk chỉ đọc tên và kích thước tệp; ứng dụng không bao giờ tải lên hay sửa đổi tệp của bạn."
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量每個資料夾使用的磁碟空間。取用網絡宗卷後，OpenDisk 可以掃描你經網絡連接的磁碟，例如顯示某個 NAS 分享中存有 500 GB 的備份。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 会测量每个文件夹占用的磁盘空间。访问网络宗卷后，OpenDisk 可以扫描你通过网络连接的驱动器，例如显示某个 NAS 共享中存有 500 GB 的备份。OpenDisk 只读取文件名称和大小，绝不会上传或修改你的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量每個檔案夾使用的磁碟空間。取用網路卷宗後，OpenDisk 可以掃描你透過網路連接的磁碟，例如顯示某個 NAS 分享中存有 500 GB 的備份。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقيس OpenDisk مقدار مساحة القرص التي يستخدمها كل مجلد على جهاز Mac. يتيح الوصول إلى مكتبة الصور لـ OpenDisk تضمينها في تفصيل مساحة التخزين، فمثلًا يُظهر أن مكتبة الصور تشغل 20 GB لتقرر ما تريد تنظيفه. يقرأ OpenDisk أسماء الملفات وأحجامها فقط، ولا يقوم أبدًا بعرض صورك أو رفعها أو تعديلها."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesura quant espai de disc ocupa cada carpeta del Mac. L’accés a la fototeca permet a OpenDisk incloure-la al desglossament de l’emmagatzematge; per exemple, pot mostrar que la fototeca de Fotos ocupa 20 GB perquè decideixis què vols netejar. OpenDisk només llegeix els noms i les mides dels fitxers; mai no visualitza, puja ni modifica les teves fotos."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk měří, kolik místa na disku zabírá každá složka na Macu. Přístup k vaší knihovně fotografií umožní aplikaci OpenDisk zahrnout ji do přehledu úložiště – například ukázat, že knihovna Fotek zabírá 20 GB, abyste se mohli rozhodnout, co uklidit. OpenDisk čte jen názvy a velikosti souborů; vaše fotky nikdy neprohlíží, neodesílá ani nemění."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler, hvor meget diskplads hver mappe på din Mac bruger. Med adgang til dit fotobibliotek kan OpenDisk medtage det i din lageroversigt – f.eks. at dit Fotos-bibliotek fylder 20 GB, så du kan beslutte, hvad der skal ryddes op. OpenDisk læser kun filnavne og -størrelser og viser, uploader eller ændrer aldrig dine fotos."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misst, wie viel Speicherplatz jeder Ordner auf deinem Mac belegt. Mit Zugriff auf deine Fotomediathek kann OpenDisk sie in die Speicheraufschlüsselung einbeziehen – zum Beispiel, dass deine Fotos-Mediathek 20 GB belegt, damit du entscheiden kannst, was du aufräumst. OpenDisk liest nur Dateinamen und -größen und sieht sich deine Fotos niemals an, lädt sie nicht hoch und ändert sie nicht."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το OpenDisk μετρά πόσο χώρο στον δίσκο χρησιμοποιεί κάθε φάκελος στο Mac σας. Η πρόσβαση στη βιβλιοθήκη φωτογραφιών σας επιτρέπει στο OpenDisk να τη συμπεριλάβει στην ανάλυση του αποθηκευτικού χώρου – για παράδειγμα, δείχνοντας ότι η βιβλιοθήκη Φωτογραφιών καταλαμβάνει 20 GB, ώστε να αποφασίσετε τι θα καθαρίσετε. Το OpenDisk διαβάζει μόνο ονόματα και μεγέθη αρχείων· δεν προβάλλει, δεν αποστέλλει και δεν τροποποιεί ποτέ τις φωτογραφίες σας."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your photo library lets OpenDisk include it in your storage breakdown - for example, showing that your Photos library takes up 20 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never views, uploads, or modifies your photos."
+          }
+        },
+        "en-AU" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your photo library lets OpenDisk include it in your storage breakdown - for example, showing that your Photos library takes up 20 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never views, uploads, or modifies your photos."
+          }
+        },
+        "en-GB" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder on your Mac uses. Access to your photo library lets OpenDisk include it in your storage breakdown - for example, showing that your Photos library takes up 20 GB so you can decide what to clean up. OpenDisk only reads file names and sizes; it never views, uploads, or modifies your photos."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu fototeca permite a OpenDisk incluirla en el desglose del almacenamiento; por ejemplo, para mostrar que tu fototeca de Fotos ocupa 20 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca ve, sube ni modifica tus fotos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta de tu Mac. El acceso a tu fototeca permite que OpenDisk la incluya en el desglose del almacenamiento; por ejemplo, para mostrar que tu fototeca de Fotos ocupa 20 GB y puedas decidir qué limpiar. OpenDisk solo lee nombres y tamaños de archivo; nunca ve, sube ni modifica tus fotos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mittaa, kuinka paljon levytilaa kukin Macin kansio käyttää. Kuvakirjaston käyttöoikeuden avulla OpenDisk voi sisällyttää sen tallennustilan erittelyyn – esimerkiksi näyttää, että Kuvat-kirjastosi vie 20 Gt, jotta voit päättää, mitä siivoat. OpenDisk lukee vain tiedostojen nimiä ja kokoja eikä koskaan katso, lähetä tai muokkaa kuviasi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre photothèque permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre photothèque Photos occupe 20 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers ; il n’affiche, ne transfère ni ne modifie jamais vos photos."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier de votre Mac. L’accès à votre photothèque permet à OpenDisk de l’inclure dans la répartition de votre stockage, par exemple pour indiquer que votre photothèque Photos occupe 20 Go et vous aider à choisir quoi nettoyer. OpenDisk lit uniquement les noms et les tailles des fichiers; il n’affiche, ne transfère ni ne modifie jamais vos photos."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk מודד כמה שטח דיסק מנצלת כל תיקיה ב-Mac שלך. גישה לספריית התמונות מאפשרת ל-OpenDisk לכלול אותה בפירוט האחסון – למשל, להראות שספריית ”תמונות“ תופסת 20 GB, כדי לעזור לך להחליט מה לנקות. OpenDisk קורא רק שמות וגדלים של קבצים; הוא לעולם לא מציג, מעלה או משנה את התמונות שלך."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk मापता है कि आपके Mac पर हर फ़ोल्डर कितना डिस्क स्पेस उपयोग करता है। आपकी फ़ोटो लाइब्रेरी के ऐक्सेस से OpenDisk इसे आपके स्टोरेज विवरण में शामिल कर पाता है – उदाहरण के लिए, यह दिखाना कि आपकी फ़ोटो लाइब्रेरी 20 GB लेती है, ताकि आप तय कर सकें कि क्या साफ़ करना है। OpenDisk केवल फ़ाइलों के नाम और आकार पढ़ता है; यह आपकी फ़ोटो कभी देखता, अपलोड या संशोधित नहीं करता।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mjeri koliko prostora na disku zauzima svaka mapa na vašem Macu. Pristup knjižnici fotografija omogućuje aplikaciji OpenDisk da je uključi u pregled zauzeća – na primjer, da pokaže da knjižnica Foto zauzima 20 GB kako biste mogli odlučiti što očistiti. OpenDisk čita samo nazive i veličine datoteka; nikad ne pregledava, ne prenosi niti mijenja vaše fotografije."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenDisk megméri, hogy a Mac egyes mappái mennyi lemezterületet foglalnak. A fotókönyvtárhoz való hozzáféréssel az OpenDisk azt is belefoglalhatja a tárhely-kimutatásba – például megmutatja, hogy a Fotók könyvtár 20 GB-ot foglal, így eldöntheti, mit takarít ki. Az OpenDisk csak a fájlneveket és -méreteket olvassa be; a fotóit soha nem nézi meg, nem tölti fel és nem módosítja."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur berapa banyak ruang disk yang digunakan setiap folder di Mac Anda. Akses ke perpustakaan foto memungkinkan OpenDisk menyertakannya dalam rincian penyimpanan Anda – misalnya, menunjukkan bahwa perpustakaan Foto Anda menggunakan 20 GB sehingga Anda dapat memutuskan apa yang perlu dibersihkan. OpenDisk hanya membaca nama dan ukuran file; OpenDisk tidak pernah melihat, mengunggah, atau mengubah foto Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misura lo spazio su disco occupato da ogni cartella del Mac. L’accesso alla libreria foto consente a OpenDisk di includerla nella ripartizione dello spazio, ad esempio mostrando che la libreria di Foto occupa 20 GB, così puoi decidere cosa eliminare. OpenDisk legge solo i nomi e le dimensioni dei file; non visualizza, carica né modifica mai le tue foto."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk は、Mac 上の各フォルダが使用しているディスク容量を測定します。写真ライブラリへのアクセスを許可すると、OpenDisk はそれをストレージの内訳に含めることができます。たとえば、写真ライブラリが 20 GB を使用していることを表示し、何を整理するか判断するのに役立ちます。OpenDisk が読み取るのはファイル名とサイズのみで、写真を表示、アップロード、変更することはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk는 Mac의 각 폴더가 사용하는 디스크 공간을 측정합니다. 사진 보관함에 접근하면 OpenDisk가 이를 저장 공간 분석에 포함할 수 있습니다. 예를 들어 사진 보관함이 20GB를 차지한다는 것을 보여 주어 무엇을 정리할지 결정할 수 있도록 돕습니다. OpenDisk는 파일 이름과 크기만 읽으며, 사진을 보거나 업로드하거나 수정하지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur jumlah ruang cakera yang digunakan oleh setiap folder pada Mac anda. Akses ke pustaka foto membolehkan OpenDisk memasukkannya dalam pecahan storan anda – contohnya, menunjukkan bahawa pustaka Foto anda menggunakan 20 GB supaya anda boleh memutuskan perkara yang perlu dibersihkan. OpenDisk hanya membaca nama dan saiz fail; OpenDisk tidak sesekali melihat, memuat naik atau mengubah suai foto anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler hvor mye diskplass hver mappe på Macen bruker. Med tilgang til bildebiblioteket kan OpenDisk ta det med i lagringsoversikten – for eksempel at Bilder-biblioteket tar opp 20 GB, slik at du kan bestemme hva du vil rydde opp i. OpenDisk leser bare filnavn og størrelser og viser, laster opp eller endrer aldri bildene dine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meet hoeveel schijfruimte elke map op je Mac gebruikt. Met toegang tot je fotobibliotheek kan OpenDisk deze opnemen in je opslagoverzicht, bijvoorbeeld dat je Foto's-bibliotheek 20 GB inneemt, zodat je kunt bepalen wat je opruimt. OpenDisk leest alleen bestandsnamen en -groottes en zal je foto's nooit bekijken, uploaden of wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mierzy, ile miejsca na dysku zajmuje każdy katalog na Macu. Dostęp do biblioteki zdjęć pozwala OpenDisk uwzględnić ją w zestawieniu zajętości — np. pokazać, że biblioteka Zdjęć zajmuje 20 GB, aby łatwiej zdecydować, co usunąć. OpenDisk odczytuje tylko nazwy i wielkości plików; nigdy nie wyświetla, nie wysyła ani nie zmienia Twoich zdjęć."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac usa. O acesso à sua fototeca permite que o OpenDisk a inclua no detalhamento do armazenamento — por exemplo, mostrando que sua fototeca do Fotos ocupa 20 GB para que você decida o que limpar. O OpenDisk só lê nomes e tamanhos de arquivos; ele nunca visualiza, envia nem modifica suas fotos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta do seu Mac utiliza. O acesso à sua fototeca permite ao OpenDisk incluí-la na discriminação do armazenamento; por exemplo, mostrando que a sua fototeca da Fotografias ocupa 20 GB para que possa decidir o que limpar. O OpenDisk só lê nomes e tamanhos de ficheiros; nunca visualiza, carrega nem modifica as suas fotografias."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk măsoară cât spațiu pe disc ocupă fiecare dosar de pe Mac. Accesul la biblioteca foto îi permite lui OpenDisk să o includă în defalcarea spațiului de stocare – de exemplu, arătând că biblioteca Poze ocupă 20 GB, ca să puteți decide ce să curățați. OpenDisk citește doar numele și dimensiunile fișierelor; nu vizualizează, nu încarcă și nu modifică niciodată pozele dvs."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показывает, сколько места на диске занимает каждая папка на Mac. Доступ к медиатеке фото позволяет OpenDisk учитывать ее при анализе хранилища — например, показать, что медиатека Фото занимает 20 ГБ, чтобы вы решили, что очистить. OpenDisk считывает только имена и размеры файлов; программа никогда не просматривает, не отправляет и не изменяет ваши фото."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meria, koľko miesta na disku zaberá každý priečinok na Macu. Prístup ku knižnici fotiek umožní aplikácii OpenDisk zahrnúť ju do prehľadu úložiska – napríklad ukázať, že knižnica Fotiek zaberá 20 GB, aby ste sa mohli rozhodnúť, čo vyčistiť. OpenDisk číta iba názvy a veľkosti súborov; vaše fotky nikdy nezobrazuje, neodosiela ani nemení."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mäter hur mycket skivutrymme varje mapp på din Mac använder. Med åtkomst till ditt bildbibliotek kan OpenDisk ta med det i lagringsöversikten – till exempel att ditt Bilder-bibliotek tar upp 20 GB så att du kan bestämma vad du vill rensa. OpenDisk läser bara filnamn och storlekar och visar, laddar upp eller ändrar aldrig dina bilder."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk วัดว่าแต่ละโฟลเดอร์บน Mac ของคุณใช้พื้นที่ดิสก์เท่าใด การเข้าถึงคลังรูปภาพช่วยให้ OpenDisk รวมคลังรูปภาพไว้ในรายละเอียดพื้นที่จัดเก็บของคุณ เช่น แสดงว่าคลังรูปภาพใช้พื้นที่ 20 GB เพื่อให้คุณตัดสินใจได้ว่าจะล้างอะไร OpenDisk อ่านเฉพาะชื่อและขนาดไฟล์ และจะไม่ดู อัปโหลด หรือแก้ไขรูปภาพของคุณ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk, Mac’inizdeki her klasörün ne kadar disk alanı kullandığını ölçer. Fotoğraf arşivinize erişim, OpenDisk’in onu depolama dökümünüze dahil etmesini sağlar; örneğin Fotoğraflar arşivinizin 20 GB yer kapladığını göstererek neyi temizleyeceğinize karar vermenize yardımcı olur. OpenDisk yalnızca dosya adlarını ve boyutlarını okur; fotoğraflarınızı asla görüntülemez, karşıya yüklemez veya değiştirmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показує, скільки місця на диску займає кожна папка на Mac. Доступ до медіатеки фотографій дає змогу OpenDisk враховувати її в аналізі сховища — наприклад, показати, що медіатека Фото займає 20 ГБ, щоб ви вирішили, що очистити. OpenDisk зчитує лише назви й розміри файлів; програма ніколи не переглядає, не вивантажує й не змінює ваші фото."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk đo dung lượng ổ đĩa mà mỗi thư mục trên máy Mac sử dụng. Quyền truy cập thư viện ảnh cho phép OpenDisk đưa thư viện này vào bảng phân tích dung lượng – ví dụ: cho thấy thư viện Ảnh chiếm 20 GB để bạn quyết định cần dọn dẹp gì. OpenDisk chỉ đọc tên và kích thước tệp; ứng dụng không bao giờ xem, tải lên hay sửa đổi ảnh của bạn."
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個資料夾使用的磁碟空間。取用你的照片圖庫後，OpenDisk 可將其納入儲存空間明細，例如顯示你的「照片」圖庫佔用了 20 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會查看、上傳或修改你的照片。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 会测量 Mac 上每个文件夹占用的磁盘空间。访问你的照片图库后，OpenDisk 可将其纳入存储空间明细，例如显示你的“照片”图库占用了 20 GB，以便你决定要清理哪些内容。OpenDisk 只读取文件名称和大小，绝不会查看、上传或修改你的照片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量 Mac 上每個檔案夾使用的磁碟空間。取用你的照片圖庫後，OpenDisk 可將其納入儲存空間明細，例如顯示你的「照片」圖庫佔用了 20 GB，方便你決定要清理哪些項目。OpenDisk 只會讀取檔案名稱和大小，絕不會查看、上傳或修改你的照片。"
+          }
+        }
+      }
+    },
+    "NSRemovableVolumesUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يقيس OpenDisk مقدار مساحة القرص التي يستخدمها كل مجلد. يتيح الوصول إلى وحدات التخزين القابلة للإزالة لـ OpenDisk فحص الأقراص الخارجية وأقراص USB التي تقوم بتوصيلها، فمثلًا يُظهر أن قرصًا خارجيًا يحتوي على 200 GB من المشاريع القديمة. يقرأ OpenDisk أسماء الملفات وأحجامها فقط، ولا يقوم أبدًا برفع ملفاتك أو تعديلها."
+          }
+        },
+        "ca" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesura quant espai de disc ocupa cada carpeta. L’accés als volums extraïbles permet a OpenDisk analitzar les unitats externes i els discos USB que connectes; per exemple, pot mostrar que una unitat externa conté 200 GB de projectes antics. OpenDisk només llegeix els noms i les mides dels fitxers; mai no puja ni modifica els teus fitxers."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk měří, kolik místa na disku zabírá každá složka. Přístup k vyjímatelným svazkům umožní aplikaci OpenDisk skenovat připojené externí disky a USB disky – například ukázat, že externí disk obsahuje 200 GB starých projektů. OpenDisk čte jen názvy a velikosti souborů; vaše soubory nikdy neodesílá ani nemění."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler, hvor meget diskplads hver mappe bruger. Med adgang til flytbare enheder kan OpenDisk scanne eksterne drev og USB-diske, du tilslutter – f.eks. at et eksternt drev indeholder 200 GB gamle projekter. OpenDisk læser kun filnavne og -størrelser og uploader eller ændrer aldrig dine filer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misst, wie viel Speicherplatz jeder Ordner belegt. Mit Zugriff auf Wechselmedien kann OpenDisk externe Laufwerke und USB-Speicher scannen, die du anschließt – zum Beispiel, dass ein externes Laufwerk 200 GB an alten Projekten enthält. OpenDisk liest nur Dateinamen und -größen und lädt deine Dateien niemals hoch oder ändert sie."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το OpenDisk μετρά πόσο χώρο στον δίσκο χρησιμοποιεί κάθε φάκελος. Η πρόσβαση σε αφαιρούμενους τόμους επιτρέπει στο OpenDisk να σαρώνει εξωτερικούς δίσκους και δίσκους USB που συνδέετε – για παράδειγμα, δείχνοντας ότι ένας εξωτερικός δίσκος περιέχει 200 GB παλιών έργων. Το OpenDisk διαβάζει μόνο ονόματα και μεγέθη αρχείων· δεν αποστέλλει και δεν τροποποιεί ποτέ τα αρχεία σας."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder uses. Access to removable volumes lets OpenDisk scan external drives and USB disks you plug in - for example, showing that an external drive holds 200 GB of old projects. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-AU" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder uses. Access to removable volumes lets OpenDisk scan external drives and USB disks you plug in - for example, showing that an external drive holds 200 GB of old projects. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "en-GB" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk measures how much disk space each folder uses. Access to removable volumes lets OpenDisk scan external drives and USB disks you plug in - for example, showing that an external drive holds 200 GB of old projects. OpenDisk only reads file names and sizes; it never uploads or modifies your files."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta. El acceso a los volúmenes extraíbles permite a OpenDisk escanear las unidades externas y los discos USB que conectes; por ejemplo, para mostrar que una unidad externa contiene 200 GB de proyectos antiguos. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mide cuánto espacio en disco ocupa cada carpeta. El acceso a los volúmenes extraíbles permite que OpenDisk escanee las unidades externas y los discos USB que conectes; por ejemplo, para mostrar que una unidad externa contiene 200 GB de proyectos antiguos. OpenDisk solo lee nombres y tamaños de archivo; nunca sube ni modifica tus archivos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mittaa, kuinka paljon levytilaa kukin kansio käyttää. Irrotettavien taltioiden käyttöoikeuden avulla OpenDisk voi skannata liittämiäsi ulkoisia asemia ja USB-levyjä – esimerkiksi näyttää, että ulkoinen asema sisältää 200 Gt vanhoja projekteja. OpenDisk lukee vain tiedostojen nimiä ja kokoja eikä koskaan lähetä tai muokkaa tiedostojasi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier. L’accès aux volumes amovibles permet à OpenDisk d’analyser les disques externes et les clés USB que vous branchez, par exemple pour indiquer qu’un disque externe contient 200 Go d’anciens projets. OpenDisk lit uniquement les noms et les tailles des fichiers ; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "fr-CA" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mesure l’espace disque utilisé par chaque dossier. L’accès aux volumes amovibles permet à OpenDisk d’analyser les disques externes et les clés USB que vous branchez, par exemple pour indiquer qu’un disque externe contient 200 Go d’anciens projets. OpenDisk lit uniquement les noms et les tailles des fichiers; il ne transfère ni ne modifie jamais vos fichiers."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk מודד כמה שטח דיסק מנצלת כל תיקיה. גישה לאמצעי אחסון נשלפים מאפשרת ל-OpenDisk לסרוק כוננים חיצוניים ודיסקי USB שחיברת – למשל, להראות שכונן חיצוני מכיל 200 GB של פרויקטים ישנים. OpenDisk קורא רק שמות וגדלים של קבצים; הוא לעולם לא מעלה או משנה את הקבצים שלך."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk मापता है कि हर फ़ोल्डर कितना डिस्क स्पेस उपयोग करता है। रिमूवेबल वॉल्यूम के ऐक्सेस से OpenDisk आपके द्वारा लगाई गई एक्सटर्नल ड्राइव और USB डिस्क स्कैन कर पाता है – उदाहरण के लिए, यह दिखाना कि किसी एक्सटर्नल ड्राइव में 200 GB पुराने प्रोजेक्ट हैं। OpenDisk केवल फ़ाइलों के नाम और आकार पढ़ता है; यह आपकी फ़ाइलें कभी अपलोड या संशोधित नहीं करता।"
+          }
+        },
+        "hr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mjeri koliko prostora na disku zauzima svaka mapa. Pristup prijenosnim volumenima omogućuje aplikaciji OpenDisk skeniranje vanjskih diskova i USB diskova koje priključite – na primjer, da pokaže da vanjski disk sadrži 200 GB starih projekata. OpenDisk čita samo nazive i veličine datoteka; nikad ne prenosi niti mijenja vaše datoteke."
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az OpenDisk megméri, hogy az egyes mappák mennyi lemezterületet foglalnak. A cserélhető kötetekhez való hozzáféréssel az OpenDisk beolvashatja a csatlakoztatott külső meghajtókat és USB-lemezeket – például megmutatja, hogy egy külső meghajtón 200 GB régi projekt van. Az OpenDisk csak a fájlneveket és -méreteket olvassa be; a fájljait soha nem tölti fel és nem módosítja."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur berapa banyak ruang disk yang digunakan setiap folder. Akses ke volume yang dapat dilepas memungkinkan OpenDisk memindai drive eksternal dan disk USB yang Anda colokkan – misalnya, menunjukkan bahwa drive eksternal berisi 200 GB proyek lama. OpenDisk hanya membaca nama dan ukuran file; OpenDisk tidak pernah mengunggah atau mengubah file Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk misura lo spazio su disco occupato da ogni cartella. L’accesso ai volumi rimovibili consente a OpenDisk di analizzare le unità esterne e i dischi USB che colleghi, ad esempio mostrando che un’unità esterna contiene 200 GB di vecchi progetti. OpenDisk legge solo i nomi e le dimensioni dei file; non carica né modifica mai i tuoi file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk は、各フォルダが使用しているディスク容量を測定します。リムーバブルボリュームへのアクセスを許可すると、OpenDisk は接続した外部ドライブや USB ディスクをスキャンできます。たとえば、外部ドライブに 200 GB の古いプロジェクトがあることを表示できます。OpenDisk が読み取るのはファイル名とサイズのみで、ファイルをアップロードしたり変更したりすることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk는 각 폴더가 사용하는 디스크 공간을 측정합니다. 이동식 볼륨에 접근하면 OpenDisk가 연결한 외장 드라이브와 USB 디스크를 스캔할 수 있습니다. 예를 들어 외장 드라이브에 200GB의 오래된 프로젝트가 있다는 것을 보여 줍니다. OpenDisk는 파일 이름과 크기만 읽으며, 파일을 업로드하거나 수정하지 않습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mengukur jumlah ruang cakera yang digunakan oleh setiap folder. Akses ke volum boleh tanggal membolehkan OpenDisk mengimbas pemacu luaran dan cakera USB yang anda pasangkan – contohnya, menunjukkan bahawa pemacu luaran menyimpan 200 GB projek lama. OpenDisk hanya membaca nama dan saiz fail; OpenDisk tidak sesekali memuat naik atau mengubah suai fail anda."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk måler hvor mye diskplass hver mappe bruker. Med tilgang til flyttbare volumer kan OpenDisk skanne eksterne disker og USB-disker du kobler til – for eksempel at en ekstern disk inneholder 200 GB med gamle prosjekter. OpenDisk leser bare filnavn og størrelser og laster aldri opp eller endrer filene dine."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meet hoeveel schijfruimte elke map gebruikt. Met toegang tot verwijderbare volumes kan OpenDisk externe schijven en USB-schijven scannen die je aansluit, bijvoorbeeld dat een externe schijf 200 GB aan oude projecten bevat. OpenDisk leest alleen bestandsnamen en -groottes en zal je bestanden nooit uploaden of wijzigen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mierzy, ile miejsca na dysku zajmuje każdy katalog. Dostęp do woluminów wymiennych pozwala OpenDisk skanować podłączane dyski zewnętrzne i dyski USB — np. pokazać, że dysk zewnętrzny zawiera 200 GB starych projektów. OpenDisk odczytuje tylko nazwy i wielkości plików; nigdy nie wysyła ani nie zmienia Twoich plików."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta usa. O acesso a volumes removíveis permite que o OpenDisk escaneie unidades externas e discos USB que você conectar — por exemplo, mostrando que uma unidade externa contém 200 GB de projetos antigos. O OpenDisk só lê nomes e tamanhos de arquivos; ele nunca envia nem modifica seus arquivos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O OpenDisk mede quanto espaço em disco cada pasta utiliza. O acesso a volumes amovíveis permite ao OpenDisk analisar unidades externas e discos USB que ligar; por exemplo, mostrando que uma unidade externa contém 200 GB de projetos antigos. O OpenDisk só lê nomes e tamanhos de ficheiros; nunca carrega nem modifica os seus ficheiros."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk măsoară cât spațiu pe disc ocupă fiecare dosar. Accesul la volumele amovibile îi permite lui OpenDisk să scaneze unitățile externe și discurile USB pe care le conectați – de exemplu, arătând că o unitate externă conține 200 GB de proiecte vechi. OpenDisk citește doar numele și dimensiunile fișierelor; nu încarcă și nu modifică niciodată fișierele dvs."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показывает, сколько места на диске занимает каждая папка. Доступ к съемным томам позволяет OpenDisk сканировать подключаемые внешние диски и USB-накопители — например, показать, что на внешнем диске хранится 200 ГБ старых проектов. OpenDisk считывает только имена и размеры файлов; программа никогда не отправляет и не изменяет ваши файлы."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk meria, koľko miesta na disku zaberá každý priečinok. Prístup k vymeniteľným zväzkom umožní aplikácii OpenDisk skenovať pripojené externé disky a USB disky – napríklad ukázať, že externý disk obsahuje 200 GB starých projektov. OpenDisk číta iba názvy a veľkosti súborov; vaše súbory nikdy neodosiela ani nemení."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk mäter hur mycket skivutrymme varje mapp använder. Med åtkomst till flyttbara volymer kan OpenDisk skanna externa enheter och USB-skivor som du ansluter – till exempel att en extern enhet innehåller 200 GB gamla projekt. OpenDisk läser bara filnamn och storlekar och laddar aldrig upp eller ändrar dina filer."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk วัดว่าแต่ละโฟลเดอร์ใช้พื้นที่ดิสก์เท่าใด การเข้าถึงโวลุ่มแบบถอดได้ช่วยให้ OpenDisk สแกนไดรฟ์ภายนอกและดิสก์ USB ที่คุณเสียบได้ เช่น แสดงว่าไดรฟ์ภายนอกมีโปรเจกต์เก่า 200 GB OpenDisk อ่านเฉพาะชื่อและขนาดไฟล์ และจะไม่อัปโหลดหรือแก้ไขไฟล์ของคุณ"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk, her klasörün ne kadar disk alanı kullandığını ölçer. Çıkarılabilir birimlere erişim, OpenDisk’in taktığınız harici diskleri ve USB diskleri taramasını sağlar; örneğin bir harici diskte 200 GB eski proje bulunduğunu gösterir. OpenDisk yalnızca dosya adlarını ve boyutlarını okur; dosyalarınızı asla karşıya yüklemez veya değiştirmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk показує, скільки місця на диску займає кожна папка. Доступ до знімних томів дає змогу OpenDisk сканувати підʼєднані зовнішні диски й USB-накопичувачі — наприклад, показати, що на зовнішньому диску зберігається 200 ГБ старих проєктів. OpenDisk зчитує лише назви й розміри файлів; програма ніколи не вивантажує й не змінює ваші файли."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk đo dung lượng ổ đĩa mà mỗi thư mục sử dụng. Quyền truy cập ổ đĩa di động cho phép OpenDisk quét các ổ đĩa ngoài và ổ USB bạn cắm vào – ví dụ: cho thấy một ổ đĩa ngoài chứa 200 GB dự án cũ. OpenDisk chỉ đọc tên và kích thước tệp; ứng dụng không bao giờ tải lên hay sửa đổi tệp của bạn."
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量每個資料夾使用的磁碟空間。取用可移除宗卷後，OpenDisk 可以掃描你接上的外接磁碟和 USB 磁碟，例如顯示某個外接磁碟中存有 200 GB 的舊專案。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 会测量每个文件夹占用的磁盘空间。访问可移除宗卷后，OpenDisk 可以扫描你接入的外置驱动器和 USB 磁盘，例如显示某个外置驱动器中存有 200 GB 的旧项目。OpenDisk 只读取文件名称和大小，绝不会上传或修改你的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenDisk 會測量每個檔案夾使用的磁碟空間。取用可移除式卷宗後，OpenDisk 可以掃描你接上的外接磁碟和 USB 磁碟，例如顯示某個外接磁碟中存有 200 GB 的舊專案。OpenDisk 只會讀取檔案名稱和大小，絕不會上傳或修改你的檔案。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

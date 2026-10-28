@@ -52,8 +52,8 @@ final class Collector {
         guard !file.path.hasPrefix("::"),
               FileManager.default.fileExists(atPath: file.path),
               !items.contains(where: { $0.path == file.path }) else { return }
-        if let reason = ProtectedPaths.reason(for: file.path) {
-            flagBlocked("“\(file.name)” \(reason)")
+        if let message = ProtectedPaths.message(for: file.path, name: file.name) {
+            flagBlocked(message)
             return
         }
         if items.contains(where: { $0.isDirectory && file.path.hasPrefix($0.path + "/") }) { return }

@@ -37,7 +37,7 @@ struct DiskAnalysisView: View {
 
     init(
         rootPath: String,
-        rootName: String = "Computer",
+        rootName: String = String(localized: "Computer"),
         totalUsedSpace: Int64 = 0,
         onScanFinished: @escaping () -> Void = {}
     ) {
@@ -63,11 +63,11 @@ struct DiskAnalysisView: View {
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
-                    Button("Back", systemImage: "chevron.left", action: goBack)
+                    Button("Back", systemImage: "chevron.backward", action: goBack)
                         .keyboardShortcut("[", modifiers: .command)
                         .disabled(parentPath == nil)
                         .help("Go up one level (⌘[ or ⌘↑)")
-                    Button("Forward", systemImage: "chevron.right", action: goForward)
+                    Button("Forward", systemImage: "chevron.forward", action: goForward)
                         .keyboardShortcut("]", modifiers: .command)
                         .disabled(!history.canGoForward)
                         .help("Go back into the folder you just left (⌘])")
@@ -532,11 +532,12 @@ struct DiskAnalysisView: View {
         .font(.system(size: listScale.headerFontSize, weight: .medium))
         .foregroundStyle(.secondary)
         .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .padding(.horizontal, FileColumns.inset * 2)
         .padding(.vertical, 5)
     }
 
-    private func sortHeaderButton(_ field: SortField, _ label: String) -> some View {
+    private func sortHeaderButton(_ field: SortField, _ label: LocalizedStringKey) -> some View {
         Button {
             if sort == field {
                 sortAscending.toggle()
@@ -678,7 +679,7 @@ struct DiskAnalysisView: View {
                 : [file]
         }
         collector.flagDraggedProtected(nil)
-        let allowed = expanded.filter { ProtectedPaths.reason(for: $0.path) == nil }
+        let allowed = expanded.filter { !ProtectedPaths.isProtected($0.path) }
         guard !allowed.isEmpty else { return false }
         collector.add(allowed)
         selectedPaths.subtract(allowed.map(\.path))
@@ -718,10 +719,10 @@ struct DiskAnalysisView: View {
 
     private var windowSubtitle: String {
         guard analyzer.displayedTotalBytes > 0 else {
-            return analyzer.isScanning ? "Scanning…" : ""
+            return analyzer.isScanning ? String(localized: "Scanning…") : ""
         }
         let count = analyzer.rootItems.count
-        return "\(ByteFormatter.formatFileSize(analyzer.displayedTotalBytes)) · \(count.formatted()) \(count == 1 ? "item" : "items")"
+        return "\(ByteFormatter.formatFileSize(analyzer.displayedTotalBytes)) · " + String(localized: "\(count) items")
     }
 
     @ViewBuilder

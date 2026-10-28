@@ -264,6 +264,44 @@
 			knownRegions = (
 				en,
 				Base,
+				ar,
+				ca,
+				cs,
+				da,
+				de,
+				el,
+				"en-AU",
+				"en-GB",
+				es,
+				"es-419",
+				fi,
+				fr,
+				"fr-CA",
+				he,
+				hi,
+				hr,
+				hu,
+				id,
+				it,
+				ja,
+				ko,
+				ms,
+				nb,
+				nl,
+				pl,
+				"pt-BR",
+				"pt-PT",
+				ro,
+				ru,
+				sk,
+				sv,
+				th,
+				tr,
+				uk,
+				vi,
+				"zh-HK",
+				"zh-Hans",
+				"zh-Hant",
 			);
 			mainGroup = 1AE9EBEB2E67533B00E04C69;
 			minimizedProjectReferenceProxies = 1;
@@ -333,7 +371,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n[ \"${CONFIGURATION}\" = \"Release\" ] || exit 0\nFW=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Sparkle.framework\"\n[ -d \"$FW\" ] || exit 0\nrm -rf \"$FW/Versions/B/XPCServices\" \"$FW/XPCServices\"\nfind \"$FW/Versions/B/Resources\" -maxdepth 1 -name \"*.lproj\" ! -name \"en.lproj\" ! -name \"Base.lproj\" -exec rm -rf {} +\nif [ \"${CODE_SIGNING_ALLOWED}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY}\" ]; then\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --preserve-metadata=identifier,entitlements,flags,runtime --timestamp=none \"$FW\"\nfi\n";
+			shellScript = "set -e\n[ \"${CONFIGURATION}\" = \"Release\" ] || exit 0\nFW=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Sparkle.framework\"\n[ -d \"$FW\" ] || exit 0\nrm -rf \"$FW/Versions/B/XPCServices\" \"$FW/XPCServices\"\nif [ \"${CODE_SIGNING_ALLOWED}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY}\" ]; then\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --preserve-metadata=identifier,entitlements,flags,runtime --timestamp=none \"$FW\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -587,7 +625,7 @@
 				REGISTER_APP_GROUPS = YES;
 				STRIP_INSTALLED_PRODUCT = YES;
 				STRIP_STYLE = all;
-				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
 				SWIFT_VERSION = 6.0;
 			};
@@ -744,7 +782,7 @@
 				REGISTER_APP_GROUPS = YES;
 				STRIP_INSTALLED_PRODUCT = YES;
 				STRIP_STYLE = all;
-				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Osize";
 				SWIFT_VERSION = 6.0;
 			};

@@ -114,11 +114,14 @@ private struct LocationRow: View {
                     .controlSize(.mini)
                     .tint(.secondary)
 
-                    Text("\(ByteFormatter.formatCapacity(location.availableBytes)) available of \(location.formattedTotalStorage)")
-                        .font(.caption2)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    ViewThatFits(in: .horizontal) {
+                        Text("\(ByteFormatter.formatCapacity(location.availableBytes)) available of \(location.formattedTotalStorage)")
+                        Text("\(ByteFormatter.formatCapacity(location.availableBytes)) free")
+                    }
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
             }
         }

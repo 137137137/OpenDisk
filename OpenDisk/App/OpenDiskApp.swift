@@ -56,8 +56,8 @@ struct OpenDiskApp: App {
             #endif
             guard showPromptAtStartup else { return }
             FullDiskAccess.promptIfNotGranted(
-                title: "Full Disk Access Required",
-                message: "OpenDisk needs Full Disk Access to analyze all files and folders on your system. You can grant this permission in System Settings > Privacy & Security > Full Disk Access."
+                title: String(localized: "Full Disk Access Required"),
+                message: String(localized: "OpenDisk needs Full Disk Access to analyze all files and folders on your system. You can grant this permission in System Settings > Privacy & Security > Full Disk Access.")
             )
         }
     }

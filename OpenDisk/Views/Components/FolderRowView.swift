@@ -16,7 +16,7 @@ enum FileColumns {
         for item in items { labels.insert(FileKind.description(for: item)) }
         let rowFont = NSFont.systemFont(ofSize: scale.fontSize)
         let headerFont = NSFont.systemFont(ofSize: scale.headerFontSize, weight: .medium)
-        var widest = ("Kind" as NSString).size(withAttributes: [.font: headerFont]).width
+        var widest = (String(localized: "Kind") as NSString).size(withAttributes: [.font: headerFont]).width
         for label in labels {
             widest = max(widest, (label as NSString).size(withAttributes: [.font: rowFont]).width)
         }
@@ -57,8 +57,8 @@ enum FileKind {
     private static var cache: [String: String] = [:]
 
     static func description(for item: FolderItem) -> String {
-        if item.path == HiddenSpaceInfo.sentinelPath { return "Purgeable" }
-        if item.path.hasPrefix("::") { return item.isDirectory ? "Folder" : "—" }
+        if item.path == HiddenSpaceInfo.sentinelPath { return String(localized: "Purgeable") }
+        if item.path.hasPrefix("::") { return item.isDirectory ? String(localized: "Folder") : "—" }
         let ext = (item.name as NSString).pathExtension.lowercased()
         let key = (item.isDirectory ? "d:" : "f:") + ext
         if let cached = cache[key] { return cached }
@@ -77,14 +77,14 @@ enum FileKind {
     }
 
     private static func resolve(ext: String, isDirectory: Bool) -> String {
-        guard !ext.isEmpty else { return isDirectory ? "Folder" : "Document" }
+        guard !ext.isEmpty else { return isDirectory ? String(localized: "Folder") : String(localized: "Document") }
         let type = isDirectory
             ? UTType(filenameExtension: ext, conformingTo: .directory)
             : UTType(filenameExtension: ext)
         guard let type, !type.isDynamic, let description = type.localizedDescription else {
-            return isDirectory ? "Folder" : "Document"
+            return isDirectory ? String(localized: "Folder") : String(localized: "Document")
         }
-        if isDirectory && !type.conforms(to: .package) { return "Folder" }
+        if isDirectory && !type.conforms(to: .package) { return String(localized: "Folder") }
         return description.prefix(1).uppercased() + description.dropFirst()
     }
 }
@@ -131,8 +131,8 @@ struct FolderRowView: View {
 
     private var draggedProtectedReason: String? {
         for file in dragFiles {
-            if let reason = ProtectedPaths.reason(for: file.path) {
-                return "“\(file.name)” \(reason)"
+            if let message = ProtectedPaths.message(for: file.path, name: file.name) {
+                return message
             }
         }
         return nil
@@ -287,7 +287,7 @@ struct FolderRowView: View {
             if isSelected && selectionFiles.count > 1 {
                 Button {
                     collector.add(selectionFiles.filter {
-                        ProtectedPaths.reason(for: $0.path) == nil
+                        !ProtectedPaths.isProtected($0.path)
                     })
                 } label: {
                     Label(

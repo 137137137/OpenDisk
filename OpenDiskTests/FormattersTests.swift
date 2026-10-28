@@ -26,7 +26,7 @@ struct FormattersTests {
     }
 
     @Test("scan durations pick sensible units", arguments: [
-        (0.5, "ms"), (3.2, "seconds"), (65.0, "1 min 5 sec"), (3_725.0, "1 hr 2 min"),
+        (0.5, "ms"), (3.2, "seconds"), (65.0, "1 min, 5 sec"), (3_725.0, "1 hr, 2 min"),
     ])
     func durations(duration: Double, expectedFragment: String) {
         #expect(DurationFormatter.scanDuration(duration).contains(expectedFragment))

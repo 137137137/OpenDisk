@@ -13,14 +13,15 @@ struct ScanStatusBar<Leading: View>: View {
     @ViewBuilder let leading: Leading
 
     private var scanStatus: String {
-        "Scanning: \(ByteFormatter.formatFileSize(scannedBytes)) (\(itemsScanned.formatted()) items)"
+        let items = String(localized: "\(itemsScanned) items")
+        return String(localized: "Scanning: \(ByteFormatter.formatFileSize(scannedBytes)) (\(items))")
     }
 
     private var filesPerSecond: String {
         guard let scanStartDate, itemsScanned > 0 else { return "" }
         let elapsed = Date().timeIntervalSince(scanStartDate)
         guard elapsed > 0 else { return "" }
-        return "\(Int(Double(itemsScanned) / elapsed).formatted()) files/sec"
+        return String(localized: "\(Int(Double(itemsScanned) / elapsed)) files/sec")
     }
 
     var body: some View {
@@ -57,8 +58,8 @@ struct ScanStatusBar<Leading: View>: View {
                     .controlSize(.small)
                     .frame(width: 80)
                 ViewThatFits(in: .horizontal) {
-                    Text("Updating changed folders (\(stepsCompleted.formatted()) of \(stepsTotal.formatted()))")
-                    Text("\(stepsCompleted.formatted()) of \(stepsTotal.formatted())")
+                    Text("Updating changed folders (\(stepsCompleted) of \(stepsTotal))")
+                    Text("\(stepsCompleted) of \(stepsTotal)")
                 }
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -76,16 +77,16 @@ struct ScanStatusBar<Leading: View>: View {
                 }
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 6) {
-                        Text(itemsScanned > 0 ? scanStatus : "Scanning…")
+                        Text(itemsScanned > 0 ? scanStatus : String(localized: "Scanning…"))
                             .foregroundStyle(.secondary)
                         if !filesPerSecond.isEmpty {
-                            Text("· \(filesPerSecond)")
+                            Text(verbatim: "· \(filesPerSecond)")
                                 .foregroundStyle(.tertiary)
                         }
                     }
-                    Text(itemsScanned > 0 ? scanStatus : "Scanning…")
+                    Text(itemsScanned > 0 ? scanStatus : String(localized: "Scanning…"))
                         .foregroundStyle(.secondary)
-                    Text(itemsScanned > 0 ? ByteFormatter.formatFileSize(scannedBytes) : "Scanning…")
+                    Text(itemsScanned > 0 ? ByteFormatter.formatFileSize(scannedBytes) : String(localized: "Scanning…"))
                         .foregroundStyle(.secondary)
                 }
             }

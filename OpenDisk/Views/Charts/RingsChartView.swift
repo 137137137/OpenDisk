@@ -97,9 +97,8 @@ struct RingsChartView: View {
     }
 
     private var chartAccessibilityLabel: String {
-        "Disk usage chart for \(root.name), \(root.children.count) "
-            + "item\(root.children.count == 1 ? "" : "s"), "
-            + "total size \(ByteFormatter.formatFileSize(root.size))"
+        let items = String(localized: "\(root.children.count) items")
+        return String(localized: "Disk usage chart for \(root.name), \(items), total size \(ByteFormatter.formatFileSize(root.size))")
     }
 
     private var accessibilitySegmentList: some View {
@@ -111,7 +110,7 @@ struct RingsChartView: View {
                     .accessibilityElement()
                     .accessibilityLabel(segment.name)
                     .accessibilityValue(
-                        "\(ByteFormatter.formatFileSize(segment.size)), \(percent) percent"
+                        String(localized: "\(ByteFormatter.formatFileSize(segment.size)), \(percent) percent")
                     )
                     .accessibilityAddTraits(segment.kind == .directory ? .isButton : [])
                     .accessibilityAction {
@@ -147,8 +146,8 @@ struct RingsChartView: View {
 
     private func protectedReason(for files: [CollectedFile]) -> String? {
         for file in files {
-            if let reason = ProtectedPaths.reason(for: file.path) {
-                return "“\(file.name)” \(reason)"
+            if let message = ProtectedPaths.message(for: file.path, name: file.name) {
+                return message
             }
         }
         return nil

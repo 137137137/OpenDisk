@@ -69,8 +69,8 @@ enum FullDiskAccess {
         alert.informativeText = message
         alert.icon = NSApp.applicationIconImage
         alert.showsSuppressionButton = true
-        alert.addButton(withTitle: "Open Settings")
-        alert.addButton(withTitle: "Later")
+        alert.addButton(withTitle: String(localized: "Open Settings"))
+        alert.addButton(withTitle: String(localized: "Later"))
 
         let response = alert.runModal()
         if alert.suppressionButton?.state == .on {

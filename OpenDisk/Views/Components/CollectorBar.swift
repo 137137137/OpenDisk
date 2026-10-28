@@ -105,7 +105,7 @@ struct CollectorBar: View {
                 QuickLookSheet(url: item.url)
             }
             .confirmationDialog(
-                "Delete \(collector.count) item\(collector.count == 1 ? "" : "s")?",
+                "Delete \(collector.count) items?",
                 isPresented: $showConfirm,
                 titleVisibility: .visible
             ) {
@@ -174,7 +174,7 @@ struct CollectorBar: View {
                     .font(.headline)
                     .monospacedDigit()
                     .contentTransition(.numericText())
-                Text("\(collector.count) item\(collector.count == 1 ? "" : "s") collected")
+                Text("\(collector.count) items collected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -213,16 +213,17 @@ struct CollectorBar: View {
                     Text(deletingTitle)
                         .fontWeight(.medium)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                     if let progress = collector.deletionProgress {
-                        HStack(spacing: 0) {
-                            Text(progress.disposal == .trash ? "Moved " : "Freed ").foregroundStyle(.secondary)
-                            Text(ByteFormatter.formatFileSize(progress.freedBytes))
-                                .fontWeight(.semibold)
-                                .monospacedDigit()
-                                .contentTransition(.numericText())
-                            Text(" · \(progress.completed) of \(progress.total)")
-                                .foregroundStyle(.secondary)
-                        }
+                        let freed = Text(ByteFormatter.formatFileSize(progress.freedBytes))
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.primary)
+                        ((progress.disposal == .trash ? Text("Moved \(freed)") : Text("Freed \(freed)"))
+                            + Text(verbatim: " · ")
+                            + Text("\(progress.completed) of \(progress.total)"))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
                         .font(.caption)
                     }
                 }
@@ -240,12 +241,11 @@ struct CollectorBar: View {
     }
 
     private var deletingTitle: String {
-        let verb = collector.deletionProgress?.disposal == .trash ? "Moving" : "Deleting"
-        let suffix = collector.deletionProgress?.disposal == .trash ? " to the Trash" : ""
+        let toTrash = collector.deletionProgress?.disposal == .trash
         if let name = collector.deletionProgress?.currentName, !name.isEmpty {
-            return "\(verb) \(name)\(suffix)…"
+            return toTrash ? String(localized: "Moving \(name) to the Trash…") : String(localized: "Deleting \(name)…")
         }
-        return "\(verb)\(suffix)…"
+        return toTrash ? String(localized: "Moving to the Trash…") : String(localized: "Deleting…")
     }
 
     private var doneView: some View {
@@ -253,15 +253,13 @@ struct CollectorBar: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
             if let result = lastResult {
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(result.disposal == .trash ? "Moved " : "Freed ").foregroundStyle(.secondary)
-                    Text(ByteFormatter.formatFileSize(result.freedBytes)).fontWeight(.semibold)
-                    if result.disposal == .trash {
-                        Text(" to the Trash").foregroundStyle(.secondary)
-                    }
-                }
+                let freed = Text(ByteFormatter.formatFileSize(result.freedBytes))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                (result.disposal == .trash ? Text("Moved \(freed) to the Trash") : Text("Freed \(freed)"))
+                    .foregroundStyle(.secondary)
                 if !result.failures.isEmpty {
-                    Text(" · \(result.failures.count) couldn't be removed")
+                    (Text(verbatim: " · ") + Text("\(result.failures.count) couldn't be removed"))
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }

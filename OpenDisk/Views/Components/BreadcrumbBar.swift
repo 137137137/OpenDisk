@@ -73,7 +73,7 @@ struct BreadcrumbBar: View {
         HStack(spacing: 3) {
             ForEach(Array(components.enumerated()), id: \.offset) { index, component in
                 if index > 0 {
-                    Image(systemName: "chevron.right")
+                    Image(systemName: "chevron.forward")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 1)

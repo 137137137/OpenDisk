@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("fda_show_prompt_at_startup") private var showPromptAtStartup = true
     @AppStorage(FreeSpaceInfo.defaultsKey) private var showFreeSpace = true
     @State private var keyBindings = KeyBindingStore.shared
+    @State private var language = AppLanguage.current
 
     var body: some View {
         Form {
@@ -79,6 +80,33 @@ struct SettingsView: View {
                 }
             } header: {
                 Label("Chart", systemImage: "chart.pie")
+            }
+
+            Section {
+                Picker("Language", selection: $language) {
+                    Text("Automatic").tag(AppLanguage.automatic)
+                    Divider()
+                    ForEach(AppLanguage.options) { option in
+                        Text(verbatim: option.name).tag(option.code)
+                    }
+                }
+                .onChange(of: language) { _, code in
+                    AppLanguage.select(code)
+                }
+
+                if language != AppLanguage.atLaunch {
+                    HStack {
+                        Text("Restart OpenDisk to use the new language.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Restart Now") {
+                            FullDiskAccess.relaunch()
+                        }
+                    }
+                }
+            } header: {
+                Label("Language", systemImage: "globe")
             }
 
             Section {

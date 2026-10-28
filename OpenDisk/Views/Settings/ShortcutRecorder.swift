@@ -36,8 +36,8 @@ struct ShortcutRecorder: View {
     }
 
     private var label: String {
-        if isRecording { return "Press keys…" }
-        return store.combo(for: action)?.displayString ?? "None"
+        if isRecording { return String(localized: "Press keys…") }
+        return store.combo(for: action)?.displayString ?? String(localized: "None")
     }
 
     private var labelColor: Color {

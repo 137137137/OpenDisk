@@ -16,26 +16,26 @@ enum KeyAction: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .moveDown: "Next item"
-        case .moveUp: "Previous item"
-        case .openSelected: "Open folder / preview file"
-        case .enclosingFolder: "Enclosing folder"
-        case .addToCollector: "Add selection to collector"
-        case .quickLook: "Quick Look"
-        case .showInFinder: "Show in Finder"
-        case .selectAll: "Select all"
+        case .moveDown: String(localized: "Next item")
+        case .moveUp: String(localized: "Previous item")
+        case .openSelected: String(localized: "Open folder / preview file")
+        case .enclosingFolder: String(localized: "Enclosing folder")
+        case .addToCollector: String(localized: "Add selection to collector")
+        case .quickLook: String(localized: "Quick Look")
+        case .showInFinder: String(localized: "Show in Finder")
+        case .selectAll: String(localized: "Select all")
         }
     }
 
     var detail: String {
         switch self {
-        case .moveDown, .moveUp: "Hold ⇧ to extend the selection"
-        case .openSelected: "Folders open in the list, files open in Quick Look"
-        case .enclosingFolder: "Go up one level"
-        case .addToCollector: "Queues the selected items for deletion"
-        case .quickLook: "Toggles the preview for the selected item"
-        case .showInFinder: "Reveals the selected items in Finder"
-        case .selectAll: "Selects every item in the list"
+        case .moveDown, .moveUp: String(localized: "Hold ⇧ to extend the selection")
+        case .openSelected: String(localized: "Folders open in the list, files open in Quick Look")
+        case .enclosingFolder: String(localized: "Go up one level")
+        case .addToCollector: String(localized: "Queues the selected items for deletion")
+        case .quickLook: String(localized: "Toggles the preview for the selected item")
+        case .showInFinder: String(localized: "Reveals the selected items in Finder")
+        case .selectAll: String(localized: "Selects every item in the list")
         }
     }
 
@@ -103,7 +103,7 @@ struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         if modifiers.contains(.option) { text += "⌥" }
         if modifiers.contains(.shift) { text += "⇧" }
         if modifiers.contains(.command) { text += "⌘" }
-        return text + keyLabel
+        return text + (Self.specialLabel(forKeyCode: keyCode) ?? keyLabel)
     }
 
     func matches(_ event: NSEvent, ignoringShift: Bool = false) -> Bool {
@@ -125,7 +125,7 @@ struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         switch code {
         case Code.returnKey: "↩"
         case Code.tab: "⇥"
-        case Code.space: "Space"
+        case Code.space: String(localized: "Space")
         case Code.delete: "⌫"
         case Code.escape: "⎋"
         case Code.enter: "⌤"

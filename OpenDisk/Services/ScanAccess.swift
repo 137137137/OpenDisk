@@ -37,14 +37,11 @@ final class ScanAccess {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Scan"
+        panel.prompt = String(localized: "Scan")
         if let suggestedName {
-            panel.message = "Select “\(suggestedName)” to let OpenDisk scan it, then click Scan. "
-                + "OpenDisk remembers your choice, so next time it's one click."
+            panel.message = String(localized: "Select “\(suggestedName)” to let OpenDisk scan it, then click Scan. OpenDisk remembers your choice, so next time it's one click.")
         } else {
-            panel.message = "Choose what to scan. To analyze your whole Mac, pick your startup disk "
-                + "(e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume. "
-                + "OpenDisk remembers your choice."
+            panel.message = String(localized: "Choose what to scan. To analyze your whole Mac, pick your startup disk (e.g. “Macintosh HD”) from the sidebar. You can also choose any folder or volume. OpenDisk remembers your choice.")
         }
         panel.directoryURL = startURL ?? URL(fileURLWithPath: "/")
         guard panel.runModal() == .OK, let url = panel.url else { return nil }

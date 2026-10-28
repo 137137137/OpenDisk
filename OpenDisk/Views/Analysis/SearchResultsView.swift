@@ -84,12 +84,11 @@ struct SearchResultsView: View {
     }
 
     private var summary: String {
+        let matches = String(localized: "\(totalMatches) matches")
         if totalMatches > items.count {
-            return "Largest \(items.count) of \(totalMatches.formatted()) matches"
+            return "\(matches) · " + String(localized: "showing the largest \(items.count)")
         }
-        return totalMatches == 1
-            ? "1 match · largest first"
-            : "\(totalMatches.formatted()) matches · largest first"
+        return "\(matches) · " + String(localized: "largest first")
     }
 
     private func location(of item: FolderItem) -> String {

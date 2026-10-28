@@ -51,7 +51,7 @@ final class DeviceMonitor {
 
         if let capacity = volumeCapacity(ofPath: "/") {
             devices.append(DeviceInfo(
-                name: "Computer",
+                name: String(localized: "Computer"),
                 icon: "desktopcomputer",
                 path: "/",
                 totalBytes: capacity.total,

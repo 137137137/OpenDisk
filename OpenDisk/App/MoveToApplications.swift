@@ -26,12 +26,12 @@ enum MoveToApplications {
         guard !UserDefaults.standard.bool(forKey: suppressionKey) else { return false }
 
         let alert = NSAlert()
-        alert.messageText = "Move OpenDisk to your Applications folder?"
-        alert.informativeText = "OpenDisk works best from the Applications folder, and automatic updates require it. It will move itself and reopen."
-        alert.addButton(withTitle: "Move to Applications")
-        alert.addButton(withTitle: "Not Now")
+        alert.messageText = String(localized: "Move OpenDisk to your Applications folder?")
+        alert.informativeText = String(localized: "OpenDisk works best from the Applications folder, and automatic updates require it. It will move itself and reopen.")
+        alert.addButton(withTitle: String(localized: "Move to Applications"))
+        alert.addButton(withTitle: String(localized: "Not Now"))
         alert.showsSuppressionButton = true
-        alert.suppressionButton?.title = "Don't ask again"
+        alert.suppressionButton?.title = String(localized: "Don't ask again")
 
         let response = alert.runModal()
         if alert.suppressionButton?.state == .on {
@@ -42,8 +42,8 @@ enum MoveToApplications {
         guard let destination = performMove(from: sourceURL) else {
             let failure = NSAlert()
             failure.alertStyle = .warning
-            failure.messageText = "Couldn't Move OpenDisk"
-            failure.informativeText = "Please quit OpenDisk and drag it into the Applications folder yourself."
+            failure.messageText = String(localized: "Couldn't Move OpenDisk")
+            failure.informativeText = String(localized: "Please quit OpenDisk and drag it into the Applications folder yourself.")
             failure.runModal()
             return false
         }

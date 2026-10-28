@@ -38,18 +38,19 @@ enum ByteFormatter {
 
 enum DurationFormatter {
     static func scanDuration(_ duration: TimeInterval) -> String {
+        let elapsed: String
         if duration < 1 {
-            return String(format: "Scanned in %.0f ms", duration * 1_000)
+            elapsed = Duration.milliseconds(Int64((duration * 1_000).rounded()))
+                .formatted(.units(allowed: [.milliseconds], width: .abbreviated))
+        } else if duration < 60 {
+            elapsed = Duration.milliseconds(Int64((duration * 1_000).rounded()))
+                .formatted(.units(allowed: [.seconds], width: .wide, fractionalPart: .show(length: 1)))
+        } else {
+            let total = Int64(duration.rounded())
+            let units: Set<Duration.UnitsFormatStyle.Unit> = total >= 3_600 ? [.hours, .minutes] : [.minutes, .seconds]
+            elapsed = Duration.seconds(total)
+                .formatted(.units(allowed: units, width: .abbreviated, zeroValueUnits: .show(length: 1)))
         }
-        if duration < 60 {
-            return String(format: "Scanned in %.1f seconds", duration)
-        }
-        let total = Int(duration.rounded())
-        let hours = total / 3_600
-        let minutes = total % 3_600 / 60
-        if hours > 0 {
-            return "Scanned in \(hours) hr \(minutes) min"
-        }
-        return "Scanned in \(minutes) min \(total % 60) sec"
+        return String(localized: "Scanned in \(elapsed)")
     }
 }
