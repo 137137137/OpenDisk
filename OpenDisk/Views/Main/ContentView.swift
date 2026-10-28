@@ -21,7 +21,7 @@ struct ContentView: View {
                 onAddFolder: addFolder,
                 onRemoveFolder: removeFolder
             )
-            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 320)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 300)
         } detail: {
             if let active {
                 DiskAnalysisView(

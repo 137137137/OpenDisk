@@ -516,23 +516,15 @@ struct DiskAnalysisView: View {
             Color.clear
                 .frame(width: listScale.icon, height: 1)
             sortHeaderButton(.name, "Name")
-                .frame(maxWidth: listScale.scaled(FileColumns.nameMax), alignment: .leading)
-                .layoutPriority(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
             sortHeaderButton(.size, "Size")
                 .frame(width: listScale.scaled(FileColumns.size), alignment: .trailing)
             Color.clear
                 .frame(width: listScale.scaled(FileColumns.bar), height: 1)
             if showsDetailColumns {
                 Text("Kind")
-                    .frame(
-                        minWidth: listScale.scaled(FileColumns.kind),
-                        maxWidth: listScale.scaled(FileColumns.kindMax),
-                        alignment: .leading
-                    )
-                    .layoutPriority(1)
+                    .frame(width: listScale.scaled(FileColumns.kind), alignment: .leading)
             }
-
-            Spacer(minLength: 0)
         }
         .font(.system(size: listScale.headerFontSize, weight: .medium))
         .foregroundStyle(.secondary)
