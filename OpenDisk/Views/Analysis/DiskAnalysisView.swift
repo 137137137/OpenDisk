@@ -88,6 +88,9 @@ struct DiskAnalysisView: View {
             }
         }
         .onAppear {
+            collector.knownSize = { [analyzer] path in
+                analyzer.isScanning ? nil : analyzer.size(ofPath: path)
+            }
             if keyMonitor == nil {
                 keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                     handleKey(event)
