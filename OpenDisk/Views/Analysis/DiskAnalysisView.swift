@@ -25,15 +25,17 @@ struct DiskAnalysisView: View {
     @State private var navigationMonitor: Any?
     @State private var windowNumber: Int?
     @State private var keyBindings = KeyBindingStore.shared
-    @State private var sort: SortField = .size
-    @State private var sortAscending = false
+    @State private var sort = FileListSort()
+    @State private var metadataStore = FileMetadataStore()
+    @AppStorage(FileListColumnSelection.defaultsKey)
+    private var storedColumns = FileListColumnSelection.defaultStoredValue
     private let totalUsedDiskSpace: Int64
     @State private var volumeCapacity: VolumeCapacity?
     @AppStorage(FreeSpaceInfo.defaultsKey) private var showFreeSpace = true
     @AppStorage("inspector_visible") private var showInspector = true
     @AppStorage(ListScale.defaultsKey) private var listScaleLevel = ListScale.defaultLevel
     @State private var isVolumeRoot = false
-    @State private var listIsWide = true
+    @State private var listWidth: CGFloat = 0
 
     init(
         rootPath: String,
@@ -144,6 +146,7 @@ struct DiskAnalysisView: View {
             selectionAnchor = nil
         }
         .onChange(of: currentPath) {
+            metadataStore.removeAll()
             selectedPaths.removeAll()
             selectionAnchor = nil
             if let focus = pendingFocus {
@@ -162,6 +165,7 @@ struct DiskAnalysisView: View {
         }
         .background(WindowNumberReader { windowNumber = $0 })
         .environment(collector)
+        .environment(metadataStore)
         .background {
             Button("Undo Collect") { collector.undo() }
                 .keyboardShortcut("z", modifiers: .command)
@@ -184,14 +188,13 @@ struct DiskAnalysisView: View {
 
     @ViewBuilder
     private var mainColumn: some View {
-        let detailMinWidth = listScale.scaled(FileColumns.detailMinWidth)
         VStack(spacing: 0) {
             if !analyzer.rootItems.isEmpty {
                 listPane
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onGeometryChange(for: Bool.self) {
-                        $0.size.width >= detailMinWidth
-                    } action: { listIsWide = $0 }
+                    .onGeometryChange(for: CGFloat.self) {
+                        $0.size.width
+                    } action: { listWidth = $0 }
                     .searchable(
                         text: $searchText,
                         isPresented: $searchPresented,
@@ -240,18 +243,12 @@ struct DiskAnalysisView: View {
         return sortedForDisplay(filtered)
     }
 
-    private enum SortField { case name, size }
-
     private func sortedForDisplay(_ items: [FolderItem]) -> [FolderItem] {
-        switch sort {
-        case .name:
-            return items.sorted {
-                let result = $0.name.localizedStandardCompare($1.name)
-                return sortAscending ? result == .orderedAscending : result == .orderedDescending
-            }
-        case .size:
-            return items.sorted { sortAscending ? $0.size < $1.size : $0.size > $1.size }
-        }
+        displayedSort.sorted(items, metadata: metadataStore.metadata(for:))
+    }
+
+    private var displayedSort: FileListSort {
+        sort.resolved(visibleColumns: columnSelection.columns)
     }
 
     private func selectionFiles(in items: [FolderItem]) -> [CollectedFile] {
@@ -262,6 +259,9 @@ struct DiskAnalysisView: View {
     private var listPane: some View {
         let items = visibleItems
         let kindWidth = FileColumns.kindWidth(for: items, scale: listScale)
+        let columns = FileListLayout.columnsThatFit(
+            columnSelection.columns, in: listWidth, scale: listScale, kindWidth: kindWidth
+        )
         Group {
             if isSearchActive {
                 VStack(spacing: 0) {
@@ -276,7 +276,7 @@ struct DiskAnalysisView: View {
                         query: searchText,
                         selectedPaths: selectedPaths,
                         focusedPath: selectionAnchor,
-                        showsDetailColumns: showsDetailColumns,
+                        columns: columns,
                         kindWidth: kindWidth,
                         selectionFiles: selectionFiles(in: items),
                         onQuickLook: quickLook,
@@ -290,7 +290,7 @@ struct DiskAnalysisView: View {
                     displayVersion: analyzer.displayVersion,
                     selectedPaths: selectedPaths,
                     focusedPath: selectionAnchor,
-                    showsDetailColumns: showsDetailColumns,
+                    columns: columns,
                     kindWidth: kindWidth,
                     selectionFiles: selectionFiles(in: items),
                     onQuickLook: quickLook,
@@ -299,13 +299,17 @@ struct DiskAnalysisView: View {
                 ) {
                     VStack(spacing: 0) {
                         pathBar
-                        columnHeader(kindWidth: kindWidth)
+                        columnHeader(columns: columns, kindWidth: kindWidth)
                     }
                 }
                 .id(currentPath)
             }
         }
         .environment(\.listScale, listScale)
+        .task(id: MetadataRequest(items: items, columns: columns, version: listVersion)) {
+            guard columns.contains(where: \.needsMetadata) else { return }
+            await metadataStore.load(items.map(\.path))
+        }
         .quickLookPreview(
             $quickLookURL,
             in: items.compactMap {
@@ -501,7 +505,26 @@ struct DiskAnalysisView: View {
 
     private var listScale: ListScale { ListScale(level: listScaleLevel) }
 
-    private var showsDetailColumns: Bool { listIsWide }
+    private var columnSelection: FileListColumnSelection {
+        FileListColumnSelection(storedValue: storedColumns)
+    }
+
+    /// Changes whenever the analyzer publishes new rows, so metadata of rescanned items is reloaded.
+    private var listVersion: Int {
+        isSearchActive ? analyzer.searchResultsVersion : analyzer.displayVersion
+    }
+
+    private struct MetadataRequest: Equatable {
+        let paths: [String]
+        let needsMetadata: Bool
+        let version: Int
+
+        init(items: [FolderItem], columns: [FileListColumn], version: Int) {
+            paths = items.map(\.path)
+            needsMetadata = columns.contains(where: \.needsMetadata)
+            self.version = version
+        }
+    }
 
     private var pathBar: some View {
         BreadcrumbBar(
@@ -514,19 +537,19 @@ struct DiskAnalysisView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func columnHeader(kindWidth: CGFloat) -> some View {
+    private func columnHeader(columns: [FileListColumn], kindWidth: CGFloat) -> some View {
         HStack(spacing: FileColumns.spacing) {
             Color.clear
                 .frame(width: listScale.icon, height: 1)
-            sortHeaderButton(.name, "Name")
+            sortHeaderButton(.name, String(localized: "Name"))
                 .frame(maxWidth: .infinity, alignment: .leading)
-            sortHeaderButton(.size, "Size")
+            sortHeaderButton(.size, String(localized: "Size"))
                 .frame(width: listScale.scaled(FileColumns.size), alignment: .trailing)
             Color.clear
                 .frame(width: listScale.scaled(FileColumns.bar), height: 1)
-            if showsDetailColumns {
-                Text("Kind")
-                    .frame(width: kindWidth, alignment: .leading)
+            ForEach(columns) { column in
+                columnTitle(column)
+                    .frame(width: column.width(scale: listScale, kindWidth: kindWidth), alignment: .leading)
             }
         }
         .font(.system(size: listScale.headerFontSize, weight: .medium))
@@ -535,22 +558,30 @@ struct DiskAnalysisView: View {
         .minimumScaleFactor(0.8)
         .padding(.horizontal, FileColumns.inset * 2)
         .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .contextMenu { FileListColumnToggles() }
     }
 
-    private func sortHeaderButton(_ field: SortField, _ label: LocalizedStringKey) -> some View {
-        Button {
-            if sort == field {
-                sortAscending.toggle()
-            } else {
-                sort = field
-                sortAscending = (field == .name)
-            }
+    @ViewBuilder
+    private func columnTitle(_ column: FileListColumn) -> some View {
+        if column.isSortable {
+            sortHeaderButton(.column(column), column.title)
+        } else {
+            Text(column.title)
+        }
+    }
+
+    private func sortHeaderButton(_ field: FileListSortField, _ label: String) -> some View {
+        let isSorted = displayedSort.field == field
+        return Button {
+            sort = displayedSort
+            sort.select(field)
         } label: {
             HStack(spacing: 3) {
                 Text(label)
-                Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
+                Image(systemName: displayedSort.ascending ? "chevron.up" : "chevron.down")
                     .font(.system(size: 8, weight: .bold))
-                    .opacity(sort == field ? 1 : 0)
+                    .opacity(isSorted ? 1 : 0)
             }
             .contentShape(Rectangle())
         }
@@ -687,12 +718,14 @@ struct DiskAnalysisView: View {
     }
 
     private func refresh() {
+        metadataStore.removeAll()
         Task {
             await analyzer.scanDirectory(currentPath.hasPrefix("::") ? rootPath : currentPath)
         }
     }
 
     private func rescanFromTop() {
+        metadataStore.removeAll()
         history.reset()
         currentPath = rootPath
         Task { await analyzer.scanDirectory(rootPath) }

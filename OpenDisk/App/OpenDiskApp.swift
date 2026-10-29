@@ -29,6 +29,13 @@ struct OpenDiskApp: App {
         .commands {
             ToolbarCommands()
             TextSizeCommands()
+            CommandGroup(after: .toolbar) {
+                Divider()
+                Menu("Columns") {
+                    FileListColumnToggles()
+                }
+                Divider()
+            }
             #if canImport(Sparkle)
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(
