@@ -6,8 +6,12 @@ Only the latest release of OpenDisk gets security fixes. The website build updat
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.2.x   | :white_check_mark: |
-| < 1.2   | :x:                |
+| 1.5.x   | :white_check_mark: |
+| < 1.5   | :x:                |
+
+## Security Maintainer
+
+Andrei Golli ([@137137137](https://github.com/137137137))
 
 ## Reporting a Vulnerability
 
