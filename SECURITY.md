@@ -11,7 +11,7 @@ Only the latest release of OpenDisk gets security fixes. The website build updat
 
 ## Security Maintainer
 
-Andrei Golli ([@137137137](https://github.com/137137137))
+([@137137137](https://github.com/137137137))
 
 ## Reporting a Vulnerability
 
