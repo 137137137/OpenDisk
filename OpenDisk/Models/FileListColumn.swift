@@ -1,8 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// Optional columns shown after the size bar, in display order.
-/// Name and Size are always shown.
 enum FileListColumn: String, CaseIterable, Identifiable, Sendable {
     case kind
     case modified
@@ -24,8 +22,6 @@ enum FileListColumn: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Unscaled width. Kind is measured from the labels in the list and only
-    /// falls back to this when no measurement is available.
     private var baseWidth: CGFloat {
         switch self {
         case .kind: FileColumns.kind
@@ -46,15 +42,12 @@ enum FileListColumn: String, CaseIterable, Identifiable, Sendable {
 
     var isSortable: Bool { self != .permissions }
 
-    /// Kind is derived from the name; every other column reads file metadata.
     var needsMetadata: Bool { self != .kind }
 }
 
-/// The columns the user chose to show, persisted as a comma-separated list
-/// so it fits in @AppStorage.
 struct FileListColumnSelection: Equatable {
     static let defaultsKey = "visible_file_list_columns"
-    static let defaultStoredValue = FileListColumnSelection(columns: [.kind, .modified]).storedValue
+    static let defaultStoredValue = FileListColumnSelection(columns: [.kind]).storedValue
 
     let columns: [FileListColumn]
 
@@ -83,10 +76,8 @@ struct FileListColumnSelection: Equatable {
 }
 
 enum FileListLayout {
-    /// The narrowest name we keep before dropping optional columns.
     static let nameMinWidth: CGFloat = 134
 
-    /// Keeps the leading columns that fit next to the name, dropping the rest.
     static func columnsThatFit(
         _ columns: [FileListColumn],
         in listWidth: CGFloat,
@@ -103,7 +94,6 @@ enum FileListLayout {
         return fittingColumns
     }
 
-    /// Row insets, icon, minimal name, size and size bar with the spacing between them.
     private static func alwaysVisibleWidth(scale: ListScale) -> CGFloat {
         FileColumns.inset * 4
             + scale.icon

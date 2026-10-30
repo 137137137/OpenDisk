@@ -49,7 +49,6 @@ enum FileDateFormatter {
 enum PermissionsFormatter {
     private static let symbols: [Character] = ["r", "w", "x"]
 
-    /// Renders the owner/group/other bits the way `ls -l` does, e.g. "rwxr-xr-x".
     static func symbolic(_ mode: UInt16) -> String {
         String((0..<9).map { position in
             let mask = UInt16(1) << UInt16(8 - position)

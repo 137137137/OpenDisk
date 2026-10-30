@@ -44,14 +44,15 @@ struct FormattersTests {
         defer { try? FileManager.default.removeItem(at: url) }
         try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: url.path)
 
-        let metadata = try #require(FileMetadata.read(atPath: url.path))
+        let metadata = try #require(FileMetadata.read(atPath: url.path, includingLastOpenedDate: false))
         #expect(metadata.posixPermissions == 0o640)
         #expect(metadata.modificationDate != nil)
         #expect(metadata.creationDate != nil)
         #expect(metadata.date(for: .modified) == metadata.modificationDate)
         #expect(metadata.date(for: .permissions) == nil)
         #expect(metadata.ownerName == NSUserName())
-        #expect(FileMetadata.read(atPath: url.path + "-missing") == nil)
+        #expect(metadata.lastOpenedDate == nil)
+        #expect(FileMetadata.read(atPath: url.path + "-missing", includingLastOpenedDate: true) == nil)
     }
 
     @Test("scan durations pick sensible units", arguments: [

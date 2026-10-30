@@ -5,7 +5,6 @@ enum FileListSortField: Equatable {
     case size
     case column(FileListColumn)
 
-    /// Text sorts A to Z first; sizes and dates show the largest and newest first.
     var startsAscending: Bool {
         switch self {
         case .name, .column(.kind), .column(.owner): true
@@ -18,7 +17,6 @@ struct FileListSort: Equatable {
     var field: FileListSortField = .size
     var ascending = false
 
-    /// Clicking the current column reverses it; another column starts in its natural order.
     mutating func select(_ newField: FileListSortField) {
         if field == newField {
             ascending.toggle()
@@ -28,7 +26,6 @@ struct FileListSort: Equatable {
         }
     }
 
-    /// Sorting by a column the user turned off would look random, so it falls back to size.
     func resolved(visibleColumns: [FileListColumn]) -> FileListSort {
         guard case .column(let column) = field, !visibleColumns.contains(column) else { return self }
         return FileListSort()
@@ -59,7 +56,6 @@ struct FileListSort: Equatable {
         ascending ? result == .orderedAscending : result == .orderedDescending
     }
 
-    /// Items without a known owner always go last, whatever the direction.
     private func sortedByOwner(
         _ items: [FolderItem],
         metadata: (String) -> FileMetadata?
@@ -78,7 +74,6 @@ struct FileListSort: Equatable {
         }
     }
 
-    /// Items without a known date always go last, whatever the direction.
     private func sortedByDate(
         _ items: [FolderItem],
         column: FileListColumn,

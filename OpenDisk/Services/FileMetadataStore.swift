@@ -1,12 +1,11 @@
 import Foundation
 import Observation
 
-/// Caches metadata of the listed items so rows can show it and the list can be
-/// sorted by date. Cleared on navigation and rescans to keep dates fresh.
 @MainActor
 @Observable
 final class FileMetadataStore {
     private var metadataByPath: [String: FileMetadata] = [:]
+    private var pathsWithLastOpenedDate = Set<String>()
 
     func metadata(for path: String) -> FileMetadata? {
         metadataByPath[path]
@@ -14,22 +13,33 @@ final class FileMetadataStore {
 
     func removeAll() {
         metadataByPath.removeAll()
+        pathsWithLastOpenedDate.removeAll()
     }
 
-    func load(_ paths: [String]) async {
-        let missingPaths = paths.filter { !$0.hasPrefix("::") && metadataByPath[$0] == nil }
+    func load(_ paths: [String], includingLastOpenedDate: Bool) async {
+        let missingPaths = paths.filter { path in
+            guard !path.hasPrefix("::") else { return false }
+            if metadataByPath[path] == nil { return true }
+            return includingLastOpenedDate && !pathsWithLastOpenedDate.contains(path)
+        }
         guard !missingPaths.isEmpty else { return }
         let loaded = await Task.detached(priority: .utility) {
-            Self.read(missingPaths)
+            Self.read(missingPaths, includingLastOpenedDate: includingLastOpenedDate)
         }.value
         guard !Task.isCancelled else { return }
         metadataByPath.merge(loaded) { _, newer in newer }
+        if includingLastOpenedDate {
+            pathsWithLastOpenedDate.formUnion(loaded.keys)
+        }
     }
 
-    private nonisolated static func read(_ paths: [String]) -> [String: FileMetadata] {
+    private nonisolated static func read(
+        _ paths: [String],
+        includingLastOpenedDate: Bool
+    ) -> [String: FileMetadata] {
         var result: [String: FileMetadata] = [:]
         for path in paths {
-            result[path] = FileMetadata.read(atPath: path)
+            result[path] = FileMetadata.read(atPath: path, includingLastOpenedDate: includingLastOpenedDate)
         }
         return result
     }

@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// One checkbox per optional column; used in the column header's context menu
-/// and in the View menu.
 struct FileListColumnToggles: View {
     @AppStorage(FileListColumnSelection.defaultsKey)
     private var storedColumns = FileListColumnSelection.defaultStoredValue

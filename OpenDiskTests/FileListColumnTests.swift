@@ -18,10 +18,10 @@ struct FileListColumnTests {
         #expect(FileListColumnSelection(storedValue: "bogus,created,,").columns == [.created])
     }
 
-    @Test("default selection shows kind and modified")
+    @Test("default selection shows only kind, like the list before columns")
     func defaultSelection() {
         let selection = FileListColumnSelection(storedValue: FileListColumnSelection.defaultStoredValue)
-        #expect(selection.columns == [.kind, .modified])
+        #expect(selection.columns == [.kind])
     }
 
     @Test("toggling a column keeps the display order")
@@ -34,7 +34,6 @@ struct FileListColumnTests {
         #expect(selection.setting(.kind, visible: true) == selection)
     }
 
-    /// Width of Kind in a list of plain folders and documents.
     private let kindWidth: CGFloat = 70
 
     private func columnsThatFit(_ columns: [FileListColumn], in width: CGFloat) -> [FileListColumn] {

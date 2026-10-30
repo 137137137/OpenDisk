@@ -308,7 +308,10 @@ struct DiskAnalysisView: View {
         .environment(\.listScale, listScale)
         .task(id: MetadataRequest(items: items, columns: columns, version: listVersion)) {
             guard columns.contains(where: \.needsMetadata) else { return }
-            await metadataStore.load(items.map(\.path))
+            await metadataStore.load(
+                items.map(\.path),
+                includingLastOpenedDate: columns.contains(.lastOpened)
+            )
         }
         .quickLookPreview(
             $quickLookURL,
@@ -509,19 +512,18 @@ struct DiskAnalysisView: View {
         FileListColumnSelection(storedValue: storedColumns)
     }
 
-    /// Changes whenever the analyzer publishes new rows, so metadata of rescanned items is reloaded.
     private var listVersion: Int {
         isSearchActive ? analyzer.searchResultsVersion : analyzer.displayVersion
     }
 
     private struct MetadataRequest: Equatable {
         let paths: [String]
-        let needsMetadata: Bool
+        let columns: [FileListColumn]
         let version: Int
 
         init(items: [FolderItem], columns: [FileListColumn], version: Int) {
             paths = items.map(\.path)
-            needsMetadata = columns.contains(where: \.needsMetadata)
+            self.columns = columns
             self.version = version
         }
     }
