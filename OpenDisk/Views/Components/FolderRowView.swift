@@ -24,7 +24,6 @@ enum FileColumns {
     }
     static let inset: CGFloat = 8
     static let rowHeight: CGFloat = 28
-    static let detailMinWidth: CGFloat = 460
 }
 
 struct ListScale: Equatable {
@@ -94,7 +93,7 @@ struct FolderRowView: View {
     var index: Int = 0
     var locationDetail: String? = nil
     var isSelected: Bool = false
-    var showsDetailColumns: Bool = true
+    var columns: [FileListColumn] = []
     var kindWidth: CGFloat? = nil
     var selectionFiles: [CollectedFile] = []
     var sizeFraction: Double? = nil
@@ -103,6 +102,7 @@ struct FolderRowView: View {
     let onOpen: () -> Void
 
     @Environment(Collector.self) private var collector
+    @Environment(FileMetadataStore.self) private var metadataStore
     @Environment(\.controlActiveState) private var controlActiveState
     @Environment(\.listScale) private var scale
     @State private var resolvedIcon: NSImage?
@@ -186,12 +186,11 @@ struct FolderRowView: View {
             sizeBar
                 .frame(width: scale.scaled(FileColumns.bar))
 
-            if showsDetailColumns {
-                Text(FileKind.description(for: item))
+            ForEach(columns) { column in
+                cell(for: column)
                     .lineLimit(1)
                     .foregroundStyle(secondaryStyle)
-                    .frame(width: kindWidth ?? scale.scaled(FileColumns.kind), alignment: .leading)
-                    .help(FileKind.description(for: item))
+                    .frame(width: column.width(scale: scale, kindWidth: kindWidth), alignment: .leading)
             }
         }
         .font(.system(size: scale.fontSize))
@@ -211,6 +210,33 @@ struct FolderRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { onOpen() }
+    }
+
+    @ViewBuilder
+    private func cell(for column: FileListColumn) -> some View {
+        switch column {
+        case .kind:
+            let kind = FileKind.description(for: item)
+            Text(kind).help(kind)
+        case .modified, .created, .lastOpened:
+            if let date = metadataStore.metadata(for: item.path)?.date(for: column) {
+                Text(FileDateFormatter.short(date))
+                    .monospacedDigit()
+                    .help(FileDateFormatter.full(date))
+            } else {
+                Text(verbatim: "")
+            }
+        case .permissions:
+            if let mode = metadataStore.metadata(for: item.path)?.posixPermissions {
+                Text(PermissionsFormatter.symbolic(mode))
+                    .font(.system(size: scale.fontSize, design: .monospaced))
+            } else {
+                Text(verbatim: "")
+            }
+        case .owner:
+            let owner = metadataStore.metadata(for: item.path)?.ownerName ?? ""
+            Text(owner).help(owner)
+        }
     }
 
     @ViewBuilder

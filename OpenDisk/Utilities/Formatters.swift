@@ -36,6 +36,27 @@ enum ByteFormatter {
     }
 }
 
+enum FileDateFormatter {
+    static func short(_ date: Date) -> String {
+        date.formatted(date: .numeric, time: .omitted)
+    }
+
+    static func full(_ date: Date) -> String {
+        date.formatted(date: .long, time: .standard)
+    }
+}
+
+enum PermissionsFormatter {
+    private static let symbols: [Character] = ["r", "w", "x"]
+
+    static func symbolic(_ mode: UInt16) -> String {
+        String((0..<9).map { position in
+            let mask = UInt16(1) << UInt16(8 - position)
+            return mode & mask != 0 ? symbols[position % 3] : "-"
+        })
+    }
+}
+
 enum DurationFormatter {
     static func scanDuration(_ duration: TimeInterval) -> String {
         let elapsed: String
