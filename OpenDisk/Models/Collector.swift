@@ -13,6 +13,15 @@ final class Collector {
 
     private(set) var deletionProgress: DeletionProgress?
 
+    private var discovered: [String: [CollectedFile]] = [:]
+    @ObservationIgnored private var lookups: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored var knownSize: (@MainActor (String) -> Int64?)?
+
+    struct RelatedSuggestion: Equatable {
+        let files: [CollectedFile]
+        var totalBytes: Int64 { files.reduce(0) { $0 + $1.size } }
+    }
+
     private(set) var draggingOut: [CollectedFile]?
     @ObservationIgnored var keepZones: [String: CGRect] = [:]
     private var dragOutTask: Task<Void, Never>?
@@ -44,9 +53,12 @@ final class Collector {
     var totalBytes: Int64 { items.reduce(0) { $0 + $1.size } }
     var formattedTotal: String { ByteFormatter.formatFileSize(totalBytes) }
 
-    func add(_ files: [CollectedFile]) { recordingUndo { files.forEach { appendOne($0) } } }
+    func add(_ files: [CollectedFile]) {
+        recordingUndo { files.forEach { appendOne($0) } }
+        lookUpRelatedFiles()
+    }
 
-    func add(_ file: CollectedFile) { recordingUndo { appendOne(file) } }
+    func add(_ file: CollectedFile) { add([file]) }
 
     private func appendOne(_ file: CollectedFile) {
         guard !file.path.hasPrefix("::"),
@@ -108,12 +120,18 @@ final class Collector {
         guard let files = draggingOut else { return }
         draggingOut = nil
         if let location, keepZones.values.contains(where: { $0.contains(location) }) { return }
-        let paths = Set(files.map(\.path))
-        recordingUndo { items.removeAll { paths.contains($0.path) } }
+        removeAll(Set(files.map(\.path)))
     }
 
-    func remove(_ file: CollectedFile) { recordingUndo { items.removeAll { $0.path == file.path } } }
+    func remove(_ file: CollectedFile) { removeAll([file.path]) }
+
     func clear() { recordingUndo { items.removeAll() } }
+
+    private func removeAll(_ paths: Set<String>) {
+        recordingUndo {
+            items.removeAll { paths.contains($0.path) || $0.relatedApp.map(paths.contains) == true }
+        }
+    }
 
     private func recordingUndo(_ change: () -> Void) {
         let before = items
@@ -126,6 +144,87 @@ final class Collector {
     func undo() {
         guard let previous = undoStack.popLast() else { return }
         items = previous
+        lookUpRelatedFiles()
+    }
+
+    var relatedSuggestions: [String: RelatedSuggestion] {
+        guard !discovered.isEmpty else { return [:] }
+        let paths = pathSet
+        let directories = items.filter(\.isDirectory).map { $0.path + "/" }
+        var suggestions: [String: RelatedSuggestion] = [:]
+        for app in items where app.isApp {
+            guard let found = discovered[app.path] else { continue }
+            let suggestion = RelatedSuggestion(files: found.filter { file in
+                !paths.contains(file.path) && !directories.contains { file.path.hasPrefix($0) }
+            })
+            if suggestion.totalBytes > 0 { suggestions[app.path] = suggestion }
+        }
+        return suggestions
+    }
+
+    func addRelatedFiles(for appPath: String) {
+        guard let suggestion = relatedSuggestions[appPath] else { return }
+        recordingUndo { suggestion.files.forEach(insertRelated) }
+    }
+
+    func runningAppNames() -> [String] {
+        items.filter(\.isApp).compactMap { app in
+            guard let id = RelatedFiles.bundleIdentifier(ofAppAt: app.path),
+                  let running = NSRunningApplication.runningApplications(withBundleIdentifier: id).first
+            else { return nil }
+            return running.localizedName ?? (app.name as NSString).deletingPathExtension
+        }
+    }
+
+    var includesAppData: Bool { items.contains { $0.relatedKind?.mayHoldUserData == true } }
+
+    private func insertRelated(_ file: CollectedFile) {
+        appendOne(file)
+        guard let app = file.relatedApp, items.last?.path == file.path,
+              let appIndex = items.firstIndex(where: { $0.path == app }) else { return }
+        let added = items.removeLast()
+        var index = appIndex + 1
+        while index < items.count, items[index].relatedApp == app { index += 1 }
+        items.insert(added, at: index)
+    }
+
+    private func lookUpRelatedFiles() {
+        for app in items where app.isApp && discovered[app.path] == nil && lookups[app.path] == nil {
+            let appPath = app.path
+            lookups[appPath] = Task { [weak self] in
+                let candidates = await Task.detached(priority: .userInitiated) {
+                    RelatedFiles.discover(appAt: appPath)
+                }.value
+                guard let self else { return }
+                self.discovered[appPath] = await self.sizedFiles(for: candidates, appPath: appPath)
+                self.lookups[appPath] = nil
+            }
+        }
+    }
+
+    private func sizedFiles(for candidates: [RelatedFiles.Candidate], appPath: String) async -> [CollectedFile] {
+        guard !candidates.isEmpty else { return [] }
+        var sizes: [String: Int64] = [:]
+        if let knownSize {
+            for candidate in candidates { sizes[candidate.path] = knownSize(candidate.path) }
+        }
+        let missing = candidates.map(\.path).filter { sizes[$0] == nil }
+        if !missing.isEmpty {
+            let measured = await Task.detached(priority: .userInitiated) {
+                await RelatedFiles.measure(missing)
+            }.value
+            sizes.merge(measured) { $1 }
+        }
+        return candidates.map { candidate in
+            CollectedFile(
+                path: candidate.path,
+                name: (candidate.path as NSString).lastPathComponent,
+                size: sizes[candidate.path] ?? 0,
+                isDirectory: candidate.isDirectory,
+                relatedKind: candidate.kind,
+                relatedApp: appPath
+            )
+        }
     }
 
     func contains(path: String) -> Bool { items.contains { $0.path == path } }
@@ -173,6 +272,7 @@ final class Collector {
 
         let failed = Set(failures.map(\.path))
         items.removeAll { !failed.contains($0.path) }
+        discovered = discovered.filter { failed.contains($0.key) }
         deletionProgress = nil
         undoStack.removeAll()
         return Result(disposal: disposal, freedBytes: freed, deletedCount: deleted, failures: failures)

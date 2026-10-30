@@ -20,6 +20,7 @@ struct CollectorBar: View {
     @State private var lastResult: Collector.Result?
     @State private var listVisible = false
     @State private var collapseTask: Task<Void, Never>?
+    @State private var runningApps: [String] = []
 
     private enum Phase: Equatable { case idle, deleting, done }
 
@@ -117,7 +118,7 @@ struct CollectorBar: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Deleting is permanent and can’t be undone. Moving to the Trash lets you put items back, but the space isn’t freed until you empty the Trash.")
+                Text(confirmMessage)
             }
     }
 
@@ -186,6 +187,7 @@ struct CollectorBar: View {
             }
             Spacer()
             DeleteButton {
+                runningApps = collector.runningAppNames()
                 showConfirm = true
             }
             .disabled(collector.isEmpty)
@@ -272,11 +274,13 @@ struct CollectorBar: View {
     private var listPanel: some View {
         PanelContainer {
             ScrollView {
+                let suggestions = collector.relatedSuggestions
                 LazyVStack(spacing: 2) {
                     ForEach(collector.items) { file in
                         CollectedRow(
                             file: file,
                             collector: collector,
+                            suggestion: suggestions[file.path],
                             onRemove: { collector.remove(file) },
                             onPreview: { previewItem = PreviewItem(url: file.url) }
                         )
@@ -286,6 +290,7 @@ struct CollectorBar: View {
             }
             .frame(height: listHeight)
             .scrollBounceBehavior(.basedOnSize)
+            .animation(.spring(duration: 0.3), value: collector.relatedSuggestions)
             .panelBackground(in: shape)
         }
     }
@@ -304,6 +309,18 @@ struct CollectorBar: View {
         .panelBackground(tint: .orange, in: shape)
     }
 
+    private var confirmMessage: String {
+        var parts = [String(localized: "Deleting is permanent and can’t be undone. Moving to the Trash lets you put items back, but the space isn’t freed until you empty the Trash.")]
+        if collector.includesAppData {
+            parts.append(String(localized: "App data can include documents you created in those apps."))
+        }
+        if !runningApps.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: runningApps)
+            parts.append(String(localized: "Quit \(names) before deleting. Open apps can recreate their files."))
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
     private func performDeletion(_ disposal: Collector.Disposal) async {
         phase = .deleting
         let result = await collector.deleteAll(disposal)
@@ -315,6 +332,34 @@ struct CollectorBar: View {
     }
 }
 
+private struct RelatedFilesButton: View {
+    let suggestion: Collector.RelatedSuggestion
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                Text("\(ByteFormatter.formatFileSize(suggestion.totalBytes)) app data")
+                    .monospacedDigit()
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: "plus.circle")
+            }
+            .foregroundStyle(.tint)
+        }
+        .buttonStyle(.borderless)
+        .fixedSize()
+        .help(helpText)
+        .accessibilityLabel(Text("Add \(ByteFormatter.formatFileSize(suggestion.totalBytes)) of related app data"))
+    }
+
+    private var helpText: String {
+        let kinds = Set(suggestion.files.compactMap(\.relatedKind))
+        let labels = ListFormatter.localizedString(byJoining: kinds.map(\.label).sorted())
+        return String(localized: "Adds app files from your Library: \(labels)")
+    }
+}
+
 private struct PreviewItem: Identifiable {
     let id = UUID()
     let url: URL
@@ -323,6 +368,7 @@ private struct PreviewItem: Identifiable {
 private struct CollectedRow: View {
     let file: CollectedFile
     let collector: Collector
+    let suggestion: Collector.RelatedSuggestion?
     let onRemove: () -> Void
     let onPreview: () -> Void
 
@@ -348,23 +394,45 @@ private struct CollectedRow: View {
                 .interpolation(.high)
                 .frame(width: 18, height: 18)
 
-            Text(file.name).lineLimit(1)
+            if let kind = file.relatedKind {
+                HStack(spacing: 6) {
+                    Text(isGrouped ? kind.label : "\(appName) \(kind.label)")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(file.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.tertiary)
+                }
+                .help(relatedHelp(kind))
+            } else {
+                Text(file.name).lineLimit(1)
+            }
 
-            Spacer()
+            Spacer(minLength: 8)
+
+            if let suggestion {
+                RelatedFilesButton(suggestion: suggestion) {
+                    collector.addRelatedFiles(for: file.path)
+                }
+                .transition(.opacity)
+            }
 
             Text(file.formattedSize)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .fixedSize()
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
+        .padding(.leading, isGrouped ? 20 : 0)
         .contentShape(Rectangle())
         .fileDrag({ _ in [file] }, exportsFileURLs: false) { files in
             collector.beginDragOut(files)
         } onEnd: { operation in
             collector.endDragOut(operation: operation)
         }
-        .hoverHighlight(cornerRadius: 6)
+        .hoverHighlight(cornerRadius: 10)
         .task(id: file.path) {
             guard FileIcon.cached(for: file.path) == nil else { return }
             await FileIcon.warm(file.path)
@@ -395,6 +463,20 @@ private struct CollectedRow: View {
             }
             .keyboardShortcut(.delete, modifiers: .command)
         }
+    }
+
+    private var isGrouped: Bool {
+        file.relatedApp.map(collector.contains(path:)) ?? false
+    }
+
+    private var appName: String {
+        (((file.relatedApp ?? "") as NSString).lastPathComponent as NSString).deletingPathExtension
+    }
+
+    private func relatedHelp(_ kind: RelatedFiles.Kind) -> String {
+        kind.mayHoldUserData
+            ? String(localized: "\(file.path)\nMay contain documents you created in \(appName).")
+            : file.path
     }
 
     private func openInTerminal() {
