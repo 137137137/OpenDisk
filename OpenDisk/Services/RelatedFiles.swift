@@ -6,7 +6,7 @@ import Security
 enum RelatedFiles {
     enum Kind: String, Codable, Sendable {
         case applicationSupport, caches, preferences, container, groupContainer
-        case savedState, logs, webData, cookies, scripts, launchAgent
+        case savedState, logs, webData, cookies, scripts, launchAgent, temporary
 
         var label: String {
             switch self {
@@ -21,6 +21,7 @@ enum RelatedFiles {
             case .cookies: String(localized: "Cookies")
             case .scripts: String(localized: "Scripts")
             case .launchAgent: String(localized: "Launch Agent")
+            case .temporary: String(localized: "Temporary Files")
             }
         }
 
@@ -38,6 +39,11 @@ enum RelatedFiles {
         let kind: Kind
     }
 
+    struct Discovery: Sendable {
+        var candidates: [Candidate] = []
+        var restricted: [String] = []
+    }
+
     static func isAppBundle(_ path: String, isDirectory: Bool) -> Bool {
         isDirectory && path.hasSuffix(".app") && !path.hasPrefix("/System/")
     }
@@ -46,11 +52,11 @@ enum RelatedFiles {
         infoPlist(ofBundleAt: path)?["CFBundleIdentifier"] as? String
     }
 
-    static func discover(appAt appPath: String) -> [Candidate] {
+    static func discover(appAt appPath: String) -> Discovery {
         guard let info = infoPlist(ofBundleAt: appPath),
               let bundleID = info["CFBundleIdentifier"] as? String, !bundleID.isEmpty,
               !isInstalledElsewhere(bundleID: bundleID, besides: appPath)
-        else { return [] }
+        else { return Discovery() }
 
         let fileName = ((appPath as NSString).lastPathComponent as NSString).deletingPathExtension
         let ids = ownedIdentifiers(mainID: bundleID, appPath: appPath)
@@ -60,16 +66,24 @@ enum RelatedFiles {
 
         let library = UserHome.path + "/Library"
         var found: [String: Candidate] = [:]
+        var restricted: [String] = []
         func consider(_ path: String, _ kind: Kind) {
-            guard found[path] == nil, let isDirectory = deletableItem(at: path) else { return }
-            found[path] = Candidate(path: path, isDirectory: isDirectory, kind: kind)
+            guard found[path] == nil, !restricted.contains(path) else { return }
+            switch item(at: path) {
+            case .deletable(let isDirectory): found[path] = Candidate(path: path, isDirectory: isDirectory, kind: kind)
+            case .restricted: restricted.append(path)
+            case .missing: break
+            }
         }
-
-        for id in ids {
+        func considerLibrary(_ library: String, for id: String) {
             consider("\(library)/Application Support/\(id)", .applicationSupport)
             consider("\(library)/Caches/\(id)", .caches)
             consider("\(library)/Logs/\(id)", .logs)
             consider("\(library)/Preferences/\(id).plist", .preferences)
+        }
+
+        for id in ids {
+            considerLibrary(library, for: id)
             consider("\(library)/Containers/\(id)", .container)
             consider("\(library)/Application Scripts/\(id)", .scripts)
             consider("\(library)/Saved Application State/\(id).savedState", .savedState)
@@ -80,25 +94,63 @@ enum RelatedFiles {
             if let host = hostUUID {
                 consider("\(library)/Preferences/ByHost/\(id).\(host).plist", .preferences)
             }
+            consider("/Library/Application Support/\(id)", .applicationSupport)
+            consider("/Library/Preferences/\(id).plist", .preferences)
         }
 
         for name in names {
             consider("\(library)/Application Support/\(name)", .applicationSupport)
             consider("\(library)/Caches/\(name)", .caches)
             consider("\(library)/Logs/\(name)", .logs)
+            consider("/Library/Application Support/\(name)", .applicationSupport)
         }
 
-        for group in appGroups(ofAppAt: appPath, ownedIDs: ids) {
-            consider("\(library)/Group Containers/\(group)", .groupContainer)
+        if let cache = userCacheDirectory {
+            for id in ids { consider("\(cache)/\(id)", .caches) }
+            for child in children(of: cache) where ids.contains(where: { child.hasSuffix("+" + $0) }) {
+                consider("\(cache)/\(child)", .caches)
+            }
+        }
+        if let temporary = userTemporaryDirectory {
+            for id in ids { consider("\(temporary)/\(id)", .temporary) }
         }
 
-        for agent in launchAgents(in: "\(library)/LaunchAgents", ownedIDs: ids, appPath: appPath) {
-            consider(agent, .launchAgent)
+        for (group, owned) in appGroups(ofAppAt: appPath, ownedIDs: ids) {
+            let container = "\(library)/Group Containers/\(group)"
+            if owned {
+                consider(container, .groupContainer)
+                continue
+            }
+            for id in ids {
+                consider("\(container)/\(id)", .groupContainer)
+                considerLibrary("\(container)/Library", for: id)
+            }
         }
 
-        return found.values
-            .filter { !ProtectedPaths.isProtected($0.path) }
-            .sorted { $0.path < $1.path }
+        for directory in ["\(library)/LaunchAgents", "/Library/LaunchAgents", "/Library/LaunchDaemons"] {
+            for agent in launchAgents(in: directory, ownedIDs: ids, appPath: appPath) {
+                consider(agent, .launchAgent)
+            }
+        }
+
+        return Discovery(
+            candidates: found.values
+                .filter { !ProtectedPaths.isProtected($0.path) }
+                .sorted { $0.path < $1.path },
+            restricted: restricted.sorted()
+        )
+    }
+
+    static func location(of path: String) -> String {
+        let library = UserHome.path + "/Library/"
+        if path.hasPrefix(library) { return String(path.dropFirst(library.count)) }
+        for directory in [userCacheDirectory, userTemporaryDirectory].compactMap({ $0 }) {
+            let parent = (directory as NSString).deletingLastPathComponent + "/"
+            if path.hasPrefix(parent) { return "var/folders/…/" + path.dropFirst(parent.count) }
+        }
+        let home = UserHome.path + "/"
+        if path.hasPrefix(home) { return "~/" + path.dropFirst(home.count) }
+        return path
     }
 
     static func measure(_ paths: [String]) async -> [String: Int64] {
@@ -113,16 +165,26 @@ enum RelatedFiles {
         }
     }
 
+    private enum Item {
+        case deletable(isDirectory: Bool)
+        case restricted
+        case missing
+    }
+
     private static func infoPlist(ofBundleAt path: String) -> [String: Any]? {
         guard let data = FileManager.default.contents(atPath: path + "/Contents/Info.plist") else { return nil }
         return (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any]
     }
 
-    private static func deletableItem(at path: String) -> Bool? {
+    private static func item(at path: String) -> Item {
         var info = stat()
-        guard lstat(path, &info) == 0,
-              FileManager.default.isDeletableFile(atPath: path) else { return nil }
-        return info.st_mode & S_IFMT == S_IFDIR
+        guard lstat(path, &info) == 0 else { return .missing }
+        guard FileManager.default.isDeletableFile(atPath: path) else { return .restricted }
+        return .deletable(isDirectory: info.st_mode & S_IFMT == S_IFDIR)
+    }
+
+    private static func children(of directory: String) -> [String] {
+        (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
     }
 
     private static func isInstalledElsewhere(bundleID: String, besides appPath: String) -> Bool {
@@ -142,8 +204,7 @@ enum RelatedFiles {
         let nested = ["PlugIns", "XPCServices", "Frameworks", "Library/LoginItems", "Library/LaunchServices"]
         for folder in nested {
             let directory = "\(contents)/\(folder)"
-            guard let children = try? FileManager.default.contentsOfDirectory(atPath: directory) else { continue }
-            for child in children where child.hasSuffix(".app") || child.hasSuffix(".appex") || child.hasSuffix(".xpc") {
+            for child in children(of: directory) where child.hasSuffix(".app") || child.hasSuffix(".appex") || child.hasSuffix(".xpc") {
                 if let id = infoPlist(ofBundleAt: "\(directory)/\(child)")?["CFBundleIdentifier"] as? String,
                    id.hasPrefix(mainID + "."), !ids.contains(id) {
                     ids.append(id)
@@ -153,7 +214,7 @@ enum RelatedFiles {
         return ids
     }
 
-    private static func appGroups(ofAppAt appPath: String, ownedIDs: [String]) -> [String] {
+    private static func appGroups(ofAppAt appPath: String, ownedIDs: [String]) -> [(group: String, owned: Bool)] {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: appPath) as CFURL, [], &code) == errSecSuccess,
               let code else { return [] }
@@ -165,18 +226,17 @@ enum RelatedFiles {
         else { return [] }
         let team = signing[kSecCodeInfoTeamIdentifier as String] as? String
         let owned = Set(ownedIDs)
-        return groups.filter { group in
-            if group.hasPrefix("group."), owned.contains(String(group.dropFirst(6))) { return true }
-            if let team, group.hasPrefix(team + "."), owned.contains(String(group.dropFirst(team.count + 1))) { return true }
-            return false
+        return groups.filter { !$0.contains("/") && !$0.hasPrefix(".") }.map { group in
+            if group.hasPrefix("group."), owned.contains(String(group.dropFirst(6))) { return (group, true) }
+            if let team, group.hasPrefix(team + "."), owned.contains(String(group.dropFirst(team.count + 1))) { return (group, true) }
+            return (group, false)
         }
     }
 
     private static func launchAgents(in directory: String, ownedIDs: [String], appPath: String) -> [String] {
-        guard let children = try? FileManager.default.contentsOfDirectory(atPath: directory) else { return [] }
         let owned = Set(ownedIDs)
         let bundlePrefix = (appPath as NSString).standardizingPath + "/"
-        return children.compactMap { child -> String? in
+        return children(of: directory).compactMap { child -> String? in
             guard child.hasSuffix(".plist") else { return nil }
             let path = "\(directory)/\(child)"
             if owned.contains(String(child.dropLast(6))) { return path }
@@ -198,6 +258,17 @@ enum RelatedFiles {
         guard gethostuuid(&uuid, &timeout) == 0 else { return nil }
         return NSUUID(uuidBytes: uuid).uuidString
     }()
+
+    private static let userCacheDirectory = userDirectory(_CS_DARWIN_USER_CACHE_DIR)
+    private static let userTemporaryDirectory = userDirectory(_CS_DARWIN_USER_TEMP_DIR)
+
+    private static func userDirectory(_ name: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+        guard confstr(name, &buffer, buffer.count) > 0,
+              let resolved = realpath(String(cString: buffer), nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
 
     private static func allocatedSize(of path: String) async -> Int64 {
         var info = stat()

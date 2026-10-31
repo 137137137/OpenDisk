@@ -14,11 +14,14 @@ final class Collector {
     private(set) var deletionProgress: DeletionProgress?
 
     private var discovered: [String: [CollectedFile]] = [:]
+    private var restricted: [String: [String]] = [:]
     @ObservationIgnored private var lookups: [String: Task<Void, Never>] = [:]
     @ObservationIgnored var knownSize: (@MainActor (String) -> Int64?)?
 
     struct RelatedSuggestion: Equatable {
         let files: [CollectedFile]
+        let coveredCount: Int
+        let restricted: [String]
         var totalBytes: Int64 { files.reduce(0) { $0 + $1.size } }
     }
 
@@ -154,10 +157,14 @@ final class Collector {
         var suggestions: [String: RelatedSuggestion] = [:]
         for app in items where app.isApp {
             guard let found = discovered[app.path] else { continue }
-            let suggestion = RelatedSuggestion(files: found.filter { file in
-                !paths.contains(file.path) && !directories.contains { file.path.hasPrefix($0) }
-            })
-            if suggestion.totalBytes > 0 { suggestions[app.path] = suggestion }
+            let pending = found.filter { !paths.contains($0.path) }
+            let files = pending.filter { file in !directories.contains { file.path.hasPrefix($0) } }
+            guard !files.isEmpty else { continue }
+            suggestions[app.path] = RelatedSuggestion(
+                files: files,
+                coveredCount: pending.count - files.count,
+                restricted: restricted[app.path] ?? []
+            )
         }
         return suggestions
     }
@@ -192,11 +199,12 @@ final class Collector {
         for app in items where app.isApp && discovered[app.path] == nil && lookups[app.path] == nil {
             let appPath = app.path
             lookups[appPath] = Task { [weak self] in
-                let candidates = await Task.detached(priority: .userInitiated) {
+                let discovery = await Task.detached(priority: .userInitiated) {
                     RelatedFiles.discover(appAt: appPath)
                 }.value
                 guard let self else { return }
-                self.discovered[appPath] = await self.sizedFiles(for: candidates, appPath: appPath)
+                self.restricted[appPath] = discovery.restricted
+                self.discovered[appPath] = await self.sizedFiles(for: discovery.candidates, appPath: appPath)
                 self.lookups[appPath] = nil
             }
         }

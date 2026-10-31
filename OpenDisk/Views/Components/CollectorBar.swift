@@ -339,7 +339,7 @@ private struct RelatedFilesButton: View {
     var body: some View {
         Button(action: action) {
             Label {
-                Text("\(ByteFormatter.formatFileSize(suggestion.totalBytes)) app data")
+                Text(summary)
                     .monospacedDigit()
                     .lineLimit(1)
             } icon: {
@@ -350,13 +350,25 @@ private struct RelatedFilesButton: View {
         .buttonStyle(.borderless)
         .fixedSize()
         .help(helpText)
-        .accessibilityLabel(Text("Add \(ByteFormatter.formatFileSize(suggestion.totalBytes)) of related app data"))
+        .accessibilityLabel(Text("Add related app files: \(summary)"))
+    }
+
+    private var summary: String {
+        String(localized: "\(suggestion.files.count) items") + " · " + ByteFormatter.formatFileSize(suggestion.totalBytes)
     }
 
     private var helpText: String {
         let kinds = Set(suggestion.files.compactMap(\.relatedKind))
         let labels = ListFormatter.localizedString(byJoining: kinds.map(\.label).sorted())
-        return String(localized: "Adds app files from your Library: \(labels)")
+        var lines = [String(localized: "Adds app files from your Library: \(labels)")]
+        if suggestion.coveredCount > 0 {
+            lines.append(String(localized: "Items already inside a collected folder aren’t listed again."))
+        }
+        if !suggestion.restricted.isEmpty {
+            let paths = ListFormatter.localizedString(byJoining: suggestion.restricted)
+            lines.append(String(localized: "Needs administrator rights and was left out: \(paths)"))
+        }
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -399,7 +411,7 @@ private struct CollectedRow: View {
                     Text(isGrouped ? kind.label : "\(appName) \(kind.label)")
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(file.name)
+                    Text(RelatedFiles.location(of: file.path))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .foregroundStyle(.tertiary)
