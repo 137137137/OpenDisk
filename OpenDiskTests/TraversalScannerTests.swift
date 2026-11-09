@@ -14,6 +14,24 @@ struct TraversalScannerTests {
         try await body(root)
     }
 
+    @Test("directory reads never materialize cloud placeholders and restore the thread policy")
+    func directoryReadsRestoreMaterializationPolicy() async throws {
+        try await withTemporaryTree { root in
+            try Data(count: 4_096).write(to: root.appendingPathComponent("a.bin"))
+            let device = try #require(VolumeAttributes.deviceID(ofPath: root.path))
+            let before = getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)
+
+            let outcome = BulkDirectoryReader().read(directoryAt: root.path, allowedDevices: [device])
+
+            guard case .contents(let contents, _) = outcome else {
+                Issue.record("expected contents, got \(outcome)")
+                return
+            }
+            #expect(contents.files.map(\.name) == ["a.bin"])
+            #expect(getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD) == before)
+        }
+    }
+
     @Test("counts allocated sizes of a nested tree")
     func scansNestedTree() async throws {
         try await withTemporaryTree { root in

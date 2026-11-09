@@ -303,24 +303,23 @@ struct FolderRowView: View {
 
             Divider()
 
-            Button {
-                collector.add(CollectedFile(item))
-            } label: {
-                Label("Add to Collector", systemImage: "trash")
-            }
-            .disabled(ProtectedPaths.isProtected(item.path))
-
             if isSelected && selectionFiles.count > 1 {
                 Button {
-                    collector.add(selectionFiles.filter {
-                        !ProtectedPaths.isProtected($0.path)
-                    })
+                    collector.add(selectionFiles)
                 } label: {
                     Label(
                         "Add \(selectionFiles.count) Selected to Collector",
                         systemImage: "trash"
                     )
                 }
+                .disabled(selectionFiles.allSatisfy { ProtectedPaths.isProtected($0.path) })
+            } else {
+                Button {
+                    collector.add(CollectedFile(item))
+                } label: {
+                    Label("Add to Collector", systemImage: "trash")
+                }
+                .disabled(ProtectedPaths.isProtected(item.path))
             }
 
             Divider()

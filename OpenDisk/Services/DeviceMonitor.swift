@@ -61,7 +61,7 @@ final class DeviceMonitor {
 
         let bootDevice = VolumeAttributes.deviceID(ofPath: "/")
         let keys: [URLResourceKey] = [
-            .volumeIsBrowsableKey, .volumeNameKey,
+            .volumeIsBrowsableKey, .volumeIsLocalKey, .volumeNameKey,
             .volumeTotalCapacityKey, .volumeAvailableCapacityKey,
         ]
         let volumeURLs = (FileManager.default.mountedVolumeURLs(
@@ -73,7 +73,7 @@ final class DeviceMonitor {
             let values = try? url.resourceValues(forKeys: Set(keys))
             guard values?.volumeIsBrowsable == true,
                   VolumeAttributes.deviceID(ofPath: path) != bootDevice,
-                  FileManager.default.isReadableFile(atPath: path),
+                  values?.volumeIsLocal == false || FileManager.default.isReadableFile(atPath: path),
                   let capacity = volumeCapacity(ofPath: path) else {
                 continue
             }

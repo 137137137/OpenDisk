@@ -143,6 +143,27 @@ struct CollectorTests {
         #expect(!collector.canUndo)
     }
 
+    @Test("a multi-selection keeps every item, including broken symlinks")
+    func multiSelectionAddsEveryItem() throws {
+        let root = try makeTempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try makeFile("a.bin", in: root, bytes: 4)
+        let folder = try makeDir("folder", in: root, size: 16)
+        let link = root.appendingPathComponent("dangling")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path, withDestinationPath: root.appendingPathComponent("gone").path
+        )
+        let dangling = CollectedFile(path: link.path, name: "dangling", size: 0, isDirectory: false)
+
+        let collector = Collector()
+        collector.add([a, folder, dangling])
+
+        #expect(collector.count == 3)
+        #expect(collector.contains(path: a.path))
+        #expect(collector.contains(path: folder.path))
+        #expect(collector.contains(path: dangling.path))
+    }
+
     @Test("removals and clears can be undone")
     func removeAndClearUndo() throws {
         let root = try makeTempRoot()

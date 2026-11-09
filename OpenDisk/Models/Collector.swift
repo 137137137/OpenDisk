@@ -65,7 +65,7 @@ final class Collector {
 
     private func appendOne(_ file: CollectedFile) {
         guard !file.path.hasPrefix("::"),
-              FileManager.default.fileExists(atPath: file.path),
+              (try? FileManager.default.attributesOfItem(atPath: file.path)) != nil,
               !items.contains(where: { $0.path == file.path }) else { return }
         if let message = ProtectedPaths.message(for: file.path, name: file.name) {
             flagBlocked(message)

@@ -34,6 +34,23 @@ final class BulkDirectoryReader {
     }
 
     func read(directoryAt path: String, allowedDevices: Set<dev_t>) -> DirectoryReadResult {
+        let previousPolicy = getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)
+        let changesPolicy = previousPolicy >= 0 && previousPolicy != IOPOL_MATERIALIZE_DATALESS_FILES_OFF
+        if changesPolicy {
+            setiopolicy_np(
+                IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD,
+                IOPOL_MATERIALIZE_DATALESS_FILES_OFF
+            )
+        }
+        defer {
+            if changesPolicy {
+                setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, previousPolicy)
+            }
+        }
+        return readWithoutMaterializing(directoryAt: path, allowedDevices: allowedDevices)
+    }
+
+    private func readWithoutMaterializing(directoryAt path: String, allowedDevices: Set<dev_t>) -> DirectoryReadResult {
         let fd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard fd >= 0 else { return .unreadable }
         defer { close(fd) }
