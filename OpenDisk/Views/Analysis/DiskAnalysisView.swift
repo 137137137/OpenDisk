@@ -186,6 +186,16 @@ struct DiskAnalysisView: View {
                 .disabled(parentPath == nil)
                 .opacity(0)
                 .accessibilityHidden(true)
+            ForEach(KeyAction.allCases) { action in
+                if let combo = keyBindings.combo(for: action), let shortcut = combo.systemShortcut {
+                    Button(action.title) { performShortcut(action) }
+                        .keyboardShortcut(shortcut)
+                        .disabled(searchPresented)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                        .id(combo)
+                }
+            }
         }
     }
 
@@ -327,10 +337,19 @@ struct DiskAnalysisView: View {
     private func handleKey(_ event: NSEvent) -> NSEvent? {
         guard !event.isARepeat || isRepeatable(event) else { return event }
         if event.window?.firstResponder is NSTextView { return event }
-        if event.window is QLPreviewPanel, !keyMatchesQuickLook(event) { return event }
-        guard let match = keyBindings.match(event) else { return event }
+        let inPreviewPanel = event.window is QLPreviewPanel
+        if inPreviewPanel, !keyMatchesQuickLook(event) { return event }
+        guard let match = keyBindings.match(event, includingSystemHandled: inPreviewPanel) else {
+            return event
+        }
         perform(match)
         return nil
+    }
+
+    private func performShortcut(_ action: KeyAction) {
+        let isRepeat = NSApp.currentEvent?.type == .keyDown && NSApp.currentEvent?.isARepeat == true
+        guard !isRepeat || action == .moveDown || action == .moveUp else { return }
+        perform(KeyBindingStore.Match(action: action, extendsSelection: false))
     }
 
     private func isRepeatable(_ event: NSEvent) -> Bool {
@@ -931,5 +950,17 @@ private struct WindowNumberReader: NSViewRepresentable {
         EmptyView()
     } detail: {
         DiskAnalysisView(rootPath: "/", totalUsedSpace: 500_000_000_000)
+    }
+}
+
+private extension KeyCombo {
+    var systemShortcut: KeyboardShortcut? {
+        guard let key = systemKey else { return nil }
+        var flags: EventModifiers = []
+        if modifiers.contains(.command) { flags.insert(.command) }
+        if modifiers.contains(.shift) { flags.insert(.shift) }
+        if modifiers.contains(.option) { flags.insert(.option) }
+        if modifiers.contains(.control) { flags.insert(.control) }
+        return KeyboardShortcut(KeyEquivalent(key), modifiers: flags)
     }
 }

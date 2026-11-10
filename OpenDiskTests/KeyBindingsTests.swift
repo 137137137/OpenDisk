@@ -69,6 +69,23 @@ struct KeyBindingsTests {
         #expect(!arrow.matches(keyCode: KeyCombo.Code.a, modifiers: [], typedKeys: ["A"]))
     }
 
+    @Test("command letter shortcuts are left to the system, other keys stay with the key monitor")
+    func systemHandled() {
+        #expect(KeyAction.selectAll.defaultCombo.systemKey == "a")
+        #expect(KeyAction.showInFinder.defaultCombo.systemKey == "r")
+        #expect(KeyAction.addToCollector.defaultCombo.systemKey == nil)
+        #expect(KeyAction.moveDown.defaultCombo.systemKey == nil)
+        #expect(KeyCombo(keyCode: KeyCombo.Code.a, modifiers: [], keyLabel: "A").systemKey == nil)
+        #expect(KeyCombo(keyCode: KeyCombo.Code.r, modifiers: .command, keyLabel: "R").systemKey == nil)
+        #expect(KeyCombo(keyCode: 18, modifiers: [.command, .shift], keyLabel: "!").systemKey == nil)
+
+        let store = makeStore()
+        let event = keyEvent(KeyCombo.Code.r, [.command, .shift])
+        #expect(store.match(event)?.action == .showInFinder)
+        #expect(store.match(event, includingSystemHandled: false) == nil)
+        #expect(store.match(keyEvent(KeyCombo.Code.delete, .command), includingSystemHandled: false)?.action == .addToCollector)
+    }
+
     @Test("display strings use macOS glyphs")
     func display() {
         #expect(KeyAction.addToCollector.defaultCombo.displayString == "⌘⌫")

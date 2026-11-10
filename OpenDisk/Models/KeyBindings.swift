@@ -138,6 +138,22 @@ struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         return matchesByCharacter ? typedKeys.contains(keyLabel) : eventKeyCode == keyCode
     }
 
+    static let windowShortcuts: [Character: NSEvent.ModifierFlags] = [
+        "r": [.command],
+        "z": [.command],
+        "i": [.command, .option],
+    ]
+
+    var systemKey: Character? {
+        guard modifiers.contains(.command),
+              Self.specialLabel(forKeyCode: keyCode) == nil,
+              keyLabel.count == 1,
+              let character = keyLabel.lowercased().first,
+              character.isASCII, character.isLetter || character.isNumber,
+              Self.windowShortcuts[character] != modifiers else { return nil }
+        return character
+    }
+
     static func typedKeys(for event: NSEvent) -> [String] {
         guard event.type == .keyDown else { return [] }
         let base = event.characters(byApplyingModifiers: event.modifierFlags.intersection(.command))
@@ -270,9 +286,10 @@ final class KeyBindingStore {
         persist()
     }
 
-    func match(_ event: NSEvent) -> Match? {
+    func match(_ event: NSEvent, includingSystemHandled: Bool = true) -> Match? {
         for action in KeyAction.allCases {
             if let combo = combo(for: action), combo.matches(event) {
+                if !includingSystemHandled, combo.systemKey != nil { continue }
                 return Match(action: action, extendsSelection: false)
             }
         }
