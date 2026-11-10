@@ -48,6 +48,27 @@ struct KeyBindingsTests {
         #expect(store.combo(for: .quickLook) == KeyAction.quickLook.defaultCombo)
     }
 
+    @Test("letter shortcuts follow the keyboard layout, not the physical key")
+    func layoutAwareLetters() {
+        let selectAll = KeyAction.selectAll.defaultCombo
+        #expect(!selectAll.matches(keyCode: KeyCombo.Code.a, modifiers: .command, typedKeys: ["Q"]))
+        #expect(selectAll.matches(keyCode: 12, modifiers: .command, typedKeys: ["A"]))
+        #expect(selectAll.matches(keyCode: KeyCombo.Code.a, modifiers: .command, typedKeys: ["A"]))
+        #expect(selectAll.matches(keyCode: KeyCombo.Code.a, modifiers: .command, typedKeys: []))
+        #expect(!selectAll.matches(keyCode: 12, modifiers: .command, typedKeys: []))
+        #expect(!selectAll.matches(keyCode: 12, modifiers: [], typedKeys: ["A"]))
+
+        let legacyShifted = KeyCombo(keyCode: 18, modifiers: [.command, .shift], keyLabel: "!")
+        #expect(legacyShifted.matches(keyCode: 18, modifiers: [.command, .shift], typedKeys: ["1", "!"]))
+
+        let cyrillic = KeyCombo(keyCode: KeyCombo.Code.a, modifiers: [], keyLabel: "Ф")
+        #expect(cyrillic.matches(keyCode: KeyCombo.Code.a, modifiers: [], typedKeys: []))
+
+        let arrow = KeyAction.moveDown.defaultCombo
+        #expect(arrow.matches(keyCode: KeyCombo.Code.downArrow, modifiers: [], typedKeys: []))
+        #expect(!arrow.matches(keyCode: KeyCombo.Code.a, modifiers: [], typedKeys: ["A"]))
+    }
+
     @Test("display strings use macOS glyphs")
     func display() {
         #expect(KeyAction.addToCollector.defaultCombo.displayString == "⌘⌫")

@@ -88,7 +88,10 @@ struct KeyCombo: Codable, Equatable, Hashable, Sendable {
 
     init?(event: NSEvent) {
         guard event.type == .keyDown else { return nil }
-        let typed = event.charactersIgnoringModifiers?.uppercased()
+        let raw = event.charactersIgnoringModifiers?.uppercased()
+        let typed = raw.flatMap { Self.isLayoutIndependent($0) ? $0 : nil }
+            ?? Self.typedKeys(for: event).first
+            ?? raw
         let label = Self.specialLabel(forKeyCode: event.keyCode)
             ?? (typed?.isEmpty == false ? typed : Self.label(forKeyCode: event.keyCode))
         guard let label, !label.isEmpty else { return nil }
@@ -107,14 +110,47 @@ struct KeyCombo: Codable, Equatable, Hashable, Sendable {
     }
 
     func matches(_ event: NSEvent, ignoringShift: Bool = false) -> Bool {
-        guard event.keyCode == keyCode else { return false }
-        var eventModifiers = event.modifierFlags.intersection(Self.relevantModifiers)
+        matches(
+            keyCode: event.keyCode,
+            modifiers: event.modifierFlags,
+            typedKeys: Self.typedKeys(for: event),
+            ignoringShift: ignoringShift
+        )
+    }
+
+    func matches(
+        keyCode eventKeyCode: UInt16,
+        modifiers eventFlags: NSEvent.ModifierFlags,
+        typedKeys: [String],
+        ignoringShift: Bool = false
+    ) -> Bool {
+        var eventModifiers = eventFlags.intersection(Self.relevantModifiers)
         var expected = modifiers
         if ignoringShift {
             eventModifiers.remove(.shift)
             expected.remove(.shift)
         }
-        return eventModifiers == expected
+        guard eventModifiers == expected else { return false }
+        let matchesByCharacter = Self.specialLabel(forKeyCode: keyCode) == nil
+            && Self.specialLabel(forKeyCode: eventKeyCode) == nil
+            && Self.isLayoutIndependent(keyLabel)
+            && !typedKeys.isEmpty
+        return matchesByCharacter ? typedKeys.contains(keyLabel) : eventKeyCode == keyCode
+    }
+
+    static func typedKeys(for event: NSEvent) -> [String] {
+        guard event.type == .keyDown else { return [] }
+        let base = event.characters(byApplyingModifiers: event.modifierFlags.intersection(.command))
+        var keys: [String] = []
+        for candidate in [base, event.charactersIgnoringModifiers] {
+            guard let key = candidate?.uppercased(), isLayoutIndependent(key), !keys.contains(key) else { continue }
+            keys.append(key)
+        }
+        return keys
+    }
+
+    static func isLayoutIndependent(_ key: String) -> Bool {
+        !key.isEmpty && key.unicodeScalars.allSatisfy { $0.isASCII && $0.value > 32 && $0.value < 127 }
     }
 
     static func label(forKeyCode code: UInt16) -> String? {
