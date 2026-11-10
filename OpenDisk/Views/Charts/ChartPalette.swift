@@ -8,6 +8,18 @@ enum ChartPalette {
         var blue: Double
 
         var color: Color { Color(red: red, green: green, blue: blue) }
+
+        var relativeLuminance: Double {
+            func linear(_ c: Double) -> Double {
+                c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        }
+
+        var prefersDarkLabel: Bool {
+            let l = relativeLuminance
+            return (l + 0.05) / 0.05 >= 1.05 / (l + 0.05)
+        }
     }
 
     static let hues: [RGB] = [

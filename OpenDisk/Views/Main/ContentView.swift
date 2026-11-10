@@ -29,7 +29,9 @@ struct ContentView: View {
                     rootName: active.name,
                     totalUsedSpace: active.usedBytes,
                     onScanFinished: {
-                        withAnimation { columnVisibility = .detailOnly }
+                        withAnimation(A11y.reduceMotion ? nil : .default) {
+                            columnVisibility = .detailOnly
+                        }
                     }
                 )
                 .id(active.path)
@@ -62,11 +64,11 @@ struct ContentView: View {
         VStack(spacing: 6) {
             Text("No Location Selected")
                 .font(.title3)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
             if ScanAccess.isSandboxed && scanAccess.grants.isEmpty {
                 Text("Choose a disk in the sidebar. OpenDisk asks for access once and remembers it.")
                     .font(.callout)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 320)
             }

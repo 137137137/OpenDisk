@@ -16,6 +16,8 @@ struct BreadcrumbBar: View {
     var sizeOfPath: (String) -> Int64? = { _ in nil }
     let onNavigate: (String) -> Void
 
+    @Environment(\.listScale) private var scale
+
     private var pathComponents: [PathComponent] {
         var result = [PathComponent(
             name: rootName, path: rootPath, isRoot: true, isLast: currentPath == rootPath
@@ -60,6 +62,8 @@ struct BreadcrumbBar: View {
                 row([last], showsSizes: false)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Path"))
     }
 
     private func collapsedVariants(of components: [PathComponent]) -> [[PathComponent?]] {
@@ -74,19 +78,21 @@ struct BreadcrumbBar: View {
             ForEach(Array(components.enumerated()), id: \.offset) { index, component in
                 if index > 0 {
                     Image(systemName: "chevron.forward")
-                        .font(.caption2.weight(.semibold))
+                        .font(.system(size: scale.headerFontSize - 1, weight: .semibold))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 1)
+                        .accessibilityHidden(true)
                 }
                 if let component {
                     segment(component, showsSize: showsSizes)
                         .layoutPriority(component.isLast ? 1 : 0)
                 } else {
                     Text("…")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: scale.fontSize - 1))
+                        .informativeTertiary()
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
+                        .accessibilityLabel(Text("More folders"))
                 }
             }
         }
@@ -105,12 +111,13 @@ struct BreadcrumbBar: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .font(.callout)
+            .font(.system(size: scale.fontSize - 1))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .contentShape(Rectangle())
             .onTapGesture { onNavigate(component.path) }
-            .accessibilityAddTraits(.isButton)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits([.isButton, .isSelected])
             .accessibilityAction(.default) { onNavigate(component.path) }
         } else {
             let size = showsSize ? sizeOfPath(component.path).map(ByteFormatter.formatFileSize) : nil
@@ -121,12 +128,13 @@ struct BreadcrumbBar: View {
 
 private struct BreadcrumbSize: View {
     let text: String
+    @Environment(\.listScale) private var scale
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(.system(size: scale.headerFontSize - 1))
             .monospacedDigit()
-            .foregroundStyle(.tertiary)
+            .informativeTertiary()
             .lineLimit(1)
             .fixedSize()
     }
@@ -137,6 +145,7 @@ private struct BreadcrumbLink: View {
     var size: String? = nil
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.listScale) private var scale
 
     var body: some View {
         HStack(spacing: 5) {
@@ -146,7 +155,7 @@ private struct BreadcrumbLink: View {
                 .truncationMode(.middle)
             if let size { BreadcrumbSize(text: size) }
         }
-        .font(.callout)
+        .font(.system(size: scale.fontSize - 1))
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
         .background {
@@ -156,6 +165,7 @@ private struct BreadcrumbLink: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
         .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, action)
     }

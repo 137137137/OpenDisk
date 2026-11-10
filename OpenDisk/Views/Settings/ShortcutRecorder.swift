@@ -20,6 +20,9 @@ struct ShortcutRecorder: View {
             }
             .buttonStyle(.bordered)
             .help(isRecording ? "Press the new shortcut, or ⎋ to cancel" : "Click to change")
+            .accessibilityLabel(Text(action.title))
+            .accessibilityValue(Text(label))
+            .accessibilityHint(isRecording ? Text("Press the new shortcut, or ⎋ to cancel") : Text("Click to change"))
 
             Button {
                 store.reset(action)
@@ -29,8 +32,10 @@ struct ShortcutRecorder: View {
             }
             .buttonStyle(.borderless)
             .help("Restore default (\(action.defaultCombo.displayString))")
+            .accessibilityLabel(Text("Restore default (\(action.defaultCombo.displayString))"))
             .opacity(store.isDefault(action) ? 0 : 1)
             .disabled(store.isDefault(action))
+            .accessibilityHidden(store.isDefault(action))
         }
         .onDisappear(perform: stopRecording)
     }

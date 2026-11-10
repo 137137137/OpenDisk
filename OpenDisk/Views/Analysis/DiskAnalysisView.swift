@@ -123,6 +123,7 @@ struct DiskAnalysisView: View {
             Task { await refreshVolumeCapacity() }
             if !analyzer.rootItems.isEmpty, !analyzer.needsFullDiskAccess {
                 onScanFinished()
+                A11y.announce(DurationFormatter.scanDuration(analyzer.scanDuration))
             }
         }
         .onDisappear {
@@ -604,12 +605,16 @@ struct DiskAnalysisView: View {
             HStack(spacing: 3) {
                 Text(label)
                 Image(systemName: displayedSort.ascending ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: max(8, listScale.headerFontSize - 3), weight: .bold))
                     .opacity(isSorted ? 1 : 0)
+                    .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(isSorted ? Text(displayedSort.ascending ? "Sorted ascending" : "Sorted descending") : Text(verbatim: ""))
+        .accessibilityAddTraits(isSorted ? .isSelected : [])
     }
 
     private func selectRow(_ item: FolderItem) {

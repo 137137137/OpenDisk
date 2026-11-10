@@ -13,9 +13,9 @@ struct SettingsView: View {
             Section {
                 LabeledContent("Status") {
                     HStack {
-                        Circle()
-                            .fill(isFullDiskAccessGranted ? .green : .orange)
-                            .frame(width: 10, height: 10)
+                        Image(systemName: isFullDiskAccessGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(isFullDiskAccessGranted ? .green : .orange)
+                            .accessibilityHidden(true)
 
                         Text(isFullDiskAccessGranted ? "Granted" : "Not Granted")
                             .foregroundStyle(isFullDiskAccessGranted ? .green : .orange)

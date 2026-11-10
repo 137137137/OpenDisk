@@ -16,6 +16,8 @@ struct SearchResultsView: View {
     let onSelect: (FolderItem) -> Void
     let onOpen: (FolderItem) -> Void
 
+    @Environment(\.listScale) private var scale
+
     var body: some View {
         VStack(spacing: 0) {
             if !items.isEmpty {
@@ -66,12 +68,10 @@ struct SearchResultsView: View {
     private var header: some View {
         HStack(spacing: 6) {
             Text(summary)
-                .font(.caption)
                 .foregroundStyle(.secondary)
             if resultsArePartial {
                 Text("· scan in progress, results may be incomplete")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .informativeTertiary()
             }
             if isRunning {
                 ProgressView()
@@ -79,6 +79,8 @@ struct SearchResultsView: View {
             }
             Spacer()
         }
+        .font(.system(size: scale.headerFontSize - 1))
+        .accessibilityElement(children: .combine)
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
     }

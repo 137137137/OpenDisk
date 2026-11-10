@@ -9,6 +9,7 @@ enum ChartTipRenderer {
         size: Int64,
         fractionOfRoot: Double,
         near location: CGPoint,
+        highContrast: Bool = false,
         in context: inout GraphicsContext,
         bounds: CGSize
     ) {
@@ -20,7 +21,7 @@ enum ChartTipRenderer {
         let detail = context.resolve(
             Text("\(ByteFormatter.formatFileSize(size)) · \(percent)%")
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(.white.opacity(highContrast ? 1 : 0.85))
         )
 
         let maxTextWidth = min(280, bounds.width - padding.width * 2)
@@ -44,7 +45,7 @@ enum ChartTipRenderer {
         let rect = CGRect(origin: origin, size: pill)
         context.fill(
             Path(roundedRect: rect, cornerRadius: 6, style: .continuous),
-            with: .color(.black.opacity(0.8))
+            with: .color(.black.opacity(highContrast ? 0.95 : 0.8))
         )
         context.draw(title, at: CGPoint(
             x: rect.minX + padding.width + titleSize.width / 2,

@@ -27,7 +27,7 @@ enum FileColumns {
 }
 
 struct ListScale: Equatable {
-    static let fontSizes: [CGFloat] = [11, 12, 13, 15, 17, 20]
+    static let fontSizes: [CGFloat] = [11, 12, 13, 15, 17, 20, 23, 26]
     static let defaultLevel = 2
     static let defaultsKey = "list_text_size_level"
 
@@ -105,11 +105,13 @@ struct FolderRowView: View {
     @Environment(FileMetadataStore.self) private var metadataStore
     @Environment(\.controlActiveState) private var controlActiveState
     @Environment(\.listScale) private var scale
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var resolvedIcon: NSImage?
 
     private var isSynthetic: Bool { item.path.hasPrefix("::") }
     private var fileURL: URL { URL(fileURLWithPath: item.path) }
     private var isEmphasized: Bool { isSelected && controlActiveState != .inactive }
+    private var highContrast: Bool { contrast == .increased }
 
     var body: some View {
         if isSynthetic && item.path != HiddenSpaceInfo.sentinelPath {
@@ -143,17 +145,19 @@ struct FolderRowView: View {
     }
 
     private var secondaryStyle: AnyShapeStyle {
-        isEmphasized ? AnyShapeStyle(Color.white.opacity(0.85)) : AnyShapeStyle(.secondary)
+        isEmphasized ? AnyShapeStyle(Color.white.opacity(highContrast ? 1 : 0.85)) : AnyShapeStyle(.secondary)
     }
 
     private var tertiaryStyle: AnyShapeStyle {
-        isEmphasized ? AnyShapeStyle(Color.white.opacity(0.7)) : AnyShapeStyle(.tertiary)
+        if isEmphasized { return AnyShapeStyle(Color.white.opacity(highContrast ? 0.9 : 0.7)) }
+        return highContrast ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary)
     }
 
     private var row: some View {
         HStack(spacing: FileColumns.spacing) {
             icon
                 .frame(width: scale.icon, height: scale.icon)
+                .accessibilityHidden(true)
 
             HStack(spacing: 6) {
                 Text(item.name)
@@ -178,6 +182,7 @@ struct FolderRowView: View {
                 } else {
                     Text("--")
                         .foregroundStyle(tertiaryStyle)
+                        .accessibilityLabel(Text("Size unknown"))
                 }
             }
             .lineLimit(1)
@@ -185,6 +190,7 @@ struct FolderRowView: View {
 
             sizeBar
                 .frame(width: scale.scaled(FileColumns.bar))
+                .accessibilityHidden(true)
 
             ForEach(columns) { column in
                 cell(for: column)
@@ -210,6 +216,22 @@ struct FolderRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { onOpen() }
+        .accessibilityActions { accessibilityMenuActions }
+    }
+
+    @ViewBuilder
+    private var accessibilityMenuActions: some View {
+        if !isSynthetic {
+            if let onQuickLook {
+                Button("Quick Look") { onQuickLook(item) }
+            }
+            if !ProtectedPaths.isProtected(item.path) {
+                Button("Add to Collector") { collector.add(CollectedFile(item)) }
+            }
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+            }
+        }
     }
 
     @ViewBuilder

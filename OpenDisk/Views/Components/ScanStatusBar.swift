@@ -32,6 +32,7 @@ struct ScanStatusBar<Leading: View>: View {
                     .layoutPriority(1)
                 Spacer(minLength: 0)
                 status
+                    .accessibilityElement(children: .combine)
                     .font(.footnote)
                     .lineLimit(1)
                     .frame(minWidth: isScanning ? 190 : nil, alignment: .trailing)
@@ -81,7 +82,7 @@ struct ScanStatusBar<Leading: View>: View {
                             .foregroundStyle(.secondary)
                         if !filesPerSecond.isEmpty {
                             Text(verbatim: "· \(filesPerSecond)")
-                                .foregroundStyle(.tertiary)
+                                .informativeTertiary()
                         }
                     }
                     Text(itemsScanned > 0 ? scanStatus : String(localized: "Scanning…"))
@@ -92,7 +93,7 @@ struct ScanStatusBar<Leading: View>: View {
             }
         } else if scanDuration > 0 {
             Text(DurationFormatter.scanDuration(scanDuration))
-                .foregroundStyle(.tertiary)
+                .informativeTertiary()
         }
     }
 }

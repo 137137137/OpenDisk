@@ -7,6 +7,7 @@ struct RingsChartView: View {
     let onSelectCenter: () -> Void
 
     @Environment(Collector.self) private var collector
+    @Environment(\.colorSchemeContrast) private var contrast
 
     @State private var layout: RingsChartLayout.Layout?
     @State private var hoveredPath: String?
@@ -21,7 +22,7 @@ struct RingsChartView: View {
             let scale = renderSide > 0 ? side / renderSide : 1
             ZStack {
                 if let layout {
-                    StaticChartLayer(layout: layout)
+                    StaticChartLayer(layout: layout, highContrast: contrast == .increased)
                         .equatable()
                     Canvas { context, size in
                         drawHoverOverlay(layout: layout, in: &context, bounds: size)
@@ -163,24 +164,28 @@ struct RingsChartView: View {
             return
         }
         ChartDrawing.draw(
-            segment, layout: layout, highlighted: true, in: &context
+            segment, layout: layout, highlighted: true,
+            highContrast: contrast == .increased, in: &context
         )
         ChartTipRenderer.draw(
             name: segment.name, size: segment.size,
             fractionOfRoot: segment.fractionOfRoot,
-            near: hoverLocation, in: &context, bounds: bounds
+            near: hoverLocation, highContrast: contrast == .increased,
+            in: &context, bounds: bounds
         )
     }
 }
 
 private struct StaticChartLayer: View, Equatable {
     let layout: RingsChartLayout.Layout
+    let highContrast: Bool
 
     var body: some View {
         Canvas { context, _ in
             for segment in layout.segments {
                 ChartDrawing.draw(
-                    segment, layout: layout, highlighted: false, in: &context
+                    segment, layout: layout, highlighted: false,
+                    highContrast: highContrast, in: &context
                 )
             }
         }
@@ -192,19 +197,22 @@ private enum ChartDrawing {
         _ segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,
         highlighted: Bool,
+        highContrast: Bool,
         in context: inout GraphicsContext
     ) {
-        let border = GraphicsContext.Shading.color(.black.opacity(0.35))
+        let border = GraphicsContext.Shading.color(.black.opacity(highContrast ? 0.7 : 0.35))
+        let borderWidth = RingsChartLayout.borderWidth * (highContrast ? 1.5 : 1)
         let isFreeSpace = segment.path == FreeSpaceInfo.sentinelPath
-        let fill = segment.depth == 0
-            ? ChartPalette.centerColor(highlighted: highlighted)
-            : isFreeSpace
-            ? (highlighted ? ChartPalette.freeSpaceHighlighted : ChartPalette.freeSpace).color
+        let rgb = isFreeSpace
+            ? (highlighted ? ChartPalette.freeSpaceHighlighted : ChartPalette.freeSpace)
             : ChartPalette.fill(
                 position: segment.colorPosition,
                 depth: segment.depth,
                 highlighted: highlighted
-            ).color
+            )
+        let fill = segment.depth == 0
+            ? ChartPalette.centerColor(highlighted: highlighted)
+            : rgb.color
 
         if segment.depth == 0 {
             let disk = Path(ellipseIn: CGRect(
@@ -214,15 +222,16 @@ private enum ChartDrawing {
                 height: segment.outerRadius * 2
             ))
             context.fill(disk, with: .color(fill))
-            context.stroke(disk, with: border, lineWidth: RingsChartLayout.borderWidth)
+            context.stroke(disk, with: border, lineWidth: borderWidth)
             drawCenterLabel(for: segment, layout: layout, in: &context)
             return
         }
 
         let sector = sectorPath(for: segment, center: layout.center)
         context.fill(sector, with: .color(fill))
-        context.stroke(sector, with: border, lineWidth: RingsChartLayout.borderWidth)
-        drawSectorLabel(for: segment, layout: layout, in: &context)
+        context.stroke(sector, with: border, lineWidth: borderWidth)
+        let labelColor: Color = rgb.prefersDarkLabel ? .black : .white
+        drawSectorLabel(for: segment, layout: layout, color: labelColor, in: &context)
 
         if segment.hasHiddenChildren {
             var edge = Path()
@@ -269,6 +278,7 @@ private enum ChartDrawing {
     private static func drawSectorLabel(
         for segment: RingsChartLayout.Segment,
         layout: RingsChartLayout.Layout,
+        color: Color,
         in context: inout GraphicsContext
     ) {
         let midRadius = (segment.innerRadius + segment.outerRadius) / 2
@@ -283,7 +293,7 @@ private enum ChartDrawing {
             glyphs.append(context.resolve(
                 Text(String(character))
                     .font(.caption2)
-                    .foregroundColor(.black.opacity(0.75))
+                    .foregroundColor(color)
             ))
         }
 

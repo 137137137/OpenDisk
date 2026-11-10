@@ -91,6 +91,7 @@ private struct LocationRow: View {
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 18, height: 18)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
@@ -101,8 +102,9 @@ private struct LocationRow: View {
                         Spacer(minLength: 4)
                         Image(systemName: "lock")
                             .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .informativeTertiary()
                             .help("OpenDisk asks for access the first time you scan this disk.")
+                            .accessibilityLabel(Text("OpenDisk asks for access the first time you scan this disk."))
                     }
                 }
 

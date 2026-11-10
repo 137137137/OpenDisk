@@ -21,6 +21,8 @@ struct CollectorBar: View {
     @State private var listVisible = false
     @State private var collapseTask: Task<Void, Never>?
     @State private var runningApps: [String] = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
 
     private enum Phase: Equatable { case idle, deleting, done }
 
@@ -38,7 +40,7 @@ struct CollectorBar: View {
 
     private var wantsList: Bool {
         phase == .idle && !collector.isEmpty && collector.draggingOut == nil
-            && (footerHovered || listHovered || isTargeted)
+            && (footerHovered || listHovered || isTargeted || voiceOverEnabled)
     }
 
     private var collecting: Bool {
@@ -47,6 +49,10 @@ struct CollectorBar: View {
 
     private var rejecting: Bool {
         phase == .idle && collector.draggedProtectedReason != nil
+    }
+
+    private var panelTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
     }
 
     private var listHeight: CGFloat {
@@ -69,14 +75,14 @@ struct CollectorBar: View {
                         .onDisappear { collector.keepZones["list"] = nil }
                         .onHover { listHovered = $0 }
                         .offset(y: -(footerHeight + 8))
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .transition(panelTransition)
                 }
             }
             .overlay(alignment: .bottom) {
                 if let notice = collector.blockedNotice {
                     noticeBanner(notice)
                         .offset(y: -(footerHeight + 8))
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .transition(panelTransition)
                 }
             }
             .onChange(of: collector.draggingOut == nil) { _, idle in
@@ -95,13 +101,16 @@ struct CollectorBar: View {
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
-            .animation(.spring(duration: 0.3), value: listVisible)
-            .animation(.easeInOut(duration: 0.15), value: collecting)
-            .animation(.spring(duration: 0.3), value: collector.count)
-            .animation(.spring(duration: 0.3), value: phase)
-            .animation(.spring(duration: 0.3), value: collector.blockedNotice)
+            .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3), value: listVisible)
+            .animation(.unlessReducingMotion(.easeInOut(duration: 0.15), reduceMotion), value: collecting)
+            .animation(.unlessReducingMotion(.spring(duration: 0.3), reduceMotion), value: collector.count)
+            .animation(.unlessReducingMotion(.spring(duration: 0.3), reduceMotion), value: phase)
+            .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3), value: collector.blockedNotice)
             .animation(.easeInOut(duration: 0.15), value: rejecting)
-            .animation(.snappy(duration: 0.25), value: collector.deletionProgress)
+            .animation(.unlessReducingMotion(.snappy(duration: 0.25), reduceMotion), value: collector.deletionProgress)
+            .onChange(of: collector.blockedNotice) { _, notice in
+                if let notice { A11y.announce(notice) }
+            }
             .sheet(item: $previewItem) { item in
                 QuickLookSheet(url: item.url)
             }
@@ -158,6 +167,7 @@ struct CollectorBar: View {
     private var rejectionView: some View {
         HStack(spacing: 8) {
             Image(systemName: "nosign")
+                .accessibilityHidden(true)
             Text(collector.draggedProtectedReason ?? "This item can’t be deleted")
                 .lineLimit(3)
         }
@@ -174,11 +184,12 @@ struct CollectorBar: View {
                 Text(collector.formattedTotal)
                     .font(.headline)
                     .monospacedDigit()
-                    .contentTransition(.numericText())
+                    .contentTransition(reduceMotion ? .opacity : .numericText())
                 Text("\(collector.count) items collected")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
             .contentShape(Rectangle())
             .fileDrag({ _ in collector.items }, exportsFileURLs: false) { files in
                 collector.beginDragOut(files)
@@ -197,6 +208,7 @@ struct CollectorBar: View {
     private var hintView: some View {
         HStack(spacing: 8) {
             Image(systemName: collecting ? "arrow.down.circle.fill" : "arrow.down.circle.dotted")
+                .accessibilityHidden(true)
             Text(collecting ? "Release to collect" : "Drop files to collect")
         }
         .font(.callout)
@@ -225,7 +237,7 @@ struct CollectorBar: View {
                             + Text("\(progress.completed) of \(progress.total)"))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
-                        .contentTransition(.numericText())
+                        .contentTransition(reduceMotion ? .opacity : .numericText())
                         .font(.caption)
                     }
                 }
@@ -254,6 +266,7 @@ struct CollectorBar: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
+                .accessibilityHidden(true)
             if let result = lastResult {
                 let freed = Text(ByteFormatter.formatFileSize(result.freedBytes))
                     .fontWeight(.semibold)
@@ -290,7 +303,8 @@ struct CollectorBar: View {
             }
             .frame(height: listHeight)
             .scrollBounceBehavior(.basedOnSize)
-            .animation(.spring(duration: 0.3), value: collector.relatedSuggestions)
+            .accessibilityLabel(Text("Collected items"))
+            .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3), value: collector.relatedSuggestions)
             .panelBackground(in: shape)
         }
     }
@@ -298,6 +312,7 @@ struct CollectorBar: View {
     private func noticeBanner(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "lock.fill")
+                .accessibilityHidden(true)
             Text(text).lineLimit(2)
         }
         .font(.callout)
@@ -321,11 +336,23 @@ struct CollectorBar: View {
         return parts.joined(separator: "\n\n")
     }
 
+    private func completionAnnouncement(for result: Collector.Result) -> String {
+        let freed = ByteFormatter.formatFileSize(result.freedBytes)
+        var message = result.disposal == .trash
+            ? String(localized: "Moved \(freed) to the Trash")
+            : String(localized: "Freed \(freed)")
+        if !result.failures.isEmpty {
+            message += ". " + String(localized: "\(result.failures.count) couldn't be removed")
+        }
+        return message
+    }
+
     private func performDeletion(_ disposal: Collector.Disposal) async {
         phase = .deleting
         let result = await collector.deleteAll(disposal)
         lastResult = result
         phase = .done
+        A11y.announce(completionAnnouncement(for: result))
         onDeleted(result.freedBytes)
         try? await Task.sleep(for: .seconds(2))
         if phase == .done { phase = .idle }
@@ -395,6 +422,7 @@ private struct CollectedRow: View {
             }
             .buttonStyle(.plain)
             .help("Remove from Collector")
+            .accessibilityLabel(Text("Remove “\(file.name)” from Collector"))
 
             Image(nsImage: resolvedIcon
                 ?? FileIcon.cached(for: file.path)
@@ -405,6 +433,7 @@ private struct CollectedRow: View {
                 .resizable()
                 .interpolation(.high)
                 .frame(width: 18, height: 18)
+                .accessibilityHidden(true)
 
             if let kind = file.relatedKind {
                 HStack(spacing: 6) {
@@ -445,6 +474,11 @@ private struct CollectedRow: View {
             collector.endDragOut(operation: operation)
         }
         .hoverHighlight(cornerRadius: 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: Text("Preview"), onPreview)
+        .accessibilityAction(named: Text("Show in Finder")) {
+            NSWorkspace.shared.activateFileViewerSelecting([file.url])
+        }
         .task(id: file.path) {
             guard FileIcon.cached(for: file.path) == nil else { return }
             await FileIcon.warm(file.path)

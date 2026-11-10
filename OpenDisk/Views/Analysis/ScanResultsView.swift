@@ -12,6 +12,7 @@ struct ScanResultsView<Header: View>: View {
     let onSelect: (FolderItem) -> Void
     let onOpen: (FolderItem) -> Void
     @ViewBuilder let header: Header
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -25,7 +26,7 @@ struct ScanResultsView<Header: View>: View {
                     proxy.scrollTo(path)
                 }
         }
-        .animation(.snappy(duration: 0.18), value: displayVersion)
+        .animation(.unlessReducingMotion(.snappy(duration: 0.18), reduceMotion), value: displayVersion)
         .task(id: displayVersion) {
             await FileIcon.prewarm(items.map(\.path))
         }
