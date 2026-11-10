@@ -6,9 +6,12 @@ import SwiftUI
 struct DiskAnalysisView: View {
     let rootPath: String
     let rootName: String
+    let navigationRequest: NavigationRequest?
     let onScanFinished: () -> Void
 
     @Environment(ScanAccess.self) private var scanAccess
+    @Environment(\.sidebarFolders) private var sidebarFolders
+    @State private var pendingReveal: String?
     @State private var analyzer = DiskAnalyzer()
     @State private var collector = Collector()
     @State private var isCollectorTargeted = false
@@ -41,10 +44,12 @@ struct DiskAnalysisView: View {
         rootPath: String,
         rootName: String = String(localized: "Computer"),
         totalUsedSpace: Int64 = 0,
+        navigationRequest: NavigationRequest? = nil,
         onScanFinished: @escaping () -> Void = {}
     ) {
         self.rootPath = rootPath
         self.rootName = rootName
+        self.navigationRequest = navigationRequest
         self.onScanFinished = onScanFinished
         self.totalUsedDiskSpace = totalUsedSpace
         self._currentPath = State(initialValue: rootPath)
@@ -121,6 +126,8 @@ struct DiskAnalysisView: View {
         .onChange(of: analyzer.isScanning) { _, isScanning in
             guard !isScanning else { return }
             Task { await refreshVolumeCapacity() }
+            recordSidebarFolderSizes()
+            if let pendingReveal { reveal(pendingReveal) }
             if !analyzer.rootItems.isEmpty, !analyzer.needsFullDiskAccess {
                 onScanFinished()
                 A11y.announce(DurationFormatter.scanDuration(analyzer.scanDuration))
@@ -149,7 +156,17 @@ struct DiskAnalysisView: View {
             selectedPaths.removeAll()
             selectionAnchor = nil
         }
+        .onChange(of: navigationRequest) { _, request in
+            guard let request else { return }
+            exitSearch()
+            reveal(request.path)
+        }
+        .onChange(of: analyzer.displayVersion) {
+            guard let pendingReveal, analyzer.isScanning else { return }
+            reveal(pendingReveal)
+        }
         .onChange(of: currentPath) {
+            pendingReveal = nil
             metadataStore.removeAll()
             selectedPaths.removeAll()
             selectionAnchor = nil
@@ -820,6 +837,35 @@ struct DiskAnalysisView: View {
                 systemImage: "folder",
                 description: Text("This folder is empty, or nothing in it was large enough to scan.")
             )
+        }
+    }
+
+    private func reveal(_ path: String) {
+        pendingReveal = nil
+        guard path != currentPath else { return }
+        if path == rootPath {
+            guard showContents(of: rootPath) else { return }
+            history.reset()
+            currentPath = rootPath
+            return
+        }
+        if analyzer.navigateToPath(path) {
+            history.didNavigate(to: path)
+            currentPath = path
+        } else if analyzer.isScanning {
+            pendingReveal = path
+            analyzer.prioritize(path)
+        } else {
+            navigateToPath(path)
+        }
+    }
+
+    private func recordSidebarFolderSizes() {
+        guard !analyzer.rootItems.isEmpty else { return }
+        for path in sidebarFolders.paths where SidebarFolders.path(path, isInside: rootPath) {
+            if let size = analyzer.size(ofPath: path) {
+                FolderSizeStore.shared.record(size, for: path)
+            }
         }
     }
 

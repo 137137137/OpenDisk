@@ -23,4 +23,10 @@ protocol DiskScanning: Sendable {
         path: String,
         onEvent: @escaping @Sendable (ScanEvent) -> Void
     ) async -> ScanResult
+
+    func focus(on path: String?)
+}
+
+extension DiskScanning {
+    func focus(on path: String?) {}
 }

@@ -9,6 +9,7 @@ struct LocationsSidebar: View {
     let onRemoveFolder: (DeviceInfo) -> Void
 
     @Environment(ScanAccess.self) private var scanAccess
+    @State private var folderSizes = FolderSizeStore.shared
 
     var body: some View {
         List(selection: $selection) {
@@ -34,7 +35,11 @@ struct LocationsSidebar: View {
             if !folders.isEmpty {
                 Section("Folders") {
                     ForEach(folders) { folder in
-                        LocationRow(location: folder, needsAccess: false)
+                        LocationRow(
+                            location: folder,
+                            needsAccess: false,
+                            folderSize: folderSizes.sizes[folder.path]
+                        )
                             .tag(folder.path)
                             .contextMenu {
                                 Button("Show in Finder") {
@@ -84,6 +89,7 @@ private struct SidebarFooterButtonStyle: ButtonStyle {
 private struct LocationRow: View {
     let location: DeviceInfo
     let needsAccess: Bool
+    var folderSize: Int64? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
@@ -108,6 +114,14 @@ private struct LocationRow: View {
                     }
                 }
 
+                if let folderSize, location.totalBytes == 0 {
+                    Text(ByteFormatter.formatFileSize(folderSize))
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 if location.totalBytes > 0 {
                     Gauge(value: Double(location.usedBytes), in: 0...Double(location.totalBytes)) {
                         EmptyView()
@@ -127,7 +141,7 @@ private struct LocationRow: View {
                 }
             }
         }
-        .padding(.vertical, location.totalBytes > 0 ? 3 : 0)
+        .padding(.vertical, location.totalBytes > 0 || folderSize != nil ? 3 : 0)
         .help(location.path)
         .accessibilityElement(children: .combine)
     }

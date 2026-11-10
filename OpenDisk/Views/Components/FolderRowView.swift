@@ -106,6 +106,7 @@ struct FolderRowView: View {
     @Environment(\.controlActiveState) private var controlActiveState
     @Environment(\.listScale) private var scale
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.sidebarFolders) private var sidebarFolders
     @State private var resolvedIcon: NSImage?
 
     private var isSynthetic: Bool { item.path.hasPrefix("::") }
@@ -358,6 +359,22 @@ struct FolderRowView: View {
                 NSWorkspace.shared.activateFileViewerSelecting([fileURL])
             } label: {
                 Label("Show in Finder", systemImage: "folder")
+            }
+
+            if item.isDirectory && !FileKind.isPackage(item) {
+                if sidebarFolders.contains(item.path) {
+                    Button {
+                        sidebarFolders.remove(item.path)
+                    } label: {
+                        Label("Remove from Sidebar", systemImage: "sidebar.left")
+                    }
+                } else {
+                    Button {
+                        sidebarFolders.add(item.path, item.sizeIsKnown ? item.size : nil)
+                    } label: {
+                        Label("Add to Sidebar", systemImage: "sidebar.left")
+                    }
+                }
             }
 
             Button {

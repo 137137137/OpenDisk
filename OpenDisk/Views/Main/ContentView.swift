@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var didSelectInitialLocation = false
     @AppStorage("last_location") private var lastLocation = ""
+    @State private var navigationRequest: NavigationRequest?
+    @State private var restoringSelection = false
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -28,6 +30,7 @@ struct ContentView: View {
                     rootPath: active.path,
                     rootName: active.name,
                     totalUsedSpace: active.usedBytes,
+                    navigationRequest: navigationRequest,
                     onScanFinished: {
                         withAnimation(A11y.reduceMotion ? nil : .default) {
                             columnVisibility = .detailOnly
@@ -58,6 +61,30 @@ struct ContentView: View {
             selectInitialLocation()
         }
         .environment(scanAccess)
+        .environment(\.sidebarFolders, sidebarFolders)
+    }
+
+    private var sidebarFolders: SidebarFolders {
+        SidebarFolders(
+            paths: Set(folderLocations.map(\.path)),
+            add: { path, size in addFolderToSidebar(path, size: size) },
+            remove: { path in removeFolder(atPath: path) }
+        )
+    }
+
+    private func addFolderToSidebar(_ path: String, size: Int64?) {
+        if ScanAccess.isSandboxed {
+            guard scanAccess.addGrant(forPath: path) != nil else { return }
+        } else if !savedFolderPaths.contains(path) {
+            storedFolders = (savedFolderPaths + [path]).joined(separator: "\n")
+        }
+        if let size { FolderSizeStore.shared.record(size, for: path) }
+    }
+
+    private func removeFolder(atPath path: String) {
+        if let folder = folderLocations.first(where: { $0.path == path }) {
+            removeFolder(folder)
+        }
     }
 
     private var placeholder: some View {
@@ -128,7 +155,21 @@ struct ContentView: View {
             active = nil
             return
         }
-        guard path != active?.path else { return }
+        if let active, path == active.path {
+            if restoringSelection {
+                restoringSelection = false
+            } else {
+                navigationRequest = NavigationRequest(path: path)
+            }
+            return
+        }
+
+        if let active, path != active.path,
+           folderLocations.contains(where: { $0.path == path }),
+           SidebarFolders.path(path, isInside: active.path) {
+            navigationRequest = NavigationRequest(path: path)
+            return
+        }
 
         if let device = deviceMonitor.devices.first(where: { $0.path == path }) {
             guard ScanAccess.isSandboxed, !scanAccess.isGranted(device.path) else {
@@ -136,6 +177,7 @@ struct ContentView: View {
                 return
             }
             guard let opened = requestAccess(to: device) else {
+                restoringSelection = active != nil
                 selection = active?.path
                 return
             }
@@ -194,7 +236,12 @@ struct ContentView: View {
         } else {
             storedFolders = savedFolderPaths.filter { $0 != folder.path }.joined(separator: "\n")
         }
-        if wasSelected { selection = nil }
+        FolderSizeStore.shared.forget(folder.path)
+        if wasSelected {
+            let keepActive = active.map { $0.path != folder.path } ?? false
+            restoringSelection = keepActive
+            selection = keepActive ? active?.path : nil
+        }
     }
 }
 

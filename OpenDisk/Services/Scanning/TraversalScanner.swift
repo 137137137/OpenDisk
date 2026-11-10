@@ -10,23 +10,37 @@ enum TraversalScanner {
         min(8, max(4, ProcessInfo.processInfo.activeProcessorCount / 2))
     }
 
-    private struct WorkItem {
+    struct WorkItem: Sendable {
         let directoryID: FileTree.NodeID
         let path: String
     }
 
-    private final class WorkState: Sendable {
+    final class WorkState: Sendable {
         private struct Guarded {
             var stack: [WorkItem] = []
+            var priority: [WorkItem] = []
+            var appliedFocusVersion = 0
             var activeWorkers = 0
             var completion: CheckedContinuation<Void, Never>?
+
+            var pendingCount: Int { stack.count + priority.count }
+
+            mutating func refocus(_ focus: ScanFocus.Snapshot) {
+                guard focus.version != appliedFocusVersion else { return }
+                appliedFocusVersion = focus.version
+                let pending = stack + priority
+                stack = pending.filter { !focus.contains($0.path) }
+                priority = pending.filter { focus.contains($0.path) }
+            }
         }
 
         private let guarded = Mutex(Guarded())
         private let maxWorkers: Int
+        private let focus: ScanFocus?
 
-        init(maxWorkers: Int) {
+        init(maxWorkers: Int, focus: ScanFocus? = nil) {
             self.maxWorkers = max(1, maxWorkers)
+            self.focus = focus
         }
 
         func start(with root: WorkItem, completion: CheckedContinuation<Void, Never>) {
@@ -38,8 +52,10 @@ enum TraversalScanner {
         }
 
         func pop() -> WorkItem? {
+            let focus = focus?.snapshot
             let (item, finished) = guarded.withLock { state -> (WorkItem?, CheckedContinuation<Void, Never>?) in
-                if let item = state.stack.popLast() { return (item, nil) }
+                if let focus { state.refocus(focus) }
+                if let item = state.priority.popLast() ?? state.stack.popLast() { return (item, nil) }
                 state.activeWorkers -= 1
                 guard state.activeWorkers == 0 else { return (nil, nil) }
                 defer { state.completion = nil }
@@ -51,9 +67,20 @@ enum TraversalScanner {
 
         func push(_ items: [WorkItem]) -> Int {
             guard !items.isEmpty else { return 0 }
+            let focus = focus?.snapshot
             return guarded.withLock {
-                $0.stack.append(contentsOf: items)
-                let extra = min(maxWorkers - $0.activeWorkers, $0.stack.count - 1)
+                if let focus, focus.version == $0.appliedFocusVersion, !focus.prefixes.isEmpty {
+                    for item in items {
+                        if focus.contains(item.path) {
+                            $0.priority.append(item)
+                        } else {
+                            $0.stack.append(item)
+                        }
+                    }
+                } else {
+                    $0.stack.append(contentsOf: items)
+                }
+                let extra = min(maxWorkers - $0.activeWorkers, $0.pendingCount - 1)
                 guard extra > 0 else { return 0 }
                 $0.activeWorkers += extra
                 return extra
@@ -66,6 +93,7 @@ enum TraversalScanner {
         rootName: String,
         allowedDevices: Set<dev_t>? = nil,
         workerCount: Int? = nil,
+        focus: ScanFocus? = nil,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         onPartialTreeAvailable: (@escaping PartialTreeProvider) -> Void = { _ in }
@@ -75,7 +103,7 @@ enum TraversalScanner {
             return FileTree(rootName: rootName)
         }
         let devices = (allowedDevices ?? []).union([rootDevice])
-        let state = WorkState(maxWorkers: workerCount ?? subtreeWorkerCount)
+        let state = WorkState(maxWorkers: workerCount ?? subtreeWorkerCount, focus: focus)
 
         let tree = Mutex(FileTree(rootName: rootName))
         onPartialTreeAvailable { tree.withLock { $0 } }

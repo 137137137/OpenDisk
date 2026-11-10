@@ -49,6 +49,12 @@ final class ScanEngine: DiskScanning {
     private static let dataVolumeMountPoint = "/System/Volumes/Data"
     private static let systemVolumesDirectory = "/System/Volumes"
 
+    private let scanFocus = ScanFocus()
+
+    func focus(on path: String?) {
+        scanFocus.focus(on: path)
+    }
+
     func scan(
         path: String,
         onEvent: @escaping @Sendable (ScanEvent) -> Void
@@ -105,7 +111,7 @@ final class ScanEngine: DiskScanning {
 
         let tree = await withTaskCancellationHandler {
             await Self.performScan(
-                path: path, metrics: metrics,
+                path: path, focus: scanFocus, metrics: metrics,
                 cancellation: cancellation, assembler: assembler
             )
         } onCancel: {
@@ -136,6 +142,7 @@ final class ScanEngine: DiskScanning {
 
     private static func performScan(
         path: String,
+        focus: ScanFocus,
         metrics: ScanMetrics,
         cancellation: CancellationFlag,
         assembler: PartialResultAssembler
@@ -144,7 +151,7 @@ final class ScanEngine: DiskScanning {
 
         if path == "/" {
             return await scanBootVolumeGroup(
-                metrics: metrics, isCancelled: isCancelled, assembler: assembler
+                focus: focus, metrics: metrics, isCancelled: isCancelled, assembler: assembler
             )
         }
 
@@ -159,7 +166,7 @@ final class ScanEngine: DiskScanning {
         let scanned = await scanRootTreeUsingCache(
             path: scanPath, rootName: path,
             allowedDevices: subtreeAllowedDevices(forScanRoot: scanPath),
-            metrics: metrics, isCancelled: isCancelled,
+            focus: focus, metrics: metrics, isCancelled: isCancelled,
             registerPartial: { assembler.register(subtreeKey, provider: $0) }
         )
         return await offload {
@@ -179,6 +186,7 @@ final class ScanEngine: DiskScanning {
         path: String,
         rootName: String,
         allowedDevices: Set<dev_t>,
+        focus: ScanFocus? = nil,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         registerPartial: @escaping @Sendable (@escaping PartialTreeProvider) -> Void
@@ -257,7 +265,7 @@ final class ScanEngine: DiskScanning {
         let traversalStart = clock.now
         let tree = await traverse(
             path: path, rootName: rootName, allowedDevices: allowedDevices,
-            metrics: metrics, isCancelled: isCancelled,
+            focus: focus, metrics: metrics, isCancelled: isCancelled,
             registerPartial: traversalPartials
         )
         if !isCancelled() {
@@ -298,6 +306,7 @@ final class ScanEngine: DiskScanning {
         path: String,
         rootName: String,
         allowedDevices: Set<dev_t>? = nil,
+        focus: ScanFocus? = nil,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         registerPartial: @escaping @Sendable (@escaping PartialTreeProvider) -> Void = { _ in }
@@ -307,7 +316,7 @@ final class ScanEngine: DiskScanning {
             workerCount: VolumeAttributes.isVolumeRoot(path)
                 ? TraversalScanner.volumeWorkerCount
                 : TraversalScanner.subtreeWorkerCount,
-            metrics: metrics, isCancelled: isCancelled,
+            focus: focus, metrics: metrics, isCancelled: isCancelled,
             onPartialTreeAvailable: registerPartial
         )
     }
@@ -316,6 +325,7 @@ final class ScanEngine: DiskScanning {
     private static func siblingTreeKey(_ name: String) -> String { "sibling:" + name }
 
     private static func scanBootVolumeGroup(
+        focus: ScanFocus,
         metrics: ScanMetrics,
         isCancelled: @escaping @Sendable () -> Bool,
         assembler: PartialResultAssembler
@@ -330,7 +340,7 @@ final class ScanEngine: DiskScanning {
         let rootTree = await scanRootTreeUsingCache(
             path: "/", rootName: "/",
             allowedDevices: subtreeAllowedDevices(forScanRoot: "/"),
-            metrics: metrics, isCancelled: isCancelled,
+            focus: focus, metrics: metrics, isCancelled: isCancelled,
             registerPartial: { assembler.register(rootTreeKey, provider: $0) }
         )
         results.withLock { $0[rootTreeKey] = rootTree }
@@ -340,7 +350,7 @@ final class ScanEngine: DiskScanning {
             let mountPoint = systemVolumesDirectory + "/" + name
             let tree = await traverse(
                 path: mountPoint, rootName: mountPoint,
-                metrics: metrics, isCancelled: isCancelled,
+                focus: focus, metrics: metrics, isCancelled: isCancelled,
                 registerPartial: { assembler.register(siblingTreeKey(name), provider: $0) }
             )
             results.withLock { $0[siblingTreeKey(name)] = tree }

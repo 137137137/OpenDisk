@@ -95,6 +95,7 @@ final class DiskAnalyzer {
         isSearchRunning = !searchQuery.isEmpty
         let startDate = Date()
         scanStartDate = startDate
+        scanner.focus(on: nil)
 
         Task { [weak self] in
             let items = await Self.skeletonItems(forRoot: path)
@@ -153,7 +154,15 @@ final class DiskAnalyzer {
         guard let node = nodeID(forPath: path) else { return false }
         currentPath = path
         display(node: node)
+        if isScanning {
+            scanner.focus(on: path == scanRootPath ? nil : path)
+        }
         return true
+    }
+
+    func prioritize(_ path: String) {
+        guard isScanning else { return }
+        scanner.focus(on: path == scanRootPath ? nil : path)
     }
 
     func size(ofPath path: String) -> Int64? {

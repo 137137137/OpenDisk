@@ -48,6 +48,13 @@ final class ScanAccess {
         return store(url)
     }
 
+    @discardableResult
+    func addGrant(forPath path: String) -> Grant? {
+        if let existing = grants.first(where: { $0.path == path }) { return existing }
+        guard beginAccess(toPath: path) else { return nil }
+        return store(URL(fileURLWithPath: path, isDirectory: true))
+    }
+
     func removeGrant(_ grant: Grant) {
         endAccess(toPath: grant.path)
         bookmarks[grant.path] = nil
